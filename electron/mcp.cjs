@@ -1,0 +1,150 @@
+// Elite Cinema MCP server: the editor answers MCP (Streamable HTTP, JSON responses) on
+// 127.0.0.1, so Claude can edit the open project. Same idea as Premiere 2026's built-in server.
+//
+// Security: loopback only, a bearer token (stored in the app's data folder), and any request
+// that carries an Origin header (i.e. comes from a web page) is refused.
+const http = require('node:http');
+const crypto = require('node:crypto');
+
+const PROTOCOL = '2025-06-18';
+
+const num = (description) => ({ type: 'number', description });
+const str = (description) => ({ type: 'string', description });
+
+const TOOLS = [
+  { name: 'get_project', description: 'Estado do projeto aberto: formato, duração, media importada, pistas e clips (ids, inícios, durações, textos).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'import_media', description: 'Importa ficheiros de vídeo, áudio ou imagem do PC para o projeto.', inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' }, description: 'Caminhos completos' } }, required: ['paths'] } },
+  { name: 'add_clip', description: 'Põe media na timeline. Por defeito no fim da pista, com a duração toda.', inputSchema: { type: 'object', properties: { media_id: str('id da media (get_project)'), start: num('Início na timeline, segundos (por defeito: fim da pista)'), in: num('Ponto de entrada no ficheiro, s'), out: num('Ponto de saída no ficheiro, s'), track: str('video ou audio') }, required: ['media_id'] } },
+  { name: 'move_clip', description: 'Muda o início de um clip na timeline.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), start: num('Novo início, s') }, required: ['clip_id', 'start'] } },
+  { name: 'trim_clip', description: 'Apara um clip: novo ponto de entrada e/ou saída no ficheiro original (segundos).', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), in: num('Nova entrada, s'), out: num('Nova saída, s') }, required: ['clip_id'] } },
+  { name: 'split_clip', description: 'Corta em dois no tempo indicado (o clip indicado, ou todos os clips nesse tempo).', inputSchema: { type: 'object', properties: { time: num('Tempo na timeline, s'), clip_id: str('opcional') }, required: ['time'] } },
+  { name: 'delete_clip', description: 'Apaga um clip. ripple=true puxa o resto da pista para trás.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), ripple: { type: 'boolean' } }, required: ['clip_id'] } },
+  { name: 'add_text', description: 'Acrescenta um texto/título na timeline.', inputSchema: { type: 'object', properties: { text: str('Texto'), start: num('Início, s'), duration: num('Duração, s'), style: str('elite, clean, box, title, impacto, karaoke, marcador, neon, bd, caneta, deslizar, sombra, cinema, felipe, marta'), y: num('Posição vertical 0 (topo) a 1 (fundo)') }, required: ['text', 'start', 'duration'] } },
+  { name: 'update_clip', description: 'Altera propriedades: volume (0-2), fit (fill/fit), text, style, y, size, keyword (palavra-chave das legendas felipe/marta), cor/fonte de cada legenda e lines (mover a linha de cima e a palavra-chave em separado).', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), volume: num('0 a 2'), fit: str('fill ou fit'), orient: num('rodar a fonte (footage filmada de lado): 0, 90, 180 ou 270 graus no sentido anti-horário, como a rotação do Resolve'), text: str('texto'), style: str('estilo'), y: num('0 a 1'), size: num('altura do texto em fração do quadro, ex. 0.05'), keyword: { type: ['number', 'null'], description: 'legendas felipe/marta: índice da palavra-chave (0 = primeira), -1 sem destaque, null automático' }, color: str('legenda: cor do texto só desta legenda, #RRGGBB'), highlight: str('legenda: cor da palavra falada (felipe/marta: da palavra-chave), #RRGGBB'), font: str('legenda: fonte só desta legenda (incluída na app ou instalada no PC, pelo nome)'), keyword_color: str('felipe/marta: cor da palavra-chave, #RRGGBB'), keyword_font: str('felipe/marta: fonte da palavra-chave'), outline_color: str('legenda: cor do contorno, #RRGGBB'), lines: { type: ['object', 'null'], description: 'felipe/marta: mover cada linha à parte, {base:{x,y}, kw:{x,y}, rest:{x,y}} em frações do quadro (x da largura, y da altura; 0 = sítio do estilo); null repõe' }, override: { type: ['object', 'null'], description: 'aspeto próprio da legenda {color, highlight, font, keywordColor, keywordFont, outlineColor}; null repõe o estilo' } }, required: ['clip_id'] } },
+  { name: 'list_caption_styles', description: 'Lista os estilos de legenda: os da app (presets) e os guardados pelo Gui (estilos novos, partilhados entre projetos).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'save_caption_style', description: 'Cria ou altera um estilo de legenda guardado (fica para todos os projetos). Parte de um estilo (from) e muda o que vier em style.', inputSchema: { type: 'object', properties: { id: str('id de um estilo guardado a alterar (vazio = novo)'), name: str('nome do estilo'), from: str('estilo de partida: preset (elite, felipe, marta…) ou guardado'), style: { type: 'object', description: 'campos do estilo: font, size (fração da altura, ex. 0.05), color, highlight, outline, outlineColor, box, boxColor, uppercase, y, anim (pop, fade, slide, words, bounce, karaoke, marker), glow, shadow, shadowColor' }, keyword_color: str('estilos com palavra-chave: cor da palavra-chave'), keyword_font: str('estilos com palavra-chave: fonte da palavra-chave'), apply: { type: 'boolean', description: 'aplicar logo a todas as legendas' } } } },
+  { name: 'delete_caption_style', description: 'Apaga um estilo de legenda guardado (as legendas do projeto que o usam ficam iguais).', inputSchema: { type: 'object', properties: { id: str('id do estilo guardado') }, required: ['id'] } },
+  { name: 'auto_captions', description: 'Legendas automáticas (Whisper local, palavra a palavra) para um clip de vídeo/áudio, ou para todos. Opções como no AutoSubs: modelo, idioma (auto deteta), traduzir para inglês, densidade/caracteres por linha, linhas, maiúsculas, pontuação e palavras censuradas. Os estilos felipe e marta têm uma palavra-chave por legenda (escolhida sozinha; muda-se com update_clip keyword).', inputSchema: { type: 'object', properties: { clip_id: str('opcional: só este clip'), style: str('bloco de legenda: elite, clean, box, title, impacto, karaoke, marcador, neon, bd, caneta, deslizar, sombra, cinema, felipe, marta'), max_words: num('palavras por legenda (1-12, por defeito 3)'), model: str('auto, large-v3-turbo, large-v3, medium, small, base ou tiny'), language: str('código do idioma (pt, en, es…) ou auto para detetar (por defeito pt)'), translate: { type: 'boolean', description: 'traduzir a fala para inglês' }, prompt: str('contexto/vocabulário para o Whisper (nomes, termos)'), density: str('single (1 palavra), less, standard, more ou custom (usa max_chars)'), max_chars: num('máximo de caracteres por linha'), max_lines: num('máximo de linhas por legenda (por defeito 2)'), text_case: str('none, lower, upper ou title'), remove_punctuation: { type: 'boolean', description: 'tirar a pontuação' }, color: str('cor do texto de todas as legendas novas, #RRGGBB'), font: str('letra do texto (fonte da app ou instalada no PC)'), keyword_color: str('felipe/marta: cor da palavra-chave, #RRGGBB'), keyword_font: str('felipe/marta: letra da palavra-chave'), highlight: str('outros estilos: cor da palavra falada, #RRGGBB'), size: { type: 'number', description: 'tamanho, fração da altura do quadro (ex. 0.08)' }, censor: { type: 'array', items: { type: 'string' }, description: 'palavras a censurar (ficam com asteriscos)' } } } },
+  { name: 'cut_silences', description: 'Corta as pausas de um clip falado (jump cuts) com base na transcrição e junta o resto.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip de vídeo'), min_pause: num('pausa mínima a cortar, s (por defeito 0.5)'), padding: num('margem a manter à volta da fala, s (por defeito 0.12)') }, required: ['clip_id'] } },
+  { name: 'set_speed', description: 'Velocidade de um clip de vídeo/áudio: 0.25 (câmara lenta) a 4 (acelerado). O som mantém o tom.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), speed: num('0.25 a 4') }, required: ['clip_id', 'speed'] } },
+  { name: 'set_transition', description: 'Transição de entrada ou saída de um clip (como no Premiere, DaVinci e CapCut): fade (dissolve), slide (empurrar), whip (empurrão rápido com motion blur), zoom (zoom-through com desfoque), spin (rodar), flash (branco), dip (mergulho a preto), blur (desfocar), bflash (Brightness Flash do Resolve: a imagem explode a branco no corte; usar 4 frames à saída de um clip e 4 à entrada do seguinte); type none tira. O som faz fade.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), side: str('in ou out'), type: str('fade, slide, whip, zoom, spin, flash, dip, blur, bflash ou none'), duration: num('segundos (por defeito 0.5)') }, required: ['clip_id', 'side', 'type'] } },
+  { name: 'dissolve', description: 'Dissolve cruzado entre um clip e o anterior na mesma pista (sobrepõe-os e puxa o resto para trás).', inputSchema: { type: 'object', properties: { clip_id: str('o clip que entra'), duration: num('segundos (por defeito 0.5)') }, required: ['clip_id'] } },
+  { name: 'set_keyframe', description: 'Keyframe de zoom (1 a 4), posição (x, y de -0.5 a 0.5), rotação (graus, -180 a 180) e/ou opacidade (0 a 1) num tempo da timeline. Entre keyframes o movimento é suave.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), time: num('tempo na timeline, s'), zoom: num('1 = normal'), x: num('-0.5 a 0.5'), y: num('-0.5 a 0.5'), rotate: num('graus, -180 a 180'), opacity: num('0 a 1') }, required: ['clip_id', 'time'] } },
+  { name: 'animate_clip', description: 'Animação pronta: zoom_in, zoom_out, ken_burns (zoom lento + deslizar), punch (zoom rápido no início), shake (câmara ao ombro), pulse (zoom a pulsar), spin_in (entra a rodar), fade_in_out (opacidade). none tira as animações.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), preset: str('zoom_in, zoom_out, ken_burns, punch, shake, pulse, spin_in, fade_in_out ou none'), amount: num('shake: força 0.004 a 0.04; pulse: zoom extra 0.02 a 0.3'), every: num('pulse: segundos entre pulsos (por defeito 0.5)') }, required: ['clip_id', 'preset'] } },
+  { name: 'set_keyframe_ease', description: 'Interpolação dos keyframes num tempo (como no After Effects): smooth, linear, hold, easy (Easy Ease), easy_in, easy_out ou bezier (com bz [x1,y1,x2,y2], como cubic-bezier). Vale para o troço que começa nesse keyframe.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), time: num('tempo do keyframe na timeline, s'), prop: str('opcional: zoom, x, y, rotate ou opacity (por defeito todos nesse tempo)'), ease: str('smooth, linear, hold, easy, easy_in, easy_out ou bezier'), bz: { type: 'array', items: { type: 'number' }, description: 'bezier: [x1, y1, x2, y2]' } }, required: ['clip_id', 'time', 'ease'] } },
+  { name: 'set_modifier', description: 'Expressão de uma propriedade animada (como no After Effects): wiggle (freq por s, amp), loop (repete os keyframes: cycle ou pingpong) ou overshoot (salto amortecido depois de cada keyframe: amp, freq, decay). type none tira.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), prop: str('zoom, x, y, rotate ou opacity'), type: str('wiggle, loop, overshoot ou none'), freq: num('wiggle/overshoot: por segundo'), amp: num('wiggle: amplitude na unidade da propriedade; overshoot: força 0 a 1'), decay: num('overshoot: amortecimento'), mode: str('loop: cycle ou pingpong') }, required: ['clip_id', 'prop', 'type'] } },
+  { name: 'set_blend', description: 'Modo de blend de um clip sobre o que está por baixo (como as camadas do After Effects): normal, multiply, screen, overlay, add, lighten, darken, difference.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), mode: str('modo') }, required: ['clip_id', 'mode'] } },
+  { name: 'set_matte', description: 'Track matte (After Effects): o clip só aparece dentro de um texto (kind text) ou do alpha/brilho de outra média (kind media, mode alpha ou luma). invert mostra fora. kind none tira.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), kind: str('text, media ou none'), text: str('texto'), font: str('fonte (por defeito Inter Black)'), size: num('altura das letras, fração do quadro (0.22)'), x: num('centro x 0 a 1'), y: num('centro y 0 a 1'), media_id: str('média do matte'), mode: str('alpha ou luma'), invert: { type: 'boolean' } }, required: ['clip_id', 'kind'] } },
+  { name: 'add_effect', description: 'Efeito de camada (After Effects): shadow (Drop Shadow), glow, sweep (CC Light Sweep) ou gradient (Gradient Ramp). Parâmetros opcionais em params: shadow {color, opacity, distance, angle, softness}; glow {radius, intensity}; sweep {color, angle, width, intensity, start, duration}; gradient {c0, c1, x0, y0, x1, y1, opacity}. Distâncias em fração do lado menor do quadro.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), type: str('shadow, glow, sweep ou gradient'), params: { type: 'object', description: 'parâmetros do efeito' } }, required: ['clip_id', 'type'] } },
+  { name: 'update_effect', description: 'Muda parâmetros de um efeito (ids em get_project, campo effects). remove=true apaga-o.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), effect_id: str('id do efeito'), params: { type: 'object' }, remove: { type: 'boolean' } }, required: ['clip_id', 'effect_id'] } },
+  { name: 'add_graphic', description: 'Grafismo animado (como os Essential Graphics do Premiere ou os modelos de texto do CapCut): lower (nome + função, lower third), title (título grande com traço), label (etiqueta, ex. nome da divisão) ou progress (barra de progresso). Fica na pista de legendas.', inputSchema: { type: 'object', properties: { kind: str('lower, title, label ou progress'), start: num('início, s (por defeito a cabeça de leitura)'), duration: num('duração, s (progress: por defeito o vídeo todo)'), title: str('texto principal'), subtitle: str('segunda linha (lower, title)'), accent: str('cor de destaque #RRGGBB (por defeito dourado #D4AF37)'), color: str('cor do texto #RRGGBB'), dark: str('cor escura das caixas #RRGGBB'), font: str('fonte (por defeito Inter Black)'), x: num('posição 0 a 1'), y: num('posição 0 a 1'), scale: num('tamanho, 0.4 a 3') }, required: ['kind'] } },
+  { name: 'update_graphic', description: 'Muda um grafismo (textos, cores, fonte, posição, tamanho).', inputSchema: { type: 'object', properties: { clip_id: str('id do grafismo'), title: str('texto principal'), subtitle: str('segunda linha'), accent: str('#RRGGBB'), color: str('#RRGGBB'), dark: str('#RRGGBB'), font: str('fonte'), x: num('0 a 1'), y: num('0 a 1'), scale: num('0.4 a 3') }, required: ['clip_id'] } },
+  { name: 'list_sfx', description: 'Lista os efeitos sonoros incluídos (whoosh, swoosh, pop, clique, riser, impacto, ding, câmara, glitch).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'add_sfx', description: 'Põe um efeito sonoro na pista SFX. time = quando o momento forte deve cair (o meio do whoosh, o fim do riser, o início do impacto).', inputSchema: { type: 'object', properties: { id: str('whoosh, swoosh, pop, click, riser, impacto, ding, camara, flash ou glitch'), time: num('tempo na timeline, s (por defeito a cabeça de leitura)'), volume: num('0 a 2 (por defeito 0.8)') }, required: ['id'] } },
+  { name: 'auto_sfx', description: 'Efeitos sonoros automáticos: whoosh nas transições de empurrar/zoom/spin, impacto nos flashes, swoosh nos cortes da pista principal, pop nos grafismos. Não repete onde já há efeito.', inputSchema: { type: 'object', properties: { modes: { type: 'array', items: { type: 'string' }, description: 'transitions, cuts e/ou graphics (por defeito transitions e graphics)' }, volume: num('0 a 2 (por defeito 0.7)') } } },
+  { name: 'detect_beats', description: 'Deteta as batidas da música (pista de áudio, ou o clip indicado) e marca-as na timeline.', inputSchema: { type: 'object', properties: { clip_id: str('opcional: clip de música'), sensitivity: num('0.5 (menos batidas) a 2 (mais), por defeito 1') } } },
+  { name: 'beat_sync', description: 'Usa as batidas marcadas: pulse = zoom a bater em cada batida nos clips de vídeo; snap_cuts = encosta cada corte da pista de vídeo à batida mais próxima (até max_shift s).', inputSchema: { type: 'object', properties: { mode: str('pulse ou snap_cuts'), clip_id: str('pulse: só este clip'), amount: num('pulse: zoom extra, por defeito 0.08'), max_shift: num('snap_cuts: deslocação máxima, s (por defeito 0.25)') }, required: ['mode'] } },
+  { name: 'add_marker', description: 'Marcador na timeline (com nome opcional). remove=true com marker_id apaga; clear=true apaga todos (beats_only só as batidas).', inputSchema: { type: 'object', properties: { time: num('s (por defeito a cabeça de leitura)'), label: str('nome'), color: str('#RRGGBB'), marker_id: str('para apagar'), remove: { type: 'boolean' }, clear: { type: 'boolean' }, beats_only: { type: 'boolean' } } } },
+  { name: 'freeze_frame', description: 'Congela a imagem (freeze frame): no tempo indicado o vídeo pára numa imagem fixa durante length segundos e o resto da pista anda para a frente.', inputSchema: { type: 'object', properties: { time: num('tempo na timeline, s (por defeito a cabeça de leitura)'), length: num('segundos parado (por defeito 1.5)'), clip_id: str('opcional: o clip de vídeo') } } },
+  { name: 'set_color', description: 'Correção de cor de clips de vídeo: exposição, contraste, saturação, temperatura (-1 a 1, 0 = original), vinheta (0 a 1), um look pronto e/ou uma LUT .cube. Sem clip_id aplica a todos os clips.', inputSchema: { type: 'object', properties: { clip_id: str('opcional: só este clip'), look: str('natural, cinema, quente, frio, vivo, imobiliario ou pb'), exposure: num('-1 a 1'), contrast: num('-1 a 1'), saturation: num('-1 a 1 (-1 = preto e branco)'), temperature: num('-1 (frio) a 1 (quente)'), vignette: num('0 a 1'), lut: str('caminho completo de um ficheiro .cube; vazio tira'), reset: { type: 'boolean', description: 'tirar toda a correção' } } } },
+  { name: 'set_caption_style', description: 'Blocos e estilo próprio das legendas (aplica a todas): efeito animado, fonte, tamanho (fração da altura, ex. 0.05), cores #RRGGBB, contorno, caixa, maiúsculas, posição y (0 topo a 1 fundo). Ou style para usar um estilo pronto em todas.', inputSchema: { type: 'object', properties: { style: str('bloco pronto (elite, clean, box, title, impacto, karaoke, marcador, neon, bd, caneta, deslizar, sombra, cinema, felipe, marta) ou custom'), anim: str('efeito: pop, fade, slide, words (palavra a palavra), bounce (salto), karaoke, marker (marcador)'), glow: { type: 'boolean', description: 'brilho néon na cor do contorno' }, shadow: num('sombra, 0 a 0.015'), shadow_color: str('#RRGGBB'), marker: str('#RRGGBB do marcador'), spacing: num('espaço entre letras, 0 a 0.012'), font: str('ex. Arial Black, Segoe UI Bold, Montserrat'), size: num('0.02 a 0.14'), color: str('#RRGGBB'), highlight: str('#RRGGBB da palavra falada'), outline: num('0 a 0.02'), outline_color: str('#RRGGBB'), box: { type: 'boolean' }, box_color: str('#RRGGBB'), uppercase: { type: 'boolean' }, y: num('0 a 1') } } },
+  { name: 'export_srt', description: 'Guarda as legendas em .srt (para YouTube, Instagram ou tradução).', inputSchema: { type: 'object', properties: { path: str('caminho completo do .srt') }, required: ['path'] } },
+  { name: 'import_srt', description: 'Põe na timeline as legendas de um ficheiro .srt.', inputSchema: { type: 'object', properties: { path: str('caminho completo do .srt'), replace: { type: 'boolean', description: 'apagar as legendas atuais' }, style: str('estilo (por defeito clean)') }, required: ['path'] } },
+  { name: 'set_audio', description: 'Som do vídeo final: normalize (volume certo para redes, -14 LUFS) e duck (baixa a música quando há voz).', inputSchema: { type: 'object', properties: { normalize: { type: 'boolean' }, duck: { type: 'boolean' } } } },
+  { name: 'add_mask', description: 'Máscara num clip de vídeo (como no Premiere). shape person = recorta a pessoa que está em x,y em todo o clip (demora ~1 s por 2 s de vídeo); pen = forma desenhada com points; ellipse/rect. mode front = essa parte fica à frente das legendas (legendas atrás da pessoa); blur/pixelate/darken; cut recorta o vídeo na forma. Pode mexer-se (to_x, to_y).', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), shape: str('person, pen, ellipse ou rect'), points: { type: 'array', items: { type: 'array', items: { type: 'number' } }, description: 'pen: pontos [x, y] da forma, 0 a 1 (pelo menos 3)' }, x: num('person: ponto em cima da pessoa; outras: centro x, 0 (esquerda) a 1 (direita)'), y: num('centro y, 0 (topo) a 1 (fundo)'), w: num('largura, fração do quadro'), h: num('altura, fração do quadro'), feather: num('bordas suaves, 0 a 0.2'), invert: { type: 'boolean', description: 'efeito fora da forma' }, mode: str('front (legendas atrás), blur, pixelate, darken ou cut'), amount: num('intensidade 0 a 1'), to_x: num('centro x no fim do clip (máscara a mexer)'), to_y: num('centro y no fim do clip') }, required: ['clip_id'] } },
+  { name: 'update_mask', description: 'Altera uma máscara (posição, tamanho, modo, intensidade, bordas, inverter, movimento).', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), mask_id: str('id da máscara (get_project)'), shape: str('ellipse ou rect'), x: num('centro x, 0 (esquerda) a 1 (direita)'), y: num('centro y, 0 (topo) a 1 (fundo)'), w: num('largura, fração do quadro'), h: num('altura, fração do quadro'), feather: num('bordas suaves, 0 a 0.2'), invert: { type: 'boolean', description: 'efeito fora da forma' }, mode: str('blur, pixelate, darken ou cut (recortar)'), amount: num('intensidade 0 a 1'), to_x: num('centro x no fim do clip (máscara a mexer)'), to_y: num('centro y no fim do clip') }, required: ['clip_id', 'mask_id'] } },
+  { name: 'remove_mask', description: 'Apaga uma máscara.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), mask_id: str('id da máscara') }, required: ['clip_id', 'mask_id'] } },
+  { name: 'fusion_add_node', description: 'Fusion (nós, como no DaVinci) num clip de vídeo. Junta um nó: blur, glow, color, grain, letterbox, transform, chroma (chroma key), merge (juntar duas imagens: entrada 0 fundo, 1 frente), background (cor sólida) ou media (outro ficheiro importado). Por defeito entra na corrente antes da Saída; os nós do grafo base são "in" (o clip) e "out".', inputSchema: { type: 'object', properties: { clip_id: str('id do clip de vídeo'), type: str('tipo do nó'), after: str('opcional: id do nó a seguir ao qual entra'), params: { type: 'object', description: 'definições do nó, ex. {"size":0.4} ou {"key":"#00FF00","similarity":0.25}' } }, required: ['clip_id', 'type'] } },
+  { name: 'fusion_set', description: 'Muda definições de um nó do Fusion.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), node_id: str('id do nó'), params: { type: 'object', description: 'definições a mudar' } }, required: ['clip_id', 'node_id', 'params'] } },
+  { name: 'fusion_link', description: 'Liga a saída de um nó a uma entrada de outro (port 0 = primeira entrada; no merge 0 = fundo, 1 = frente). Sem from desliga essa entrada.', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), from: str('id do nó de origem (vazio desliga)'), to: str('id do nó de destino'), port: num('número da entrada') }, required: ['clip_id', 'to'] } },
+  { name: 'fusion_remove', description: 'Apaga um nó do Fusion (o que entrava passa a seguir), ou o Fusion todo do clip com node_id "all".', inputSchema: { type: 'object', properties: { clip_id: str('id do clip'), node_id: str('id do nó ou all') }, required: ['clip_id', 'node_id'] } },
+  { name: 'list_capcut', description: 'Lista os projetos do CapCut neste PC (do mais recente para o mais antigo).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'import_capcut', description: 'Abre um projeto do CapCut no Elite Cinema (vídeos, áudio, textos, velocidades). Substitui o projeto aberto (dá para desfazer).', inputSchema: { type: 'object', properties: { file: str('caminho do draft_content.json ou da pasta do projeto; por defeito o mais recente') } } },
+  { name: 'set_canvas', description: 'Formato do vídeo: 9:16 (Reels/TikTok), 16:9 (YouTube), 1:1 ou 4:5.', inputSchema: { type: 'object', properties: { preset: str('9:16, 16:9, 1:1 ou 4:5') }, required: ['preset'] } },
+  { name: 'show_page', description: 'Muda a página do editor (para o Gui ver): media, edit, fusion, color, captions ou deliver.', inputSchema: { type: 'object', properties: { page: str('media, edit, fusion, color, captions ou deliver') }, required: ['page'] } },
+  { name: 'seek', description: 'Move a cabeça de leitura para um tempo (para o Gui ver).', inputSchema: { type: 'object', properties: { time: num('s') }, required: ['time'] } },
+  { name: 'export_video', description: 'Exporta o vídeo final em MP4 (H.264 + AAC).', inputSchema: { type: 'object', properties: { path: str('Caminho do .mp4 (por defeito a pasta Vídeos)'), gpu: { type: 'boolean', description: 'Usar a placa NVIDIA (mais rápido)' } } } },
+  { name: 'open_project', description: 'Abre um projeto .ecproj do PC no editor (substitui o projeto aberto; guarda-o antes se tiver alterações).', inputSchema: { type: 'object', properties: { path: str('Caminho completo do .ecproj') }, required: ['path'] } },
+  { name: 'save_project', description: 'Guarda o projeto (.ecproj, JSON legível).', inputSchema: { type: 'object', properties: { path: str('Caminho do .ecproj (opcional)') } } },
+];
+
+function createMcpServer({ token, call, log = () => {}, version = '0.1.0' }) {
+  const reply = (res, status, body) => {
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(body === undefined ? '' : JSON.stringify(body));
+  };
+  const rpc = (id, result) => ({ jsonrpc: '2.0', id, result });
+  const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
+
+  async function handle(msg) {
+    const { id, method, params } = msg || {};
+    if (method === 'initialize') {
+      return rpc(id, {
+        protocolVersion: params?.protocolVersion || PROTOCOL,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'elite-cinema', title: 'Elite Cinema', version },
+        instructions: 'Editor de vídeo Elite Cinema. Começa por get_project. Tempos em segundos.',
+      });
+    }
+    if (method === 'ping') return rpc(id, {});
+    if (method === 'tools/list') return rpc(id, { tools: TOOLS });
+    if (method === 'tools/call') {
+      const name = params?.name;
+      if (!TOOLS.some((t) => t.name === name)) return rpcError(id, -32602, `Ferramenta desconhecida: ${name}`);
+      try {
+        const result = await call(name, params?.arguments || {});
+        return rpc(id, { content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result, null, 1) }] });
+      } catch (err) {
+        return rpc(id, { content: [{ type: 'text', text: `Erro: ${err.message}` }], isError: true });
+      }
+    }
+    if (id === undefined) return null; // notification
+    return rpcError(id, -32601, `Método não suportado: ${method}`);
+  }
+
+  const server = http.createServer(async (req, res) => {
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return reply(res, 403, { error: 'host' });
+    if (req.headers.origin) return reply(res, 403, { error: 'origin' });
+    const auth = String(req.headers.authorization || '');
+    const given = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!given || given.length !== token.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token))) return reply(res, 401, { error: 'token' });
+    if (new URL(req.url, 'http://x').pathname !== '/mcp') return reply(res, 404, { error: 'not found' });
+    if (req.method === 'GET') return reply(res, 405, { error: 'SSE não suportado; usa POST' });
+    if (req.method === 'DELETE') return reply(res, 200, {});
+    if (req.method !== 'POST') return reply(res, 405, { error: 'method' });
+    let body = '';
+    for await (const chunk of req) {
+      body += chunk;
+      if (body.length > 4 * 1024 * 1024) return reply(res, 413, { error: 'too large' });
+    }
+    let msg;
+    try {
+      msg = JSON.parse(body);
+    } catch {
+      return reply(res, 400, rpcError(null, -32700, 'JSON inválido'));
+    }
+    if (Array.isArray(msg)) {
+      const out = (await Promise.all(msg.map(handle))).filter(Boolean);
+      return out.length ? reply(res, 200, out) : reply(res, 202);
+    }
+    const out = await handle(msg);
+    if (!out) return reply(res, 202);
+    log(`MCP ${msg.method}${msg.params?.name ? ' ' + msg.params.name : ''}`);
+    return reply(res, 200, out);
+  });
+
+  function listen(port = 4545, tries = 10) {
+    return new Promise((resolve, reject) => {
+      const attempt = (p, left) => {
+        server.once('error', (e) => (e.code === 'EADDRINUSE' && left > 0 ? attempt(p + 1, left - 1) : reject(e)));
+        // Every attempt adds a 'listening' callback, so report the port actually bound (not the first one tried).
+        server.listen(p, '127.0.0.1', () => resolve(server.address().port));
+      };
+      attempt(port, tries);
+    });
+  }
+
+  return { server, listen, close: () => new Promise((r) => server.close(r)) };
+}
+
+module.exports = { createMcpServer, TOOLS };

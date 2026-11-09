@@ -1,0 +1,160 @@
+[
+  {
+    "rank": 1,
+    "title": "Tiro a aliança e pergunto",
+    "start": 9731.04,
+    "end": 9787.93,
+    "duration": 56.89,
+    "hook": "o motivo pelo qual eu me relacionei com a Ingrid não é o mesmo motivo que me faz continuar aqui hoje com ela",
+    "ending": "vocês apaixonam-se pela esperança que têm das pessoas se tornarem naquilo que vocês querem que elas se tornem",
+    "why": "Imagem forte (aliança na mesa) + verdade desconfortável sobre casais; gera debate e partilhas.",
+    "fixes": [
+      "pergunto -lhe -> pergunto-lhe",
+      "dá -me -> dá-me",
+      "tu apaixonaste -> tu apaixonaste-te",
+      "já não és mais o que és -> já não és o que eras (2x)",
+      "apaixonam -se -> apaixonam-se"
+    ]
+  },
+  {
+    "rank": 2,
+    "title": "A pobreza é coletiva",
+    "start": 9571.26,
+    "end": 9630.1,
+    "duration": 58.84,
+    "hook": "até quando é que tu queres continuar a relacionar-te com os teus irmãos ou com os teus pais que tu amas por causa dos problemas que tu tens",
+    "ending": "porque a riqueza e o dinheiro leva-te para um lugar que muitas das vezes as pessoas que tu mais amas não vão",
+    "why": "Pergunta-gancho direta + frase citável 'a pobreza é coletiva e a riqueza é individual'; polémica sobre família e dinheiro.",
+    "fixes": [
+      "relacionar -te -> relacionar-te",
+      "que tu amem -> que tu amas",
+      "e não é isso que há uma família? -> e não é isso que é uma família?",
+      "amarmos -nos -> amarmo-nos",
+      "o dinheiro mudou não a pessoa teve que mudar -> o dinheiro não mudou a pessoa, a pessoa teve de mudar",
+      "leva -te -> leva-te"
+    ]
+  },
+  {
+    "rank": 3,
+    "title": "A faca na mão da mãe",
+    "start": 5368.4,
+    "end": 5433.74,
+    "duration": 65.34,
+    "hook": "houve um dia que eu entrei em casa e eu vi a minha mãe com uma faca na mão a dizer que se queria matar",
+    "ending": "estamos a querer resolver o problema de toda a gente menos o nosso",
+    "why": "História pessoal chocante nos primeiros 3 s + lição universal (filhos que viram salvadores dos pais). ATENÇÃO: menção a suicídio, pode limitar alcance; considerar aviso/legenda cuidada.",
+    "fixes": [
+      "lembro -me -> lembro-me",
+      "tirar -lhe -> tirar-lhe",
+      "dar -lhe -> dar-lhe",
+      "tem um acordo que eu e a Ingrid temos -> é um acordo que eu e a Ingrid temos",
+      "resolvê -los -> resolvê-los (2x)"
+    ]
+  },
+  {
+    "rank": 4,
+    "title": "Medo do que já és",
+    "start": 1129.81,
+    "end": 1179.21,
+    "duration": 49.4,
+    "hook": "É tão louco quando eu vejo pessoas com medo de se tornarem uma coisa que elas na verdade já são.",
+    "ending": "Então há muita coisa que vocês vão precisar de encarar e muitos medos que vão vir ao de cima que na verdade são medos de coisas que vocês já vivem.",
+    "why": "Paradoxo instantâneo + exemplos do dia a dia (relação falida, sem dinheiro) com punchline 'já acabou há muito tempo'.",
+    "fixes": [
+      "Como é que está? -> Como é que é?",
+      "que o meu relacionamento acaba -> que o meu relacionamento acabe",
+      "não é paz para ninguém -> não há paz para ninguém",
+      "sem dinheiro, sem eu. -> sem dinheiro.",
+      "De se tornarem uma coisa que na verdade tu já és -> De te tornares numa coisa que na verdade já és"
+    ]
+  },
+  {
+    "rank": 5,
+    "title": "A riqueza, o outro ataca",
+    "start": 10222.08,
+    "end": 10282.54,
+    "duration": 60.46,
+    "hook": "há sempre algo no sucesso que tu ainda não tiveste de que tu te estás a tentar proteger",
+    "ending": "a pobreza eu sei que o outro se identifica mas a riqueza o outro ataca",
+    "why": "Expõe a vergonha de ter sucesso (carro bom, almoço de família); final citável e polémico.",
+    "fixes": [
+      "porque o ganhar 15 mil euros -> porque ganhar 15 mil euros",
+      "tem vergonha -> têm vergonha",
+      "pua -> pá,",
+      "a pobreza eu sei que o outro se identifica -> com a pobreza o outro identifica-se"
+    ]
+  },
+  {
+    "rank": 6,
+    "title": "Ela quer marido, não coach",
+    "start": 10950.01,
+    "end": 10995.63,
+    "duration": 45.62,
+    "hook": "eu tenho problemas sérios porque ela vem me contar os problemas e eu penso que sou o coach dela",
+    "ending": "colocamos sempre em primeiro lugar o profissional em relação à esposa",
+    "why": "Confissão humilde e engraçada ('ela quer um marido, não um coach'); muito relacionável para casais e empreendedores.",
+    "fixes": [
+      "ela vem me contar -> ela vem contar-me",
+      "ela fica o problema -> ela fica com o problema",
+      "e que eu gosto de fazer com isso -> e o que é que eu faço com isso",
+      "em relação em relação à esposa -> em relação à esposa"
+    ]
+  },
+  {
+    "rank": 7,
+    "title": "Não procrastinas a Netflix",
+    "start": 2387.83,
+    "end": 2438.65,
+    "duration": 50.82,
+    "hook": "quando é que foi que tu decidiste aceitar a vida que tu tens hoje?",
+    "ending": "Tu tornaste-te de alguma forma assim.",
+    "why": "Pergunta provocadora + exemplo Netflix que desmonta a desculpa 'eu sou assim'; tema procrastinação tem grande procura.",
+    "fixes": [
+      "tu tornaste assim -> tu tornaste-te assim",
+      "e dizes, chama a mim, que és procrastinador -> e dizes que és procrastinador",
+      "pôr -vos -> pôr-vos",
+      "aos vocês mesmos -> a vocês mesmos",
+      "tornaste -te -> tornaste-te"
+    ]
+  },
+  {
+    "rank": 8,
+    "title": "Uma mão no sonho",
+    "start": 8986.94,
+    "end": 9031.06,
+    "duration": 44.12,
+    "hook": "as pessoas elas nunca se importam com a tua mudança desde que tu não mudes a forma como tu te relacionas com elas",
+    "ending": "então tu ficas aqui uma mão no sonho outra mão na pessoa e não largas nenhum",
+    "why": "Frase de abertura citável + imagem final forte; explica autossabotagem de forma simples.",
+    "fixes": [
+      "auto -sabotar -te -> autossabotar-te"
+    ]
+  },
+  {
+    "rank": 9,
+    "title": "Problemas obrigam-te a decidir",
+    "start": 10424.33,
+    "end": 10457.27,
+    "duration": 32.94,
+    "hook": "vocês não tomam decisões porque estão sempre à espera que alguém confirme as decisões que vocês já sabem que precisam tomar",
+    "ending": "porque é a confirmação que tu estás à procura",
+    "why": "Curto e denso; ideia contraintuitiva ('quando adias decisões os problemas surgem para te obrigar a decidir') com exemplo de relação.",
+    "fixes": [
+      "o marido atrai -> o marido trai",
+      "ou melhor às vezes também também acontece -> ou melhora, às vezes também acontece"
+    ]
+  },
+  {
+    "rank": 10,
+    "title": "A tua justificação é válida",
+    "start": 2820.83,
+    "end": 2856.91,
+    "duration": 36.08,
+    "hook": "Quando surge o problema, qual é a tua postura?",
+    "ending": "Então, as tuas justificativas têm servido apenas para proteger a versão que tu, na verdade, não tens coragem de deixar de ser.",
+    "why": "Confronto direto sobre desculpas com final em frase forte; bom para público de mentalidade/negócios.",
+    "fixes": [
+      "justificativas -> justificações"
+    ]
+  }
+]

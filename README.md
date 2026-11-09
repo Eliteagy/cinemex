@@ -1,0 +1,82 @@
+# Elite Cinema
+
+The Elite Agency's video editor. It takes the best ideas from three programs we studied by reverse engineering for interoperability, without copying their code or their look:
+
+| Idea | Inspired by | In Elite Cinema |
+|---|---|---|
+| Built-in MCP server so an AI can edit | Premiere Pro 2026 (`dvamcp.dll`, "Premiere MCP Server") | `electron/mcp.cjs`: 54 tools over HTTP at `127.0.0.1:4545/mcp` (token required) |
+| Media bins and multi-track editing | Premiere | Media panel, tracks V1/V2, Captions, Music |
+| Word-level transcription, automatic captions | DaVinci Resolve 21 (`GetTranscription`, `AutoCaptionSettings`) | Local Whisper (large-v3-turbo on the GPU) and word-by-word captions |
+| Readable JSON project | CapCut (`draft_content.json`) | `.ecproj` in JSON, times in seconds |
+| Vertical formats and Reels-style animated captions | CapCut | 9:16 / 16:9 / 1:1 / 4:5 presets; Elite Pop, Clean, Box and Title styles |
+| Cut pauses (jump cuts) | Editing practice in all three | "Cut pauses" from the transcript, which also redoes the captions |
+| Speed 0.25×–4× (pitch kept) | Premiere / CapCut | `setpts` + chained `atempo`; preview with `playbackRate` |
+| Transitions (fade, slide, cross dissolve) | All three | In/out per clip; "Dissolve with previous" overlaps the two clips |
+| Zoom/pan keyframes with ease, ready-made animations (Ken Burns, Punch…) | DaVinci / CapCut | Keyframes in the Inspector; export via `zoompan` |
+| Waveform | All three | Peaks computed by ffmpeg on import (100/s) |
+| Import CapCut projects | CapCut (`draft_content.json`) | Videos, music, text (with position), speeds and zoom; finds files that moved |
+| Colour page: sliders, looks, LUTs, scope | DaVinci Resolve (Color page), Premiere (Lumetri) | Exposure, contrast, saturation, temperature, vignette per clip; 7 looks; `.cube` LUTs; RGB histogram; copy grade to all clips. Preview with canvas filters, export with `colorchannelmixer`/`eq`/`lut3d`/`vignette` |
+| Captions page: list editor, own style, SRT | Premiere (Captions panel), CapCut | Edit text and timing of every caption, search, own style (font, size, colours, outline, box colour, uppercase, position), SRT import/export |
+| Animated caption blocks | CapCut (text templates) | 15 blocks with live animated previews: pop, fade, slide, word by word, bounce, karaoke, marker pen, neon glow, 3D shadow, letter spacing; bundled fonts (Anton, Bebas Neue, Bangers, Permanent Marker, Archivo Black, Lilita One, Poppins Black, Inter Black, Great Vibes) |
+| Client caption styles with a keyword (v0.8) | The Gui's own edits for Felipe and Marta (Python/Fusion generators) | **Felipe**: white Inter Black revealed letter by letter + one blue script keyword (Great Vibes, squeezed, gradient, glow, rises with blur). **Marta**: white Inter Black with gradient/glow/shadow, bordeaux "Birds of Paradise" keyword below (the user's installed font, never bundled; falls back to Great Vibes), extra words stacked to the right. The keyword is picked automatically (longest content word) and can be changed per caption on the Captions page |
+| AutoSubs options (v0.8) | AutoSubs (MIT, Tauri + faster-whisper) | Model choice, language auto-detect, translate to English, context prompt, density / characters per line, max lines, text case, remove punctuation, censored words; *Legendas automáticas* panel and `auto_captions` parameters. Re-implemented natively, no AutoSubs binaries |
+| Masks | Premiere Pro (effect masks) | Ellipse/rectangle, feather, invert, blur/pixelate/darken/cut, linear movement; drawn and dragged on the viewer |
+| Fusion page (nodes) | DaVinci Resolve (Fusion) | Node editor per clip: Media, Background, Merge (normal/screen/multiply/add), Transform, Chroma key, Blur, Glow, Colour, Film grain, Letterbox |
+| Music ducking and loudness | Premiere (Essential Sound), DaVinci (Fairlight) | Music lowered under the voice (`sidechaincompress`), normalisation to -14 LUFS (`loudnorm`) |
+| More transitions (v0.10) | CapCut (Whip, Zoom in, Spin), Premiere (Dip to White/Black), Resolve (Blur Dissolve) | Whip with horizontal motion blur, zoom-through, spin, white flash, black dip, defocus. Shared numbers in `src/lib/fx.js`; blur is a 3-step staircase so `gblur` with `enable=` matches the preview |
+| Rotation and opacity keyframes, more motion presets (v0.10) | All three | Rotate (`rotate` filter) and opacity (`geq` alpha) keyframes; presets Shake (handheld), Pulse, Spin in, Fade in/out |
+| Graphics templates (v0.10) | Premiere (Essential Graphics), CapCut (text templates), Resolve (titles) | Lower third, title with underline, label and progress bar on their own "Grafismos" tracks; one event list (`src/lib/graphics.js`) drawn by the preview and written as ASS (`\move`, `ad`, `	`, `\p1` shapes, BorderStyle 3 boxes) |
+| Sound effects (v0.10) | CapCut (sound effects), Premiere (Essential Sound) | 9 synthesised effects (whoosh, swoosh, pop, click, riser, impact, ding, camera, glitch) in `electron/sfx.cjs`, written once as WAV; auto SFX on transitions, cuts and graphics |
+| Markers, beats, freeze frame (v0.10) | All three; CapCut "Beats", Premiere "Beat Edit" | Markers (M key), beat detection from the waveform, zoom pulse on beats, cuts snapped to beats, freeze frame (still extracted by ffmpeg, rest of the track pushed back) |
+| Keyframe interpolation (v0.11) | After Effects (Easy Ease, graph editor, hold keyframes) | Per keyframe: smooth, linear, hold, easy ease, easy in/out, own cubic-bezier. `src/lib/anim.js` evaluates it in JS for the preview and writes the same maths (6 fixed Newton steps with `st`/`ld`) as ffmpeg expressions; a test evaluates both and compares |
+| Expressions (v0.11) | After Effects (`wiggle`, `loopOut`, inertial bounce) | Per property: wiggle (frequency, amplitude), loop (cycle, ping-pong), overshoot (strength, oscillations, damping), without running user code |
+| Blend modes and track mattes (v0.11) | After Effects (layer modes, track mattes) | Normal, multiply, screen, overlay, add, lighten, darken, difference (ffmpeg `blend` with the base as backdrop, canvas `globalCompositeOperation`); track matte from a text (video inside the letters, `drawtext`) or another media's alpha/brightness, invertible |
+| Effect stack (v0.11) | After Effects (Drop Shadow, Glow, CC Light Sweep, Gradient Ramp) | `src/lib/layerfx.js` builds the export filters; `src/engine/layerfx.ts` draws the same geometry in the preview |
+
+## Opening it
+
+- Start menu → **Elite Cinema**, or double-click `Abrir Elite Cinema.vbs`.
+- For development: `pnpm app` (builds and opens), `pnpm test` (engine tests, including a real ffmpeg export).
+
+## Using it
+
+- **Import:** drag files onto the window, or click Import. Double-click a media item to put it at the end of the timeline, or drag it onto a track.
+- **Editing:** drag clips to move them, drag the edges to trim. `S` cuts at the playhead, `Delete` deletes (`Shift+Delete` deletes and closes the gap), `T` adds text, `Space` plays, `Ctrl+Z`/`Ctrl+Shift+Z` undo and redo. The magnet snaps clips to edges and to the playhead.
+- **Captions:** select a clip (or nothing, to caption the whole video) → *Automatic captions*. Transcription runs on this PC.
+- **Colour:** *Cor* page. Click a look (Shift+click: all clips) or move the sliders; double-click a slider to reset it. LUTs apply on export.
+- **Fusion:** *Fusion* page. Add nodes from the left, connect an output (●) to an input, set the node on the right. Chroma key + Background + Merge = green screen.
+- **Masks:** Inspector → *Máscaras*, then drag the shape on the viewer.
+- **Captions:** *Legendas* page. *Legendas automáticas* opens the AutoSubs-style options (model, language, translation, density, lines, case, punctuation, censored words). Click a block to apply it (Shift+click: only the selected caption). Edit the text and timing in the list; with Felipe or Marta, the selected caption shows its words: click one to make it the keyword. *O meu estilo* changes every caption at once; SRT in and out.
+- **Export:** *Export* → MP4 H.264 + AAC with the captions burned in (libass). The NVIDIA GPU is available through MCP (`gpu: true`).
+
+## Claude editing
+
+1. Open Elite Cinema once (it creates the access token).
+2. Run `powershell -File ligar-ao-claude.ps1` (registers the MCP in Claude Code).
+3. In a new Claude session: "import C:\...\video.mp4, cut the pauses, put Elite Pop captions on it and export it in 9:16".
+
+MCP tools (48): `get_project`, `import_media`, `add_clip`, `move_clip`, `trim_clip`, `split_clip`, `delete_clip`, `add_text`, `update_clip`, `auto_captions`, `cut_silences`, `set_speed`, `set_transition`, `dissolve`, `set_keyframe`, `animate_clip`, `list_capcut`, `import_capcut`, `set_canvas`, `set_color`, `set_caption_style`, `export_srt`, `import_srt`, `set_audio`, `add_mask`, `update_mask`, `remove_mask`, `fusion_add_node`, `fusion_set`, `fusion_link`, `fusion_remove`, `show_page`, `seek`, `export_video`, `save_project`, `open_project`, `list_caption_styles`, `save_caption_style`, `delete_caption_style`, and in v0.10 `add_graphic`, `update_graphic`, `list_sfx`, `add_sfx`, `auto_sfx`, `detect_beats`, `beat_sync`, `add_marker`, `freeze_frame`, and in v0.11 `set_keyframe_ease`, `set_modifier`, `set_blend`, `set_matte`, `add_effect`, `update_effect`.
+
+Security: the server only listens on 127.0.0.1, requires a bearer token (kept in the app's data folder, not in the discovery file `~/.elite-cinema/mcp.json`), and refuses any request coming from a web page (Origin header). The interface only plays files that were imported or that are in opened projects.
+
+## Structure
+
+```
+electron/main.cjs      window, ec-media:// protocol (byte ranges), IPC, MCP ↔ editor bridge
+electron/mcp.cjs       MCP server (JSON-RPC 2.0, Streamable HTTP with JSON replies)
+electron/render.cjs    project → ffmpeg command (overlays, mixing, ASS captions)
+electron/media.cjs     ffprobe + thumbnails
+electron/captions.cjs  Whisper and grouping words into captions
+electron/capcut.cjs    CapCut draft → Elite Cinema project (read only)
+engine/transcribe.py   faster-whisper with word timestamps
+src/store.ts           editor state (Zustand) with undo/redo
+src/engine/player.ts   canvas preview in sync with the timeline
+src/engine/caption.ts  caption effects (shared with the block gallery)
+src/lib/emphasis.js    keyword captions: keyword pick, lines, positions (shared by preview, export, grouping)
+electron/fonts.cjs     user fonts installed on the PC (personal licences, never shipped)
+src/engine/mask.ts     masks in the preview
+src/engine/fusion.ts   Fusion node graph in the preview (src/lib/fusion-nodes.json)
+src/components/        TopBar, MediaBin, Viewer, Inspector, Timeline, Color, Captions, Deliver
+```
+
+Requirements: Node 20+, pnpm, ffmpeg/ffprobe on the PATH, Python with `faster-whisper` (for captions).

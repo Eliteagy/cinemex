@@ -75,7 +75,7 @@ export function DeliverSettings({ onDone }: { onDone: (d: DoneExport) => void })
               Processador
             </button>
             <button className={gpu ? 'on' : ''} onClick={() => setGpu(true)}>
-              Placa NVIDIA
+              {/Mac/.test(navigator.userAgent) ? 'Placa gráfica' : 'Placa NVIDIA'}
             </button>
           </div>
         </div>

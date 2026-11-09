@@ -10,7 +10,9 @@ const path = require('node:path');
 const MODEL_URL = 'https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx';
 const MODEL_BYTES = 14975696;
 const SCRIPT = path.join(__dirname, '..', 'engine', 'matte.py');
-const PY_PACKAGES = ['onnxruntime-directml', 'numpy', 'opencv-python-headless'];
+const { PYTHON, WIN, venvPython } = require('./bin.cjs');
+// DirectML only exists on Windows; elsewhere the plain onnxruntime (CPU) runs the same model.
+const PY_PACKAGES = [WIN ? 'onnxruntime-directml' : 'onnxruntime', 'numpy', 'opencv-python-headless'];
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -21,9 +23,9 @@ function run(cmd, args, opts = {}) {
   });
 }
 
-function createMatteEngine(userData, { python = process.env.ELITE_PYTHON || 'python' } = {}) {
+function createMatteEngine(userData, { python = PYTHON } = {}) {
   const venv = path.join(userData, 'matte-venv');
-  const venvPy = path.join(venv, 'Scripts', 'python.exe');
+  const venvPy = venvPython(venv);
   const model = path.join(userData, 'models', 'rvm_mobilenetv3_fp32.onnx');
   const dir = path.join(userData, 'mattes');
   let setup = null;

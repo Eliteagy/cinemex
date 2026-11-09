@@ -16,7 +16,7 @@ const anim = require('../src/lib/anim.js');
 const { layerFx, BLEND_FFMPEG } = require('../src/lib/layerfx.js');
 const xform = require('../src/lib/xform.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
-const FFMPEG = process.env.ELITE_FFMPEG || 'ffmpeg';
+const { FFMPEG } = require('./bin.cjs');
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
@@ -1036,7 +1036,11 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   } else if (audio.length) filters.push(`${audio.map((a) => `[${a}]`).join('')}amix=inputs=${audio.length}:normalize=0:dropout_transition=0,${tail}[aout]`);
   else filters.push(`anullsrc=r=48000:cl=stereo,atrim=0:${duration}[aout]`);
 
-  const video = encoder === 'h264_nvenc' ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', String(crf + 1)] : ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf)];
+  // GPU: NVIDIA (nvenc) on Windows, VideoToolbox on macOS (constant quality 1-100: 65 / 59 / 51).
+  const video =
+    encoder === 'h264_nvenc' ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', String(crf + 1)]
+    : encoder === 'h264_videotoolbox' ? ['-c:v', 'h264_videotoolbox', '-q:v', String(101 - 2 * crf)]
+    : ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf)];
   args.push(
     '-filter_complex', filters.join(';'),
     '-map', '[vout]', '-map', '[aout]',

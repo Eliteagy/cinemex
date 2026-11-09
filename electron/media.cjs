@@ -3,8 +3,7 @@ const { execFile } = require('node:child_process');
 const crypto = require('node:crypto');
 const path = require('node:path');
 
-const FFPROBE = process.env.ELITE_FFPROBE || 'ffprobe';
-const FFMPEG = process.env.ELITE_FFMPEG || 'ffmpeg';
+const { FFMPEG, FFPROBE } = require('./bin.cjs');
 const VIDEO = /\.(mp4|mov|m4v|mkv|webm|avi|mts|m2ts|mxf)$/i;
 const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i;
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif|heic|tiff?)$/i;

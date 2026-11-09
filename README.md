@@ -35,7 +35,8 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 
 ## Opening it
 
-- Start menu → **Elite Cinema**, or double-click `Abrir Elite Cinema.vbs`.
+- Windows: Start menu → **Elite Cinema**, or double-click `Abrir Elite Cinema.vbs`.
+- macOS: double-click `Abrir Elite Cinema.command` (installs on the first run, rebuilds the interface every time).
 - For development: `pnpm app` (builds and opens), `pnpm test` (engine tests, including a real ffmpeg export).
 
 ## Using it
@@ -52,7 +53,7 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 ## Claude editing
 
 1. Open Elite Cinema once (it creates the access token).
-2. Run `powershell -File ligar-ao-claude.ps1` (registers the MCP in Claude Code).
+2. Run `powershell -File ligar-ao-claude.ps1` (registers the MCP in Claude Code). On macOS: `sh ligar-ao-claude.sh`.
 3. In a new Claude session: "import C:\...\video.mp4, cut the pauses, put Elite Pop captions on it and export it in 9:16".
 
 MCP tools (48): `get_project`, `import_media`, `add_clip`, `move_clip`, `trim_clip`, `split_clip`, `delete_clip`, `add_text`, `update_clip`, `auto_captions`, `cut_silences`, `set_speed`, `set_transition`, `dissolve`, `set_keyframe`, `animate_clip`, `list_capcut`, `import_capcut`, `set_canvas`, `set_color`, `set_caption_style`, `export_srt`, `import_srt`, `set_audio`, `add_mask`, `update_mask`, `remove_mask`, `fusion_add_node`, `fusion_set`, `fusion_link`, `fusion_remove`, `show_page`, `seek`, `export_video`, `save_project`, `open_project`, `list_caption_styles`, `save_caption_style`, `delete_caption_style`, and in v0.10 `add_graphic`, `update_graphic`, `list_sfx`, `add_sfx`, `auto_sfx`, `detect_beats`, `beat_sync`, `add_marker`, `freeze_frame`, and in v0.11 `set_keyframe_ease`, `set_modifier`, `set_blend`, `set_matte`, `add_effect`, `update_effect`.
@@ -80,6 +81,15 @@ src/components/        TopBar, MediaBin, Viewer, Inspector, Timeline, Color, Cap
 ```
 
 Requirements: Node 20+, pnpm, ffmpeg/ffprobe on the PATH, Python with `faster-whisper` (for captions).
+
+### macOS
+
+The same code runs on a Mac; `electron/bin.cjs` finds the programs on each system.
+
+- **ffmpeg:** the plain Homebrew `ffmpeg` has no libass/freetype, so exports with captions, graphics or text mattes fail (`No such filter: subtitles` / `drawtext`). Install `brew install ffmpeg-full`; it is found on its own in `/opt/homebrew/opt/ffmpeg-full` (or set `ELITE_FFMPEG` / `ELITE_FFPROBE`).
+- **Captions:** the Homebrew Python does not take `pip install`, so Whisper lives in a venv that the app picks up: `python3 -m venv ~/.elite-cinema/venv && ~/.elite-cinema/venv/bin/pip install faster-whisper "av<19"` (PyAV 19 dropped an argument faster-whisper 1.2 still passes). It runs on the CPU.
+- **GPU export:** `gpu: true` / *Placa gráfica* uses VideoToolbox (`h264_videotoolbox`) instead of NVIDIA.
+- Fonts come from `~/Library/Fonts`, `/Library/Fonts` and `/System/Library/Fonts`; CapCut drafts from `~/Movies/CapCut`.
 
 ## Colaborar (GitHub)
 

@@ -248,7 +248,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       for (const k of ['exposure', 'contrast', 'saturation', 'temperature', 'vignette'] as const) if (n(a[k]) !== undefined) g[k] = n(a[k]);
       if (s(a.lut) !== undefined) {
         const lut = s(a.lut)!;
-        if (lut && !/^[a-zA-Z]:[\\/].*\.cube$/i.test(lut)) throw new Error('A LUT tem de ser um caminho completo de um ficheiro .cube');
+        if (lut && !/^(?:[a-zA-Z]:[\\/]|\/).*\.cube$/i.test(lut)) throw new Error('A LUT tem de ser um caminho completo de um ficheiro .cube');
         g.lut = lut;
       }
       const clips = S().setGrade(ids, g, Boolean(look));
@@ -407,7 +407,8 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return { playhead: S().playhead };
     case 'export_video': {
       const path = s(a.path);
-      if (path && !/^[a-zA-Z]:[\\/]/.test(path)) throw new Error('Usa um caminho completo (ex.: C:\\Users\\...\\video.mp4)');
+      // Windows (C:\...) or macOS (/Users/...) full path.
+      if (path && !/^(?:[a-zA-Z]:[\\/]|\/)/.test(path)) throw new Error('Usa um caminho completo (ex.: C:\\Users\\...\\video.mp4 ou /Users/.../video.mp4)');
       return { path: await exportVideo({ path, gpu: a.gpu === true, ask: false }) };
     }
     case 'open_project': {

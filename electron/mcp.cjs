@@ -63,7 +63,7 @@ const TOOLS = [
   { name: 'set_canvas', description: 'Formato do vídeo: 9:16 (Reels/TikTok), 16:9 (YouTube), 1:1 ou 4:5.', inputSchema: { type: 'object', properties: { preset: str('9:16, 16:9, 1:1 ou 4:5') }, required: ['preset'] } },
   { name: 'show_page', description: 'Muda a página do editor (para o Gui ver): media, edit, fusion, color, captions ou deliver.', inputSchema: { type: 'object', properties: { page: str('media, edit, fusion, color, captions ou deliver') }, required: ['page'] } },
   { name: 'seek', description: 'Move a cabeça de leitura para um tempo (para o Gui ver).', inputSchema: { type: 'object', properties: { time: num('s') }, required: ['time'] } },
-  { name: 'export_video', description: 'Exporta o vídeo final em MP4 (H.264 + AAC).', inputSchema: { type: 'object', properties: { path: str('Caminho do .mp4 (por defeito a pasta Vídeos)'), gpu: { type: 'boolean', description: 'Usar a placa NVIDIA (mais rápido)' } } } },
+  { name: 'export_video', description: 'Exporta o vídeo final em MP4 (H.264 + AAC).', inputSchema: { type: 'object', properties: { path: str('Caminho do .mp4 (por defeito a pasta Vídeos)'), gpu: { type: 'boolean', description: 'Usar a placa gráfica (mais rápido): NVIDIA no Windows, VideoToolbox no Mac' } } } },
   { name: 'open_project', description: 'Abre um projeto .ecproj do PC no editor (substitui o projeto aberto; guarda-o antes se tiver alterações).', inputSchema: { type: 'object', properties: { path: str('Caminho completo do .ecproj') }, required: ['path'] } },
   { name: 'save_project', description: 'Guarda o projeto (.ecproj, JSON legível).', inputSchema: { type: 'object', properties: { path: str('Caminho do .ecproj (opcional)') } } },
 ];

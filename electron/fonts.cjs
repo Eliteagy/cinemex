@@ -1,15 +1,28 @@
 // User fonts: fonts installed on this PC that the app may use but never ships (personal-use
-// licences such as Birds of Paradise). Found in the Windows font folders, read for the preview and
-// copied next to the ASS file on export. A missing font falls back to a bundled one (USER_FONTS).
+// licences such as Birds of Paradise). Found in the Windows or macOS font folders, read for the
+// preview and copied next to the ASS file on export. A missing font falls back to a bundled one
+// (USER_FONTS).
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+
+const MAC = process.platform === 'darwin';
+// macOS: the user's own fonts first, then the ones installed for everyone and the system's.
+const MAC_SYSTEM_DIRS = ['/Library/Fonts', '/System/Library/Fonts/Supplemental', '/System/Library/Fonts'];
 
 function fontDirs() {
   const dirs = [];
   if (process.env.ELITE_USER_FONTS_DIR) dirs.push(process.env.ELITE_USER_FONTS_DIR);
+  if (MAC) return [...dirs, path.join(os.homedir(), 'Library', 'Fonts'), ...MAC_SYSTEM_DIRS];
   if (process.env.LOCALAPPDATA) dirs.push(path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Windows', 'Fonts'));
   dirs.push(path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts'));
   return dirs;
+}
+
+/** A folder of fonts that came with the system (not installed by the user). */
+function isSystemDir(dir) {
+  if (MAC) return MAC_SYSTEM_DIRS.includes(dir);
+  return dir.toLowerCase().startsWith(String(process.env.WINDIR || 'C:\Windows').toLowerCase());
 }
 
 /** Family name (name ID 1) of a TrueType/OpenType font file. */
@@ -170,7 +183,7 @@ function listInstalledFonts(cacheFile) {
     } catch {
       continue;
     }
-    const user = !dir.toLowerCase().startsWith(String(process.env.WINDIR || 'C:\Windows').toLowerCase());
+    const user = !isSystemDir(dir);
     for (const name of list) {
       if (!/\.(ttf|otf|ttc)$/i.test(name)) continue;
       const file = path.join(dir, name);

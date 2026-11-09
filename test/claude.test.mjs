@@ -10,7 +10,9 @@ const require = createRequire(import.meta.url);
 const { buildClaudeArgs, buildChildEnv, buildMcpConfig, assertEditorOnlyConfig, createStreamParser, toolLabel, createClaudeChat, redact, MISSING_MESSAGE, AUTH_MESSAGE } = require('../electron/claude-chat.cjs');
 
 const SID = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const base = { mcpConfigPath: 'C:\\Users\\x\\AppData\\Roaming\\Elite Cinema\\claude-mcp.json', systemPromptPath: 'C:\\Users\\x\\AppData\\Roaming\\Elite Cinema\\claude-chat\\system-prompt.txt', sessionId: SID };
+// The app's data folder, as an absolute path of the system the tests run on (Windows or macOS).
+const DATA = process.platform === 'win32' ? 'C:\\Users\\x\\AppData\\Roaming\\Elite Cinema' : '/Users/x/Library/Application Support/Elite Cinema';
+const base = { mcpConfigPath: path.join(DATA, 'claude-mcp.json'), systemPromptPath: path.join(DATA, 'claude-chat', 'system-prompt.txt'), sessionId: SID };
 const flag = (args, f) => args[args.indexOf(f) + 1];
 
 test('args: headless stream-json, no built-in tools, only the editor MCP, new vs resumed session', () => {

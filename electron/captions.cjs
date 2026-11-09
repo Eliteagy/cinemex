@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { cleanWord, pickKeyword } = require('../src/lib/emphasis.js');
 
-const PYTHON = process.env.ELITE_PYTHON || 'python';
+const { PYTHON } = require('./bin.cjs');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 
 const MODELS = ['auto', 'large-v3-turbo', 'large-v3', 'medium', 'small', 'base', 'tiny'];

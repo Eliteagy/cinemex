@@ -5,7 +5,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const DRAFTS = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'CapCut', 'User Data', 'Projects', 'com.lveditor.draft');
+// macOS keeps the same tree under ~/Movies/CapCut.
+const CAPCUT_HOME = process.platform === 'darwin' ? path.join(os.homedir(), 'Movies') : process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+const DRAFTS = path.join(CAPCUT_HOME, 'CapCut', 'User Data', 'Projects', 'com.lveditor.draft');
 const US = 1e6;
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
@@ -38,7 +40,7 @@ function listDrafts(dir = DRAFTS) {
 /** A media file that moved: look for the same name in the usual folders (bounded walk). */
 function findMoved(file) {
   const name = path.basename(file).toLowerCase();
-  const roots = ['Videos', 'Desktop', 'Downloads', 'Documents'].map((d) => path.join(os.homedir(), d));
+  const roots = ['Videos', 'Movies', 'Desktop', 'Downloads', 'Documents'].map((d) => path.join(os.homedir(), d));
   let budget = 4000;
   const walk = (dir, depth) => {
     if (depth < 0 || budget <= 0) return null;

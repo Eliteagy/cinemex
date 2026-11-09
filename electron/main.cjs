@@ -184,7 +184,7 @@ function handlers() {
     exportAbort = new AbortController();
     try {
       return await runExport(project, out, {
-        encoder: opts.gpu ? 'h264_nvenc' : 'libx264',
+        encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',
         quality: ['alta', 'media', 'leve'].includes(opts.quality) ? opts.quality : 'alta',
         signal: exportAbort.signal,
         onProgress: (p) => win?.webContents.send('export:progress', p),

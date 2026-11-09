@@ -98,3 +98,25 @@ Repositório: https://github.com/Eliteagy/cinemex. Só o programa: os projetos (
 - Instalar: `git clone https://github.com/Eliteagy/cinemex.git`, depois `pnpm install` e `pnpm app` (precisa de Node 24+, pnpm, ffmpeg no PATH e Python 3 com faster-whisper para as legendas).
 - Enviar alterações: commit no `main` e `git push` (os colaboradores são convidados pelo dono do repositório).
 - Sincronização automática neste PC (push a cada commit, pull a cada 15 min): `powershell -ExecutionPolicy Bypass -File tools\sync\instalar-sync.ps1` (desligar com `-Remover`).
+
+## Ligação (editar em direto com o outro computador)
+
+Botão **Ligação** na barra de cima. Três coisas:
+
+1. **Computadores**: quem está ligado, o sistema (Windows/Mac) e a versão do Cinemex de cada um.
+2. **Editar em direto**: "Partilhar este projeto" envia o projeto aberto; o outro recebe um convite e "Entrar no projeto" abre-o. A partir daí cada alteração passa logo para o outro lado, e a cabeça de leitura e o clip selecionado do outro aparecem na timeline na cor dele. Dois a mexer em clips diferentes ao mesmo tempo não se estragam; no mesmo clip ganha a última alteração.
+3. **Versão do Cinemex**: diz se há alterações novas no GitHub e "Atualizar e reabrir" faz `git pull`, instala dependências se mudaram, prepara a interface e reabre.
+
+**Pasta partilhada (Google Drive).** Com o Google Drive para computador instalado nos dois, a pasta `Cinemex` dentro de "O meu disco" é a pasta partilhada. Vídeos e projetos lá dentro ficam guardados como `@shared/...` e cada computador abre-os com o seu próprio caminho (G:\ no Windows, `~/Library/CloudStorage/GoogleDrive-…` no Mac). Pode escolher-se outra pasta no painel.
+
+**Segurança.** Os dois computadores usam o mesmo **código de ligação** (`cmx1-…`, criado no painel e enviado ao outro por mensagem privada). O código nunca sai do computador: dele saem o nome da sala e a chave AES-256-GCM, por isso o servidor só passa mensagens cifradas que não consegue ler, e não guarda nada.
+
+**Servidor de ligação** (`relay/`, um Worker do Cloudflare com Durable Objects, plano grátis). Publicar uma vez:
+
+```
+cd relay
+npx wrangler login
+npx wrangler deploy
+```
+
+O endereço que aparece (`https://cinemex-relay.<conta>.workers.dev`) vai no campo "Servidor de ligação" do painel, nos dois computadores. Para testar sem conta: `npx wrangler dev --port 8799` e `http://127.0.0.1:8799`.

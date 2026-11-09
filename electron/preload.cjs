@@ -42,6 +42,35 @@ contextBridge.exposeInMainWorld('ec', {
   sfxList: () => ipcRenderer.invoke('sfx:list'),
   freezeFrame: (file, time) => ipcRenderer.invoke('media:freeze', file, time),
   paths: () => ipcRenderer.invoke('app:paths'),
+  // Ligação (live link with the other computer) and updates from GitHub.
+  collabGet: () => ipcRenderer.invoke('collab:get'),
+  collabSet: (patch) => ipcRenderer.invoke('collab:set', patch),
+  collabPickFolder: () => ipcRenderer.invoke('collab:pick-folder'),
+  collabMakeFolder: () => ipcRenderer.invoke('collab:make-folder'),
+  collabNewCode: () => ipcRenderer.invoke('collab:new-code'),
+  collabGetCode: () => ipcRenderer.invoke('collab:get-code'),
+  collabSetCode: (code) => ipcRenderer.invoke('collab:set-code', code),
+  collabConnect: () => ipcRenderer.invoke('collab:connect'),
+  collabDisconnect: () => ipcRenderer.invoke('collab:disconnect'),
+  collabSend: (msg) => ipcRenderer.invoke('collab:send', msg),
+  onCollabStatus: (cb) => {
+    const f = (_e, s) => cb(s);
+    ipcRenderer.on('collab:status', f);
+    return () => ipcRenderer.removeListener('collab:status', f);
+  },
+  onCollabMessage: (cb) => {
+    const f = (_e, m) => cb(m);
+    ipcRenderer.on('collab:message', f);
+    return () => ipcRenderer.removeListener('collab:message', f);
+  },
+  updateInfo: (opts) => ipcRenderer.invoke('update:info', opts),
+  updateApply: () => ipcRenderer.invoke('update:apply'),
+  onUpdateStep: (cb) => {
+    const f = (_e, s) => cb(s);
+    ipcRenderer.on('update:step', f);
+    return () => ipcRenderer.removeListener('update:step', f);
+  },
+  relaunch: () => ipcRenderer.invoke('app:relaunch'),
   claudeStatus: (who) => ipcRenderer.invoke('claude:status', who),
   claudeSend: (projectKey, text, who) => ipcRenderer.invoke('claude:send', projectKey, text, who),
   claudeCancel: (who) => ipcRenderer.invoke('claude:cancel', who),

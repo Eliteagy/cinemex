@@ -433,7 +433,73 @@ export interface EcBridge {
   /** A still of one frame of a video (PNG in the app's data folder) for freeze frames. */
   freezeFrame(file: string, time: number): Promise<string>;
   onMcpCall(handler: (name: string, args: Record<string, unknown>) => Promise<unknown>): () => void;
+  /** Ligação: live link with the other computer (see electron/collab.cjs). */
+  collabGet(): Promise<CollabView>;
+  collabSet(patch: { name?: string; relayUrl?: string; autoConnect?: boolean; sharedRoot?: null }): Promise<CollabView>;
+  collabPickFolder(): Promise<CollabView>;
+  collabMakeFolder(): Promise<CollabView>;
+  collabNewCode(): Promise<string>;
+  collabGetCode(): Promise<string | null>;
+  collabSetCode(code: string | null): Promise<CollabView>;
+  collabConnect(): Promise<CollabView>;
+  collabDisconnect(): Promise<CollabView>;
+  collabSend(msg: CollabOut): Promise<boolean>;
+  onCollabStatus(cb: (s: CollabStatus) => void): () => void;
+  onCollabMessage(cb: (m: CollabIn) => void): () => void;
+  updateInfo(opts?: { fetch?: boolean }): Promise<UpdateInfo>;
+  updateApply(): Promise<{ changed: boolean; from?: string; to?: string }>;
+  onUpdateStep(cb: (step: string) => void): () => void;
+  relaunch(): Promise<void>;
 }
+
+export interface CollabStatus {
+  state: 'off' | 'connecting' | 'online' | 'error';
+  error: string | null;
+  me: string | null;
+  peers: string[];
+}
+export interface CollabView {
+  config: { relayUrl: string; name: string; sharedRoot: string | null; autoConnect: boolean };
+  hasCode: boolean;
+  sharedRoot: string | null;
+  googleDrive: string | null;
+  os: string;
+  defaultName: string;
+  status: CollabStatus;
+}
+export interface CommitInfo {
+  hash: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+export type UpdateInfo =
+  | { git: false }
+  | { git: true; local: CommitInfo | null; remote: CommitInfo | null; behind: number; ahead: number; dirty: boolean; fetched: boolean; fetchError: string | null };
+
+/** What one Cinemex tells the others about itself. */
+export interface PeerHello {
+  name: string;
+  os: string;
+  version: string | null;
+  session: { id: string; name: string } | null;
+}
+/** Where the other person is looking: drawn on the timeline in their colour. */
+export interface PeerPresence {
+  session: string | null;
+  playhead: number;
+  selected: string | null;
+  page: string;
+  playing: boolean;
+}
+export type CollabOut =
+  | ({ kind: 'hello'; reply?: boolean } & PeerHello)
+  | ({ kind: 'presence' } & PeerPresence)
+  | { kind: 'op'; session: string; op: import('./lib/collab').ProjectOp }
+  | { kind: 'snapshot'; session: string; name: string; project: Project; to?: string }
+  | { kind: 'want'; session: string }
+  | { kind: 'stop'; session: string };
+export type CollabIn = (CollabOut & { from: string }) | { kind: 'join'; peer: string; from?: string } | { kind: 'leave'; peer: string; from?: string };
 
 declare global {
   interface Window {

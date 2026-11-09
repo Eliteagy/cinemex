@@ -765,3 +765,43 @@ input[type="range"].range.grade-temperature::-webkit-slider-runnable-track { bac
   .panel, .viewer, .timeline, .node-editor { background: var(--bg-1); }
   :root { --island: #0a0908; }
 }
+
+/* ------------------------------------------------------------------------------ Ligação (live link) */
+.link-btn { position: relative; gap: 8px; }
+.link-btn.on { background: var(--bg-3); color: var(--text); }
+.link-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-4); }
+.link-dot.connecting { background: var(--accent); animation: cl-pulse 1.2s ease-in-out infinite; }
+.link-dot.error { background: var(--danger); }
+.link-dot.online { background: var(--text-3); }
+.link-dot.online.peer { background: var(--live); box-shadow: 0 0 8px var(--live); }
+.link-badge { position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg-0), 0 0 8px var(--accent-glow); }
+
+.link-panel {
+  position: fixed; z-index: 41; top: 52px; right: var(--gutter); bottom: 68px; width: 360px;
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--glass-sheen), rgba(18, 17, 15, 0.92); border: 1px solid var(--stroke-2); border-radius: var(--r-xl);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-edge), 0 24px 60px -18px rgba(0, 0, 0, 0.95);
+  transform: translateX(calc(100% + 24px)); opacity: 0; pointer-events: none;
+  transition: transform 260ms var(--ease), opacity 200ms ease;
+  user-select: text;
+}
+.link-panel.open { transform: none; opacity: 1; pointer-events: auto; }
+.link-panel .card:first-child { margin-top: 0; }
+.link-panel .card p b { color: var(--text); font-weight: 600; }
+.link-panel .hint { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; word-break: break-word; }
+.link-panel .row .input { flex: 1; min-width: 0; }
+.peer-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--stroke-1); }
+.peer-row:first-of-type { border-top: 0; }
+.peer-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 8px currentColor; }
+.peer-txt { display: grid; gap: 2px; min-width: 0; }
+.peer-txt b { font: 600 13px/1.3 var(--display); color: var(--text); }
+.peer-txt span { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-empty { margin: 8px 0 0 !important; }
+.code-box { display: block; margin: 0 0 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--well); border: 1px solid var(--stroke-2); font: 500 12px/1.4 var(--num); color: var(--accent-hi); word-break: break-all; user-select: all; }
+
+/* The other person's playhead and selection on the timeline, in their colour. */
+.peer-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 4; pointer-events: none; background: var(--pc); box-shadow: 0 0 10px var(--pc); opacity: 0.9; transition: left 90ms linear; }
+.peer-head span { position: absolute; top: 2px; left: 4px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--pc); color: #000; font: 600 10.5px/1.4 var(--ui); white-space: nowrap; }
+.clip.peer-sel { box-shadow: inset 0 0 0 2px var(--pc), 0 0 12px -2px var(--pc); }
+@media (prefers-reduced-motion: reduce) { .peer-head { transition: none; } .link-panel { transition: none; } }

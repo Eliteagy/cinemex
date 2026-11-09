@@ -4,6 +4,7 @@ import { dur, end, fmtTime, projectDuration, r3, speedOf } from '../lib/project'
 import { Wave } from './Wave';
 import type { Clip, Track } from '../types';
 import { Icon } from './Icon';
+import { peerColor, useCollab } from '../collab';
 
 const RANK: Record<string, number> = { text: 0, video: 1, audio: 2 };
 const SNAP_PX = 8;
@@ -31,6 +32,13 @@ export function Timeline() {
   const project = useEditor((s) => s.project);
   const zoom = useEditor((s) => s.zoom);
   const playhead = useEditor((s) => s.playhead);
+  const peers = useCollab((s) => s.peers);
+  const session = useCollab((s) => s.session?.id ?? null);
+  const peerSel = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const p of Object.values(peers)) if (p.presence?.selected && p.presence.session === session) out[p.presence.selected] = peerColor(p.id);
+    return out;
+  }, [peers, session]);
   const selected = useEditor((s) => s.selected);
   const snap = useEditor((s) => s.snap);
   const status = useEditor((s) => s.status);
@@ -260,8 +268,8 @@ export function Timeline() {
                   return (
                     <div
                       key={c.id}
-                      className={`clip ${t.kind}${sel === c.id ? ' sel' : ''}`}
-                      style={{ left: c.start * zoom, width: w, opacity: t.hidden ? 0.4 : 1 }}
+                      className={`clip ${t.kind}${sel === c.id ? ' sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
+                      style={{ left: c.start * zoom, width: w, opacity: t.hidden ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
                       onPointerDown={(e) => onClipDown(e, c, 'move', t.kind)}
                       onPointerMove={onClipMove}
                       onPointerUp={onClipUp}
@@ -292,6 +300,13 @@ export function Timeline() {
                 })}
               </div>
             ))}
+            {Object.values(peers).map((p) =>
+              p.presence && p.presence.session && p.presence.session === session ? (
+                <div key={p.id} className="peer-head" style={{ left: p.presence.playhead * zoom, ['--pc' as string]: peerColor(p.id) }}>
+                  <span>{p.hello?.name ?? ''}</span>
+                </div>
+              ) : null,
+            )}
             <div className="playhead" style={{ left: playhead * zoom }} />
           </div>
         </div>

@@ -18,6 +18,9 @@ const { runExport, setFontCache } = require('./render.cjs');
 const { createMcpServer } = require('./mcp.cjs');
 const { createClaudeChat } = require('./claude-chat.cjs');
 const { createGptChat, createGeminiChat } = require('./ai-providers.cjs');
+const collab = require('./collab.cjs');
+const updater = require('./update.cjs');
+const { mapPaths, toShared, fromShared } = require('../src/lib/collab.js');
 
 const ROOT = path.join(__dirname, '..');
 const allowed = new Set(); // media files the renderer may stream (imported or from opened projects)
@@ -32,7 +35,7 @@ let exportAbort = null;
 protocol.registerSchemesAsPrivileged([{ scheme: 'ec-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 app.setName('Cinemex');
 // Test mode runs beside the real app: its own profile (lock, token) and discovery file.
-if (process.env.ELITE_HIDDEN) app.setPath('userData', path.join(os.tmpdir(), 'cinemex-test-profile'));
+if (process.env.ELITE_HIDDEN) app.setPath('userData', path.join(os.tmpdir(), process.env.ELITE_PROFILE && /^[a-z0-9-]{1,40}$/.test(process.env.ELITE_PROFILE) ? process.env.ELITE_PROFILE : 'cinemex-test-profile'));
 else migrateFromEliteCinema();
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -225,7 +228,9 @@ function handlers() {
       if (r.canceled) return null;
       out = r.filePath;
     }
-    fs.writeFileSync(out, JSON.stringify(project, null, 2), 'utf8');
+    const root = collabRoot();
+    const toWrite = root ? mapPaths(project, (f) => toShared(f, root)) : project;
+    fs.writeFileSync(out, JSON.stringify(toWrite, null, 2), 'utf8');
     return out;
   });
   ipcMain.handle('project:open', async (_e, given) => {
@@ -240,7 +245,7 @@ function handlers() {
       if (r.canceled) return null;
       file = r.filePaths[0];
     }
-    const project = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const project = mapPaths(JSON.parse(fs.readFileSync(file, 'utf8')), (f) => fromShared(f, collabRoot(), path.sep));
     for (const m of project.media || []) if (m?.path && kindOf(m.path)) allow(m.path);
     // Person mattes of "Pessoa" masks: only files the matte engine made (userData/mattes).
     for (const t of project.tracks || [])
@@ -338,6 +343,7 @@ function handlers() {
   ipcMain.handle('claude:cancel', (_e, who) => pick(who).cancel());
   ipcMain.handle('claude:reset', (_e, projectKey, who) => pick(who).reset(typeof projectKey === 'string' ? projectKey : ''));
   ipcMain.handle('app:paths', () => ({ videos: app.getPath('videos'), documents: app.getPath('documents') }));
+  collabHandlers();
 }
 
 const ICON = path.join(ROOT, 'build', 'icon.ico');
@@ -423,12 +429,136 @@ app.on('second-instance', () => {
 });
 
 app.on('will-quit', () => {
+  collabClient?.stop();
   chat?.cleanup();
   aiChats?.gpt?.cleanup();
   aiChats?.gemini?.cleanup();
 });
 
-if (process.platform === 'win32') app.setAppUserModelId('com.eliteagency.cinema');
+if (process.platform === 'win32') app.setAppUserModelId('com.eliteagency.cinemex');
+
+// ------------------------------------------------------------------ Ligação (live link)
+let collabStore = null;
+let collabClient = null;
+
+const collabRoot = () => (collabStore ? collab.sharedRoot(collabStore.read()) : null);
+const sendUi = (channel, payload) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+};
+
+/** Messages the editor may send to the other computers, and the fields each may carry. */
+const OUT_KINDS = new Set(['hello', 'presence', 'op', 'snapshot', 'want', 'stop']);
+
+function collabHandlers() {
+  collabStore = collab.createStore(app.getPath('userData'));
+  collabClient = collab.createClient({
+    onStatus: (s) => sendUi('collab:status', s),
+    onMessage: (msg) => {
+      // Files in the shared folder become this computer's own paths, and may be streamed.
+      let m = msg;
+      if (m.kind === 'op' || m.kind === 'snapshot') {
+        const root = collabRoot();
+        m = mapPaths(m, (f) => fromShared(f, root, path.sep));
+        const list = m.kind === 'op' ? m.op?.media?.up || [] : m.project?.media || [];
+        for (const x of list) if (typeof x?.path === 'string' && kindOf(x.path)) allow(x.path);
+        if (m.kind === 'snapshot' && m.project) m = { ...m, project: { ...m.project, media: m.project.media || [] } };
+      }
+      sendUi('collab:message', m);
+    },
+  });
+
+  const view = async () => {
+    const cfg = collabStore.read();
+    return {
+      config: cfg,
+      hasCode: Boolean(collabStore.code()),
+      sharedRoot: collabRoot(),
+      googleDrive: collab.findGoogleDrive(),
+      os: process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows' : 'Linux',
+      defaultName: os.userInfo().username || os.hostname(),
+      status: collabClient.status(),
+    };
+  };
+  const connect = () => {
+    const cfg = collabStore.read();
+    const code = collabStore.code();
+    if (!code) throw new Error('Falta o código de ligação');
+    if (!cfg.relayUrl) throw new Error('Falta o endereço do servidor de ligação');
+    collabClient.start(cfg.relayUrl, code);
+  };
+
+  ipcMain.handle('collab:get', view);
+  ipcMain.handle('collab:set', async (_e, patch = {}) => {
+    const next = {};
+    if (typeof patch.name === 'string') next.name = patch.name.trim().slice(0, 40);
+    if (typeof patch.relayUrl === 'string') {
+      const u = patch.relayUrl.trim().replace(/\/+$/, '');
+      if (u) collab.relaySocketUrl(u, '0'.repeat(64)); // throws when it is not https
+      next.relayUrl = u;
+    }
+    if (typeof patch.autoConnect === 'boolean') next.autoConnect = patch.autoConnect;
+    if (patch.sharedRoot === null) next.sharedRoot = null;
+    collabStore.write(next);
+    return view();
+  });
+  ipcMain.handle('collab:pick-folder', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Pasta partilhada (Google Drive)', properties: ['openDirectory', 'createDirectory'], defaultPath: collabRoot() || collab.findGoogleDrive() || app.getPath('documents') });
+    if (r.canceled || !r.filePaths[0]) return view();
+    collabStore.write({ sharedRoot: r.filePaths[0] });
+    return view();
+  });
+  ipcMain.handle('collab:make-folder', async () => {
+    const root = collabRoot();
+    if (!root) throw new Error('O Google Drive para computador não está instalado (ou escolhe uma pasta)');
+    fs.mkdirSync(root, { recursive: true });
+    shell.openPath(root);
+    return view();
+  });
+  ipcMain.handle('collab:new-code', async () => {
+    const code = collab.newCode();
+    collabStore.setCode(code);
+    return code;
+  });
+  ipcMain.handle('collab:get-code', () => collabStore.code());
+  ipcMain.handle('collab:set-code', async (_e, code) => {
+    collabStore.setCode(typeof code === 'string' ? code.trim() : null);
+    return view();
+  });
+  ipcMain.handle('collab:connect', async () => {
+    connect();
+    collabStore.write({ autoConnect: true });
+    return view();
+  });
+  ipcMain.handle('collab:disconnect', async () => {
+    collabClient.stop();
+    collabStore.write({ autoConnect: false });
+    return view();
+  });
+  ipcMain.handle('collab:send', (_e, msg) => {
+    if (!msg || typeof msg !== 'object' || !OUT_KINDS.has(msg.kind)) return false;
+    const root = collabRoot();
+    const out = msg.kind === 'op' || msg.kind === 'snapshot' ? mapPaths(msg, (f) => toShared(f, root)) : msg;
+    return collabClient.send(out);
+  });
+  ipcMain.handle('update:info', (_e, opts) => updater.info({ fetch: opts?.fetch !== false }));
+  ipcMain.handle('update:apply', async () => {
+    const r = await updater.apply({ onStep: (step) => sendUi('update:step', step) });
+    return r;
+  });
+  ipcMain.handle('app:relaunch', () => {
+    app.relaunch();
+    app.exit(0);
+  });
+
+  const cfg = collabStore.read();
+  if (cfg.autoConnect && cfg.relayUrl && collabStore.code() && !process.env.ELITE_HIDDEN) {
+    try {
+      connect();
+    } catch (err) {
+      console.error('Ligação não arrancou:', err.message);
+    }
+  }
+}
 
 app.whenReady().then(async () => {
   protocol.handle('ec-media', mediaResponse);

@@ -5,6 +5,7 @@ import type { CanvasPreset } from '../types';
 import { exportVideo, importCapcut, openProject, saveProject } from '../actions';
 import { Icon } from './Icon';
 import { AI_NAMES, useChat } from '../chat';
+import { LigacaoButton } from './Ligacao';
 
 export function TopBar() {
   const name = useEditor((s) => s.project.name);
@@ -50,6 +51,7 @@ export function TopBar() {
         <Icon name="folder" /> Abrir
       </button>
       <span className="tb-sep" aria-hidden="true" />
+      <LigacaoButton />
       <button className="btn" onClick={() => void saveProject()} title="Guardar (Ctrl+S)">
         <Icon name="save" /> Guardar
       </button>

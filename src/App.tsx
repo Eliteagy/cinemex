@@ -14,6 +14,8 @@ import { ColorLooks, ColorPanel } from './components/Color';
 import { FusionInspector, FusionLibrary, NodeEditor } from './components/Fusion';
 import { CaptionList, CaptionStylePanel } from './components/Captions';
 import { ClaudePanel } from './components/ClaudePanel';
+import { LigacaoPanel } from './components/Ligacao';
+import { initCollab } from './collab';
 import { TestPanel } from './components/TestPanel';
 import { useChat } from './chat';
 
@@ -34,6 +36,7 @@ export function App() {
     void window.ec.mcpInfo().then((i) => setMcp(i.url));
   }, []);
   useEffect(() => window.ec.onMcpCall(handleMcp), []);
+  useEffect(() => initCollab(), []);
   useEffect(() => void useEditor.getState().loadUserStyles(), []);
   useEffect(() => window.ec.onClaudeEvent((ev) => useChat.getState().onEvent(ev)), []);
   // Ctrl+K opens/closes the Claude chat, also while typing in it.
@@ -114,6 +117,7 @@ export function App() {
       </main>
       {page === 'fusion' ? <NodeEditor /> : page !== 'media' && <Timeline />}
       <ClaudePanel />
+      <LigacaoPanel />
       <nav className="pagebar" aria-label="Páginas">
         <div className="pages">
         {PAGES.map((p) => (

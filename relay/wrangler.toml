@@ -1,0 +1,15 @@
+# Cinemex relay (Cloudflare Worker + Durable Objects, free plan).
+# Deploy once:  cd relay && npx wrangler deploy
+# The address it prints (https://cinemex-relay.<account>.workers.dev) goes in the Ligação panel.
+name = "cinemex-relay"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

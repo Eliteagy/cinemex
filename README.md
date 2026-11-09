@@ -80,3 +80,11 @@ src/components/        TopBar, MediaBin, Viewer, Inspector, Timeline, Color, Cap
 ```
 
 Requirements: Node 20+, pnpm, ffmpeg/ffprobe on the PATH, Python with `faster-whisper` (for captions).
+
+## Colaborar (GitHub)
+
+Repositório: https://github.com/Eliteagy/elite-cinema. Só o programa: os projetos (`.ecproj`), vídeos, `node_modules` e `dist` ficam fora.
+
+- Instalar: `git clone https://github.com/Eliteagy/elite-cinema.git`, depois `pnpm install` e `pnpm app` (precisa de Node 24+, pnpm, ffmpeg no PATH e Python 3 com faster-whisper para as legendas).
+- Enviar alterações: commit no `main` e `git push` (os colaboradores são convidados pelo dono do repositório).
+- Sincronização automática neste PC (push a cada commit, pull a cada 15 min): `powershell -ExecutionPolicy Bypass -File tools\sync\instalar-sync.ps1` (desligar com `-Remover`).

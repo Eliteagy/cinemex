@@ -14,6 +14,7 @@ import { ColorLooks, ColorPanel } from './components/Color';
 import { FusionInspector, FusionLibrary, NodeEditor } from './components/Fusion';
 import { CaptionList, CaptionStylePanel } from './components/Captions';
 import { ClaudePanel } from './components/ClaudePanel';
+import { TestPanel } from './components/TestPanel';
 import { useChat } from './chat';
 
 const PAGES = [
@@ -109,7 +110,7 @@ export function App() {
       <main className="workspace">
         {page === 'deliver' ? <DeliverSettings onDone={(d) => setDone((x) => [d, ...x])} /> : page === 'fusion' ? <FusionLibrary /> : page === 'color' ? <ColorLooks /> : page === 'captions' ? <CaptionList /> : <MediaBin />}
         <Viewer />
-        {page === 'deliver' ? <DeliverQueue items={done} /> : page === 'edit' ? <Inspector /> : page === 'fusion' ? <FusionInspector /> : page === 'color' ? <ColorPanel /> : page === 'captions' ? <CaptionStylePanel /> : null}
+        {page === 'deliver' ? <DeliverQueue items={done} /> : page === 'edit' ? <Inspector /> : page === 'fusion' ? <FusionInspector /> : page === 'color' ? <ColorPanel /> : page === 'captions' ? <CaptionStylePanel /> : <TestPanel />}
       </main>
       {page === 'fusion' ? <NodeEditor /> : page !== 'media' && <Timeline />}
       <ClaudePanel />

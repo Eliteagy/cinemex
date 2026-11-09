@@ -36,31 +36,65 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'ec-media', privileges: { standa
 app.setName('Cinemex');
 // Test mode runs beside the real app: its own profile (lock, token) and discovery file.
 if (process.env.ELITE_HIDDEN) app.setPath('userData', path.join(os.tmpdir(), process.env.ELITE_PROFILE && /^[a-z0-9-]{1,40}$/.test(process.env.ELITE_PROFILE) ? process.env.ELITE_PROFILE : 'cinemex-test-profile'));
-else migrateFromEliteCinema();
 if (!app.requestSingleInstanceLock()) app.quit();
 
 /**
  * The app was called Elite Cinema until 09/11/2026. On the first start as Cinemex, copy the old
  * data folder (saved caption styles, MCP token, font cache, models, window state, preferences) and
  * the old discovery folder (~/.elite-cinema, with the Mac's Python venv) to the new names. Copies,
- * never moves: the old folders stay as a backup. Runs once, before anything opens the new folder.
+ * never moves: the old folders stay as a backup.
+ *
+ * File by file, never over a file that is already there. A file the old app still has open (it
+ * may be running) is skipped and tried again on the next start; only a pass with nothing left
+ * writes the marker that stops it.
  */
+const SKIP = /^(SingletonLock|SingletonCookie|SingletonSocket|lockfile|DevToolsActivePort|Cache|Code Cache|GPUCache|GPUPersistentCache|GrShaderCache|ShaderCache|DawnCache|DawnGraphiteCache|DawnWebGPUCache)$/i;
+const MIGRATED = '.migrated-from-elite-cinema';
+
+function copyMissing(from, to) {
+  let failed = 0;
+  let entries;
+  try {
+    entries = fs.readdirSync(from, { withFileTypes: true });
+  } catch {
+    return 1;
+  }
+  fs.mkdirSync(to, { recursive: true });
+  for (const e of entries) {
+    if (SKIP.test(e.name)) continue;
+    const src = path.join(from, e.name);
+    const dst = path.join(to, e.name);
+    if (e.isDirectory()) failed += copyMissing(src, dst);
+    else if (e.isFile() && !fs.existsSync(dst)) {
+      try {
+        fs.copyFileSync(src, dst);
+      } catch {
+        failed++; // in use by the old app: next start
+      }
+    }
+  }
+  return failed;
+}
+
 function migrateFromEliteCinema() {
-  const copyOnce = (from, to) => {
+  const pairs = [
+    [path.join(app.getPath('appData'), 'Elite Cinema'), app.getPath('userData')],
+    [path.join(os.homedir(), '.elite-cinema'), path.join(os.homedir(), '.cinemex')],
+  ];
+  for (const [from, to] of pairs) {
     try {
-      if (fs.existsSync(to) || !fs.existsSync(from)) return;
-      fs.cpSync(from, to, {
-        recursive: true,
-        // Chromium lock and cache files are recreated; skipping them avoids copying a live lock.
-        filter: (src) => !/[\\/](SingletonLock|SingletonCookie|SingletonSocket|lockfile|Cache|Code Cache|GPUCache|DawnCache|DawnGraphiteCache|DawnWebGPUCache)$/i.test(src),
-      });
+      if (!fs.existsSync(from) || fs.existsSync(path.join(to, MIGRATED))) continue;
+      const failed = copyMissing(from, to);
+      if (failed === 0) fs.writeFileSync(path.join(to, MIGRATED), new Date().toISOString());
+      else console.error(`Cinemex: ${failed} old Elite Cinema files are in use; copying them on the next start`);
     } catch (err) {
       console.error('Cinemex: could not copy the old Elite Cinema data', from, err);
     }
-  };
-  copyOnce(path.join(app.getPath('appData'), 'Elite Cinema'), app.getPath('userData'));
-  copyOnce(path.join(os.homedir(), '.elite-cinema'), path.join(os.homedir(), '.cinemex'));
+  }
 }
+
+// After the definitions above (SKIP is a const) and only in the instance that holds the lock.
+if (!process.env.ELITE_HIDDEN && app.hasSingleInstanceLock()) migrateFromEliteCinema();
 
 const norm = (p) => path.resolve(p).toLowerCase();
 const allow = (p) => allowed.add(norm(p));

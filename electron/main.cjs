@@ -17,6 +17,7 @@ const { USER_FONTS } = require('../src/lib/emphasis.js');
 const { runExport, setFontCache } = require('./render.cjs');
 const { createMcpServer } = require('./mcp.cjs');
 const { createClaudeChat } = require('./claude-chat.cjs');
+const { createGptChat, createGeminiChat } = require('./ai-providers.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const allowed = new Set(); // media files the renderer may stream (imported or from opened projects)
@@ -25,6 +26,7 @@ let mcp = null;
 let mcpUrl = '';
 let mcpToken = '';
 let chat = null;
+let aiChats = null; // GPT and Gemini chats (cleaned up on quit)
 let exportAbort = null;
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'ec-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
@@ -299,10 +301,18 @@ function handlers() {
     getMcp: () => (mcpUrl ? { url: mcpUrl, token: mcpToken } : null),
     send: (ev) => win && !win.isDestroyed() && win.webContents.send('claude:event', ev),
   });
-  ipcMain.handle('claude:status', () => chat.status());
-  ipcMain.handle('claude:send', (_e, projectKey, text) => chat.sendMessage(typeof projectKey === 'string' ? projectKey : '', typeof text === 'string' ? text : ''));
-  ipcMain.handle('claude:cancel', () => chat.cancel());
-  ipcMain.handle('claude:reset', (_e, projectKey) => chat.reset(typeof projectKey === 'string' ? projectKey : ''));
+  // GPT (Codex CLI) and Gemini (OmniRoute) in the same panel, with the same editor tools.
+  const aiSend = (ev) => win && !win.isDestroyed() && win.webContents.send('claude:event', ev);
+  const chats = (aiChats = {
+    claude: chat,
+    gpt: createGptChat({ userData: app.getPath('userData'), getMcp: () => (mcpUrl ? { url: mcpUrl, token: mcpToken } : null), send: aiSend }),
+    gemini: createGeminiChat({ userData: app.getPath('userData'), callTool: (name, args) => callEditor(name, args), send: aiSend }),
+  });
+  const pick = (who) => chats[who] || chat;
+  ipcMain.handle('claude:status', (_e, who) => pick(who).status());
+  ipcMain.handle('claude:send', (_e, projectKey, text, who) => pick(who).sendMessage(typeof projectKey === 'string' ? projectKey : '', typeof text === 'string' ? text : ''));
+  ipcMain.handle('claude:cancel', (_e, who) => pick(who).cancel());
+  ipcMain.handle('claude:reset', (_e, projectKey, who) => pick(who).reset(typeof projectKey === 'string' ? projectKey : ''));
   ipcMain.handle('app:paths', () => ({ videos: app.getPath('videos'), documents: app.getPath('documents') }));
 }
 
@@ -388,7 +398,11 @@ app.on('second-instance', () => {
   }
 });
 
-app.on('will-quit', () => chat?.cleanup());
+app.on('will-quit', () => {
+  chat?.cleanup();
+  aiChats?.gpt?.cleanup();
+  aiChats?.gemini?.cleanup();
+});
 
 if (process.platform === 'win32') app.setAppUserModelId('com.eliteagency.cinema');
 

@@ -6,6 +6,8 @@ export interface Word {
   e: number;
 }
 
+/** The model behind the chat panel. */
+export type AiProvider = 'claude' | 'gemini' | 'gpt';
 export type MediaKind = 'video' | 'audio' | 'image';
 
 export interface Media {
@@ -420,10 +422,10 @@ export interface EcBridge {
   reveal(file: string): Promise<void>;
   mcpInfo(): Promise<{ url: string }>;
   /** Claude chat (local Claude Code CLI driving the editor's own MCP). */
-  claudeStatus(): Promise<{ installed: boolean; running: boolean }>;
-  claudeSend(projectKey: string, text: string): Promise<{ runId: number }>;
-  claudeCancel(): Promise<boolean>;
-  claudeReset(projectKey: string): Promise<boolean>;
+  claudeStatus(who?: AiProvider): Promise<{ installed: boolean; running: boolean }>;
+  claudeSend(projectKey: string, text: string, who?: AiProvider): Promise<{ runId: number }>;
+  claudeCancel(who?: AiProvider): Promise<boolean>;
+  claudeReset(projectKey: string, who?: AiProvider): Promise<boolean>;
   onClaudeEvent(cb: (ev: ClaudeEvent) => void): () => void;
   /** Built-in sound effects (made on first use in the app's data folder). */
   sfxList(): Promise<{ id: string; label: string; path: string; duration: number }[]>;

@@ -1,7 +1,7 @@
 // Claude chat panel state. The conversation runs in the main process (local Claude Code CLI);
 // this store only keeps what the panel shows, one message list per project.
 import { create } from 'zustand';
-import type { ClaudeEvent } from './types';
+import type { AiProvider, ClaudeEvent } from './types';
 import { useEditor } from './store';
 
 export interface ToolChip {
@@ -20,8 +20,16 @@ export interface ChatMsg {
   pending?: boolean;
 }
 
+/** Display names of the chat models. */
+export const AI_NAMES: Record<AiProvider, string> = { claude: 'Claude', gemini: 'Gemini', gpt: 'GPT' };
+
 interface ChatState {
   open: boolean;
+  /** Which model the panel talks to (Claude Code, Gemini via OmniRoute, GPT via Codex). */
+  provider: AiProvider;
+  setProvider(p: AiProvider): void;
+  /** Open the panel on this model (closes it when it is already open on it). */
+  openWith(p: AiProvider): void;
   threads: Record<string, ChatMsg[]>;
   running: boolean;
   runKey: string | null;
@@ -29,6 +37,8 @@ interface ChatState {
   model: string;
   mcp: string;
   installed: boolean | null;
+  /** Model of the running turn (its events belong to it). */
+  runProvider: AiProvider;
   lastMessageId: string | null;
   toggle(force?: boolean): void;
   send(text: string): Promise<void>;
@@ -43,6 +53,8 @@ export const projectKey = () => {
   const s = useEditor.getState();
   return s.filePath || `sem-ficheiro:${s.project.name}`;
 };
+/** Panel thread of a project for one model. */
+export const threadKey = (p: AiProvider, key = projectKey()) => `${p}|${key}`;
 
 let seq = 0;
 const mid = () => `m${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -64,6 +76,19 @@ export const useChat = create<ChatState>((set, get) => {
 
   return {
     open: false,
+    provider: 'claude',
+    runProvider: 'claude',
+    setProvider(p) {
+      if (get().provider === p) return;
+      set({ provider: p, installed: null, model: '', mcp: '' });
+      void get().checkStatus();
+    },
+    openWith(p) {
+      const s = get();
+      if (s.open && s.provider === p) return s.toggle(false);
+      s.setProvider(p);
+      s.toggle(true);
+    },
     threads: {},
     running: false,
     runKey: null,
@@ -79,7 +104,7 @@ export const useChat = create<ChatState>((set, get) => {
     },
     async checkStatus() {
       try {
-        const st = await window.ec.claudeStatus();
+        const st = await window.ec.claudeStatus(get().provider);
         set({ installed: st.installed });
       } catch {
         set({ installed: false });
@@ -88,24 +113,26 @@ export const useChat = create<ChatState>((set, get) => {
     async send(raw) {
       const text = raw.trim();
       if (!text || get().running) return;
-      const key = projectKey();
+      const who = get().provider;
+      const key = threadKey(who);
       const user: ChatMsg = { id: mid(), role: 'user', text, tools: [] };
       const bot: ChatMsg = { id: mid(), role: 'assistant', text: '', tools: [], pending: true };
-      set((s) => ({ threads: { ...s.threads, [key]: [...(s.threads[key] ?? []), user, bot] }, running: true, runKey: key, startedAt: Date.now(), lastMessageId: null }));
+      set((s) => ({ threads: { ...s.threads, [key]: [...(s.threads[key] ?? []), user, bot] }, running: true, runKey: key, runProvider: who, startedAt: Date.now(), lastMessageId: null }));
       try {
-        await window.ec.claudeSend(key, text);
+        await window.ec.claudeSend(projectKey(), text, who);
       } catch (e) {
         patchRun((m) => ({ ...m, pending: false, error: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) }));
         set({ running: false });
       }
     },
     cancel() {
-      void window.ec.claudeCancel();
+      void window.ec.claudeCancel(get().runProvider);
     },
     reset() {
-      const key = projectKey();
-      if (get().running) void window.ec.claudeCancel();
-      void window.ec.claudeReset(key);
+      const who = get().provider;
+      const key = threadKey(who);
+      if (get().running) void window.ec.claudeCancel(get().runProvider);
+      void window.ec.claudeReset(projectKey(), who);
       set((s) => ({ threads: { ...s.threads, [key]: [] }, running: false }));
     },
     onEvent(ev) {

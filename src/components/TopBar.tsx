@@ -4,7 +4,7 @@ import { PRESETS } from '../lib/project';
 import type { CanvasPreset } from '../types';
 import { exportVideo, importCapcut, openProject, saveProject } from '../actions';
 import { Icon } from './Icon';
-import { useChat } from '../chat';
+import { AI_NAMES, useChat } from '../chat';
 
 export function TopBar() {
   const name = useEditor((s) => s.project.name);
@@ -13,6 +13,8 @@ export function TopBar() {
   const exporting = useEditor((s) => s.exportProgress !== null);
   const chatOpen = useChat((s) => s.open);
   const chatRunning = useChat((s) => s.running);
+  const provider = useChat((s) => s.provider);
+  const runProvider = useChat((s) => s.runProvider);
   const [draft, setDraft] = useState(name);
   useEffect(() => setDraft(name), [name]);
 
@@ -51,14 +53,19 @@ export function TopBar() {
       <button className="btn" onClick={() => void saveProject()} title="Guardar (Ctrl+S)">
         <Icon name="save" /> Guardar
       </button>
-      <button
-        className={`btn claude-btn${chatOpen ? ' on' : ''}${chatRunning ? ' busy' : ''}`}
-        aria-pressed={chatOpen}
-        onClick={() => useChat.getState().toggle()}
-        title="Chat do Claude: pede edições em português (Ctrl+K)"
-      >
-        <Icon name="spark" /> Claude
-      </button>
+      <div className="ai-switch" role="group" aria-label="Assistente de IA">
+        {(['claude', 'gemini', 'gpt'] as const).map((p) => (
+          <button
+            key={p}
+            className={`btn claude-btn${chatOpen && provider === p ? ' on' : ''}${chatRunning && runProvider === p ? ' busy' : ''}`}
+            aria-pressed={chatOpen && provider === p}
+            onClick={() => useChat.getState().openWith(p)}
+            title={`Chat com ${AI_NAMES[p]}: pede edições em português${p === 'claude' ? ' (Ctrl+K)' : ''}`}
+          >
+            {p === 'claude' && <Icon name="spark" />} {AI_NAMES[p]}
+          </button>
+        ))}
+      </div>
       <button className="btn primary" disabled={exporting} onClick={() => void exportVideo().catch(() => {})} title="Exportar MP4 (Ctrl+E)">
         <Icon name="export" /> Exportar
       </button>

@@ -737,3 +737,8 @@ input[type="range"].range.grade-temperature::-webkit-slider-runnable-track { bac
 .tl-marker.beat::after { display: none; }
 .seg.grid { border-radius: var(--r-md); }
 .seg.grid button { border-radius: var(--r-sm); white-space: normal; line-height: 1.15; min-height: 28px; }
+
+/* AI switch: Claude | Gemini | GPT in the top bar */
+.ai-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: var(--well); border: 1px solid var(--stroke-1); }
+.ai-switch .btn { height: 28px; border: 0; border-radius: var(--r-pill); background: transparent; }
+.ai-switch .btn.on { background: var(--bg-4); }

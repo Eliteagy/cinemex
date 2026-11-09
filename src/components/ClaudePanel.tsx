@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { projectKey, useChat, type ChatMsg } from '../chat';
+import { AI_NAMES, threadKey, useChat, type ChatMsg } from '../chat';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 
@@ -93,7 +93,7 @@ function Bubble({ m }: { m: ChatMsg }) {
         </div>
       )}
       {m.text && <div className="cl-text"><Markdown text={m.text} /></div>}
-      {m.pending && !m.text && <div className="cl-typing" role="status" aria-label="O Claude está a escrever"><i /><i /><i /></div>}
+      {m.pending && !m.text && <div className="cl-typing" role="status" aria-label="A escrever"><i /><i /><i /></div>}
       {m.error && <div className={`cl-note${cancelled ? '' : ' err'}`} role={cancelled ? undefined : 'alert'}>{m.error}</div>}
     </div>
   );
@@ -117,10 +117,13 @@ export function ClaudePanel() {
   const model = useChat((s) => s.model);
   const mcp = useChat((s) => s.mcp);
   const installed = useChat((s) => s.installed);
+  const provider = useChat((s) => s.provider);
+  const name = AI_NAMES[provider];
   const threads = useChat((s) => s.threads);
   const filePath = useEditor((s) => s.filePath);
-  const name = useEditor((s) => s.project.name);
-  const key = useMemo(() => projectKey(), [filePath, name]);
+  const projName = useEditor((s) => s.project.name);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const key = useMemo(() => threadKey(provider), [filePath, projName, provider]);
   const msgs = threads[key] ?? EMPTY;
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -149,14 +152,14 @@ export function ClaudePanel() {
   };
   const lastErr = [...msgs].reverse().find((m) => m.role === 'assistant')?.code;
   const state = installed === false || lastErr === 'missing' || lastErr === 'auth' ? 'err' : running ? 'run' : 'ok';
-  const stateLabel = state === 'err' ? (installed === false || lastErr === 'missing' ? 'Claude Code não instalado' : 'Sem sessão iniciada') : running ? 'A trabalhar' : mcp && mcp !== 'connected' ? 'Editor desligado' : 'Pronto';
+  const stateLabel = state === 'err' ? (installed === false || lastErr === 'missing' ? `${name} não está disponível` : 'Sem sessão iniciada') : running ? 'A trabalhar' : mcp && mcp !== 'connected' ? 'Editor desligado' : 'Pronto';
 
   return (
-    <aside className={`claude-panel${open ? ' open' : ''}`} aria-label="Chat do Claude" aria-hidden={!open} inert={!open}>
+    <aside className={`claude-panel${open ? ' open' : ''}`} aria-label={`Chat do ${name}`} aria-hidden={!open} inert={!open}>
       <header className="cl-head" title={model ? `Modelo: ${modelName(model)}` : undefined}>
         <span className="cl-mark" aria-hidden="true"><Icon name="spark" /></span>
         <div className="cl-title">
-          <b>Claude</b>
+          <b>{name}</b>
           <span className={`cl-status ${state}`}>
             <span className="dot" aria-hidden="true" />
             <span className="txt">
@@ -179,9 +182,9 @@ export function ClaudePanel() {
           <div className="cl-empty">
             <span className="orb" aria-hidden="true"><Icon name="spark" /></span>
             <strong>O que queres fazer neste vídeo?</strong>
-            <span>O Claude edita o projeto aberto: cortes, legendas, música, cor, efeitos e exportação. Tudo se desfaz com Ctrl+Z.</span>
+            <span>O {name} edita o projeto aberto: cortes, legendas, música, cor, efeitos e exportação. Tudo se desfaz com Ctrl+Z.</span>
             {installed === false ? (
-              <div className="cl-note err">Não encontrei o Claude Code neste PC. Instala-o e corre <code>claude</code> uma vez num terminal para fazer login.</div>
+              <div className="cl-note err">{provider === 'claude' ? <>Não encontrei o Claude Code neste PC. Instala-o e corre <code>claude</code> uma vez num terminal para fazer login.</> : provider === 'gpt' ? <>Não encontrei o Codex (GPT). Instala com <code>npm i -g @openai/codex</code> e faz <code>codex login</code> uma vez.</> : <>O Gemini usa o OmniRoute (127.0.0.1:20128) com a chave em <code>~/.claude-omniroute/omniroute.key</code>. Liga o OmniRoute.</>}</div>
             ) : (
               <div className="cl-sugs">
                 {SUGGESTIONS.map((s) => (
@@ -208,9 +211,9 @@ export function ClaudePanel() {
           ref={inputRef}
           rows={1}
           value={draft}
-          placeholder="Pede uma edição ao Claude…"
+          placeholder={`Pede uma edição ao ${name}…`}
           title="Enter envia · Shift+Enter nova linha"
-          aria-label="Mensagem para o Claude"
+          aria-label={`Mensagem para o ${name}`}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -223,7 +226,7 @@ export function ClaudePanel() {
           }}
         />
         {running ? (
-          <button type="button" className="cl-send stop" onClick={() => useChat.getState().cancel()} title="Parar" aria-label="Parar o Claude">
+          <button type="button" className="cl-send stop" onClick={() => useChat.getState().cancel()} title="Parar" aria-label={`Parar o ${name}`}>
             <Icon name="stop" />
           </button>
         ) : (

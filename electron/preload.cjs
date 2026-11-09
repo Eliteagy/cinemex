@@ -42,10 +42,10 @@ contextBridge.exposeInMainWorld('ec', {
   sfxList: () => ipcRenderer.invoke('sfx:list'),
   freezeFrame: (file, time) => ipcRenderer.invoke('media:freeze', file, time),
   paths: () => ipcRenderer.invoke('app:paths'),
-  claudeStatus: () => ipcRenderer.invoke('claude:status'),
-  claudeSend: (projectKey, text) => ipcRenderer.invoke('claude:send', projectKey, text),
-  claudeCancel: () => ipcRenderer.invoke('claude:cancel'),
-  claudeReset: (projectKey) => ipcRenderer.invoke('claude:reset', projectKey),
+  claudeStatus: (who) => ipcRenderer.invoke('claude:status', who),
+  claudeSend: (projectKey, text, who) => ipcRenderer.invoke('claude:send', projectKey, text, who),
+  claudeCancel: (who) => ipcRenderer.invoke('claude:cancel', who),
+  claudeReset: (projectKey, who) => ipcRenderer.invoke('claude:reset', projectKey, who),
   onClaudeEvent: (cb) => {
     const f = (_e, ev) => cb(ev);
     ipcRenderer.on('claude:event', f);

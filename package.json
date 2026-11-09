@@ -1,8 +1,8 @@
 {
-  "name": "elite-cinema",
-  "productName": "Elite Cinema",
+  "name": "cinemex",
+  "productName": "Cinemex",
   "version": "0.1.0",
-  "description": "Elite Cinema: editor de vídeo da Elite Agency com timeline, legendas automáticas (Whisper local), exportação ffmpeg e servidor MCP para o Claude editar.",
+  "description": "Cinemex: editor de vídeo da Elite Agency com timeline, legendas automáticas (Whisper local), exportação ffmpeg e servidor MCP para o Claude editar.",
   "private": true,
   "main": "electron/main.cjs",
   "type": "module",
@@ -11,7 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
     "app": "vite build && electron .",
-    "test": "node --test test/backend.test.mjs test/fusion.test.mjs test/captions.test.mjs test/capstyle.test.mjs test/claude.test.mjs test/fx.test.mjs test/ae.test.mjs test/ai.test.mjs"
+    "test": "node --test test/backend.test.mjs test/fusion.test.mjs test/captions.test.mjs test/capstyle.test.mjs test/claude.test.mjs test/fx.test.mjs test/ae.test.mjs test/ai.test.mjs test/apple.test.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

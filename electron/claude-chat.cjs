@@ -1,10 +1,10 @@
-// Claude chat inside Elite Cinema: runs the locally installed Claude Code CLI in headless mode
+// Claude chat inside Cinemex: runs the locally installed Claude Code CLI in headless mode
 // (the user's own login/subscription, no API key) with ONE tool source — the editor's own MCP
 // server. Each message is one `claude -p` run; follow-ups resume the project's session.
 //
 // Security:
 // - the CLI gets no built-in tools (--tools ""), no other MCP servers (--strict-mcp-config) and
-//   only mcp__elite-cinema__* is allowed; buildClaudeArgs refuses anything else;
+//   only mcp__cinemex__* is allowed; buildClaudeArgs refuses anything else;
 // - the MCP bearer token lives only in a temp config file in userData (0600), never in argv,
 //   logs or the renderer, and the file is deleted on exit;
 // - inherited Claude Code / Anthropic variables are stripped so the CLI uses the normal login;
@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const SERVER = 'elite-cinema';
+const SERVER = 'cinemex';
 const TOOL_PREFIX = `mcp__${SERVER}__`;
 const ALLOWED_TOOLS = [`${TOOL_PREFIX}*`];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,7 +56,7 @@ function buildMcpConfig({ url, token }) {
 /** Refuses a config that points anywhere but the editor's own MCP. */
 function assertEditorOnlyConfig(cfg) {
   const names = Object.keys(cfg?.mcpServers || {});
-  if (names.length !== 1 || names[0] !== SERVER) throw new Error('Configuração MCP recusada: só o servidor do Elite Cinema é permitido');
+  if (names.length !== 1 || names[0] !== SERVER) throw new Error('Configuração MCP recusada: só o servidor do Cinemex é permitido');
   const s = cfg.mcpServers[SERVER];
   const u = new URL(s.url);
   if (s.type !== 'http' || !['127.0.0.1', 'localhost'].includes(u.hostname)) throw new Error('Configuração MCP recusada: o servidor tem de ser local');
@@ -71,7 +71,7 @@ const safePath = (p) => typeof p === 'string' && path.isAbsolute(p) && !/["%^&|<
  */
 function buildClaudeArgs(o) {
   const allowed = o.allowedTools || ALLOWED_TOOLS;
-  if (!allowed.length || allowed.some((t) => typeof t !== 'string' || !t.startsWith(TOOL_PREFIX))) throw new Error('Recusado: o chat só pode usar as ferramentas do editor (mcp__elite-cinema__*)');
+  if (!allowed.length || allowed.some((t) => typeof t !== 'string' || !t.startsWith(TOOL_PREFIX))) throw new Error('Recusado: o chat só pode usar as ferramentas do editor (mcp__cinemex__*)');
   if (!UUID.test(String(o.sessionId))) throw new Error('Sessão inválida');
   if (!safePath(o.mcpConfigPath) || !safePath(o.systemPromptPath)) throw new Error('Caminho inválido');
   const args = [
@@ -254,9 +254,9 @@ function findClaude(env = process.env) {
   return null;
 }
 
-const SYSTEM_PROMPT = `És o assistente do Elite Cinema, o editor de vídeo da Elite Agency (do Gui), num painel de chat ao lado do editor.
+const SYSTEM_PROMPT = `És o assistente do Cinemex, o editor de vídeo da Elite Agency (do Gui), num painel de chat ao lado do editor.
 - Responde sempre em português europeu (de Portugal), curto e direto: uma ou duas frases a dizer o que fizeste ou o que precisas. Sem listas longas, sem cumprimentos.
-- Só podes mexer no editor através das ferramentas mcp__elite-cinema__* (o projeto aberto: cortes, legendas, estilos, música/volume, cor, máscaras, Fusion, animações, formato, exportar). Não tens acesso a ficheiros, terminal nem internet.
+- Só podes mexer no editor através das ferramentas mcp__cinemex__* (o projeto aberto: cortes, legendas, estilos, música/volume, cor, máscaras, Fusion, animações, formato, exportar). Não tens acesso a ficheiros, terminal nem internet.
 - Em cada pedido, começa por get_project para ver o estado atual (ids, pistas, clips, volumes, durações): o Gui também edita à mão e pode ter desfeito ou aberto outro projeto entre mensagens, por isso nunca confies no que fizeste antes. Tempos em segundos. Volume 1 = 100 % (15 % = 0.15).
 - Faz as alterações pedidas tu mesmo com as ferramentas; não digas que fizeste algo sem a ferramenta ter respondido bem. Se algo falhar, diz o erro numa frase.
 - Antes de algo destrutivo ou demorado que não foi pedido (apagar muitos clips, substituir o projeto, exportar), confirma primeiro. Exportar só quando pedirem.
@@ -293,7 +293,7 @@ function createClaudeChat(o) {
 
   function writeConfig() {
     const m = o.getMcp();
-    if (!m || !m.url) throw new Error('O servidor MCP do editor não está ligado, por isso o Claude não consegue editar. Reinicia o Elite Cinema.');
+    if (!m || !m.url) throw new Error('O servidor MCP do editor não está ligado, por isso o Claude não consegue editar. Reinicia o Cinemex.');
     const cfg = buildMcpConfig(m);
     assertEditorOnlyConfig(cfg);
     fs.mkdirSync(dir, { recursive: true });

@@ -4,7 +4,7 @@
 // PATH, so the Homebrew folders are looked at too. ffmpeg-full comes first there because the plain
 // Homebrew ffmpeg is built without libass/freetype (no `subtitles` and `drawtext` filters, which
 // burned-in captions and text mattes need). Python on macOS is `python3`, and the system one does
-// not take pip installs, so a venv in ~/.elite-cinema/venv (faster-whisper) wins when it exists.
+// not take pip installs, so a venv in ~/.cinemex/venv (faster-whisper) wins when it exists.
 // ELITE_FFMPEG, ELITE_FFPROBE and ELITE_PYTHON always win.
 const fs = require('node:fs');
 const os = require('node:os');
@@ -38,7 +38,7 @@ const venvPython = (venv) => (WIN ? path.join(venv, 'Scripts', 'python.exe') : p
 function python() {
   if (process.env.ELITE_PYTHON) return process.env.ELITE_PYTHON;
   if (WIN) return 'python';
-  return firstFile([venvPython(path.join(os.homedir(), '.elite-cinema', 'venv')), ...BREW.map((b) => path.join(b, 'bin', 'python3'))]) || 'python3';
+  return firstFile([venvPython(path.join(os.homedir(), '.cinemex', 'venv')), venvPython(path.join(os.homedir(), '.elite-cinema', 'venv')), ...BREW.map((b) => path.join(b, 'bin', 'python3'))]) || 'python3';
 }
 
 module.exports = { WIN, MAC, FFMPEG: ffTool('ffmpeg', 'ELITE_FFMPEG'), FFPROBE: ffTool('ffprobe', 'ELITE_FFPROBE'), PYTHON: python(), venvPython };

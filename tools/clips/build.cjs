@@ -1,4 +1,4 @@
-// For each chosen clip: reframe 16:9 -> 9:16 (follows the speaker), write an Elite Cinema project
+// For each chosen clip: reframe 16:9 -> 9:16 (follows the speaker), write an Cinemex project
 // (.ecproj, captions editable in the app) and export the MP4 with the app's own engine.
 // Usage: CLIPS_SRC=<video> [CLIPS_YUNET=<yunet.onnx>] node build.cjs <outRoot> [rank,rank,...]
 const path = require('node:path');
@@ -18,7 +18,7 @@ const outRoot = process.argv[2];
 const only = process.argv[3] ? new Set(process.argv[3].split(',').map(Number)) : null;
 const clips = JSON.parse(fs.readFileSync(path.join(HERE, 'clips.json'), 'utf8'));
 const fontes = path.join(outRoot, 'fontes');
-const projDir = path.join(outRoot, 'Projetos Elite Cinema');
+const projDir = path.join(outRoot, 'Projetos Cinemex');
 fs.mkdirSync(fontes, { recursive: true });
 fs.mkdirSync(projDir, { recursive: true });
 const safe = (s) => s.replace(/[<>:"/\\|?*]/g, '').trim();

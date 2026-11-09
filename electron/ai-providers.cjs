@@ -15,7 +15,7 @@ const path = require('node:path');
 const { toolLabel, redact, SYSTEM_PROMPT } = require('./claude-chat.cjs');
 const { TOOLS } = require('./mcp.cjs');
 
-const PROMPT_FOR = (who) => SYSTEM_PROMPT.replace(/mcp__elite-cinema__\*/g, 'do editor (servidor elite)').replace('És o assistente do Elite Cinema', `És o assistente do Elite Cinema (${who})`);
+const PROMPT_FOR = (who) => SYSTEM_PROMPT.replace(/mcp__cinemex__\*/g, 'do editor (servidor cinemex)').replace('És o assistente do Cinemex', `És o assistente do Cinemex (${who})`);
 
 // ------------------------------------------------------------------ GPT (Codex CLI)
 /** codex.exe of the npm package (spawned directly: no cmd.exe quoting), or null. */
@@ -67,7 +67,7 @@ function createCodexParser(emit) {
     }
     if (it && it.type === 'mcp_tool_call') {
       if (d.type === 'item.started') {
-        const { tool, area } = toolLabel(`mcp__elite-cinema__${it.tool}`, it.arguments);
+        const { tool, area } = toolLabel(`mcp__cinemex__${it.tool}`, it.arguments);
         emit({ type: 'tool', id: it.id, name: it.tool, tool, area, input: it.arguments || {} });
       } else if (d.type === 'item.completed') emit({ type: 'tool_result', id: it.id, ok: !it.error && it.status !== 'failed' });
     }
@@ -131,7 +131,7 @@ function createGptChat(o) {
       return { runId: id };
     }
     const m = o.getMcp();
-    if (!m || !m.url) throw new Error('O servidor MCP do editor não está ligado. Reinicia o Elite Cinema.');
+    if (!m || !m.url) throw new Error('O servidor MCP do editor não está ligado. Reinicia o Cinemex.');
     fs.mkdirSync(dir, { recursive: true });
     const key = keyOf(projectKey);
     const threadId = sessions[key] || null;
@@ -288,7 +288,7 @@ function createGeminiChat(o) {
         try {
           args = JSON.parse(c.function?.arguments || '{}') || {};
         } catch {}
-        const { tool, area } = toolLabel(`mcp__elite-cinema__${name}`, args);
+        const { tool, area } = toolLabel(`mcp__cinemex__${name}`, args);
         emit({ type: 'tool', id: c.id, name, tool, area, input: args });
         let content;
         let ok = true;

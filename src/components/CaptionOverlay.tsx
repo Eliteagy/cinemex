@@ -9,12 +9,12 @@ import { captionBoxes, type CaptionBox } from '../engine/caption';
 import { cleanLines, lineOffset } from '../lib/emphasis.js';
 import type { Clip, Project } from '../types';
 
-const KEY = 'elite-cinema.caption-drag';
+const KEY = 'cinemex.caption-drag';
 export type DragScope = 'one' | 'all';
 
 export function getDragScope(): DragScope {
   try {
-    return localStorage.getItem(KEY) === 'one' ? 'one' : 'all';
+    return (localStorage.getItem(KEY) ?? localStorage.getItem('elite-cinema.caption-drag')) === 'one' ? 'one' : 'all';
   } catch {
     return 'all';
   }

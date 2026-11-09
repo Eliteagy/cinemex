@@ -1,4 +1,4 @@
-"""Elite Cinema: person matte for one clip (captions behind the person, "Pessoa" mask).
+"""Cinemex: person matte for one clip (captions behind the person, "Pessoa" mask).
 
 Robust Video Matting (ONNX, CPU) cuts every person out of the clip, frame by frame, with memory
 between frames so the edge does not flicker. With a click point only the person under the click is
@@ -81,7 +81,7 @@ def main():
 
     import onnxruntime as ort
 
-    model = a.model or os.path.join(os.environ.get("APPDATA", ""), "Elite Cinema", "models", "rvm_mobilenetv3_fp32.onnx")
+    model = a.model or os.path.join(os.environ.get("APPDATA", ""), "Cinemex", "models", "rvm_mobilenetv3_fp32.onnx")
     if not os.path.exists(model):
         raise SystemExit(f"Falta o modelo de recorte: {model}")
     sess = ort.InferenceSession(model, providers=[p for p in ("DmlExecutionProvider", "CPUExecutionProvider") if p in ort.get_available_providers()])

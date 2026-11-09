@@ -89,7 +89,7 @@ export function Inspector() {
           <div className="card">
             <h4>Texto</h4>
             <p>Um título no ponto onde está a cabeça de leitura.</p>
-            <button className="btn" style={{ width: '100%' }} onClick={() => st().addText('Elite Cinema', st().playhead, 3, 'title')}>
+            <button className="btn" style={{ width: '100%' }} onClick={() => st().addText('Cinemex', st().playhead, 3, 'title')}>
               <Icon name="text" /> Acrescentar texto
             </button>
           </div>

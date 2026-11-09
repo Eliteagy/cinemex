@@ -1,4 +1,4 @@
-// Burn Elite Cinema captions onto a reframed 9:16 clip, using the app's own export engine.
+// Burn Cinemex captions onto a reframed 9:16 clip, using the app's own export engine.
 // Usage: node caption_clip.cjs <reframed.mp4> <words.json> <srcStart> <srcEnd> <style> <out.mp4> [fixes.json]
 const path = require('node:path');
 const fs = require('node:fs');

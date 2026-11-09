@@ -1,4 +1,4 @@
-// Elite Cinema project model. Saved as readable JSON (.ecproj). Times are in seconds.
+// Cinemex project model. Saved as readable JSON (.ecproj). Times are in seconds.
 
 export interface Word {
   w: string;
@@ -6,8 +6,6 @@ export interface Word {
   e: number;
 }
 
-/** The model behind the chat panel. */
-export type AiProvider = 'claude' | 'gemini' | 'gpt';
 export type MediaKind = 'video' | 'audio' | 'image';
 
 export interface Media {
@@ -38,7 +36,7 @@ export interface Transition {
 }
 
 /** Interpolation of the segment that starts at a keyframe (src/lib/anim.js), like After Effects. */
-export type Ease = 'smooth' | 'linear' | 'hold' | 'easy' | 'easy_in' | 'easy_out' | 'bezier';
+export type Ease = 'smooth' | 'linear' | 'hold' | 'easy' | 'easy_in' | 'easy_out' | 'apple' | 'apple_out' | 'apple_pop' | 'bezier';
 /** A keyframe: t is seconds from the clip start (timeline), v the value. */
 export interface Keyframe {
   t: number;
@@ -193,7 +191,7 @@ export interface Clip {
   x?: number;
   y?: number;
   size?: number;
-  /** Graphic (lower third, title, label, progress bar) instead of a caption (src/lib/graphics.js). */
+  /** Graphic (lower third, title, label, progress bar, Apple headline / reveal / glass card) instead of a caption (src/lib/graphics.js). */
   graphic?: Graphic;
 }
 
@@ -206,7 +204,7 @@ export interface TextAnim {
   from: { opacity?: number; scaleY?: number; blur?: number; color?: string };
 }
 
-export type GraphicKind = 'lower' | 'title' | 'label' | 'progress';
+export type GraphicKind = 'lower' | 'title' | 'label' | 'progress' | 'headline' | 'reveal' | 'glass';
 export interface Graphic {
   kind: GraphicKind;
   title?: string;
@@ -378,6 +376,9 @@ export interface CaptionOptions {
   stripPunct?: boolean;
   censor?: string[];
 }
+
+/** The model behind the chat panel. */
+export type AiProvider = 'claude' | 'gemini' | 'gpt';
 
 export type ClaudeEvent = { runId: number } & (
   | { type: 'init'; sessionId: string; model: string; mcp: string; tools: number }

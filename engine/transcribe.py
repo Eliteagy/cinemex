@@ -1,4 +1,4 @@
-"""Elite Cinema: word-level transcription on this PC (faster-whisper; GPU when available).
+"""Cinemex: word-level transcription on this PC (faster-whisper; GPU when available).
 
 Usage: python -E -P engine/transcribe.py <media file> [language|auto] [--model NAME] [--translate] [--prompt TEXT]
 Prints one JSON object: {"language": "pt", "model": "...", "task": "transcribe", "words": [{"w": "olá", "s": 0.12, "e": 0.40}, ...]}

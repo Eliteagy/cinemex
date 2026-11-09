@@ -1,4 +1,4 @@
-// Export: turns an Elite Cinema project into one ffmpeg command.
+// Export: turns an Cinemex project into one ffmpeg command.
 // Video clips are trimmed at the input (-ss/-t), scaled to the canvas (fit or fill), shifted to
 // their timeline start and overlaid on a black base in track order (track 0 at the bottom).
 // Audio of every audible clip is delayed to its start and mixed. Text clips become an ASS file
@@ -11,7 +11,7 @@ const { USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions
 const { applyOverride, cleanOverride, isStyleId, validateStyle } = require('../src/lib/capstyle.js');
 const { findUserFont, findFamily, familyName } = require('./fonts.cjs');
 const { TRANSITIONS, BLUR_STEPS, BFLASH, blurWindow, stageSigma } = require('../src/lib/fx.js');
-const { graphicEvents } = require('../src/lib/graphics.js');
+const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
 const anim = require('../src/lib/anim.js');
 const { layerFx, BLEND_FFMPEG } = require('../src/lib/layerfx.js');
 const xform = require('../src/lib/xform.js');
@@ -449,6 +449,7 @@ function assFont(name, files, userFonts = true) {
 
 const a255 = (a) => `&H${Math.round(Math.max(0, Math.min(1, 1 - a)) * 255).toString(16).padStart(2, '0').toUpperCase()}&`;
 const f1 = (n) => String(Math.round(n * 10) / 10);
+const f2 = (n) => String(Math.round(n * 100) / 100);
 /** libass \blur is not a standard deviation: sigma = blur * 2 / sqrt(ln 256). */
 const assBlur = (sigma) => String(Math.round(sigma * 1.1774 * 100) / 100);
 
@@ -610,8 +611,29 @@ function graphicAss(c, W, H, events, styles, files, userFonts) {
     if (t - s < 0.01) continue;
     const place = e.moveMs > 0 ? `\\move(${f1(e.x0)},${f1(e.y0)},${f1(e.x1)},${f1(e.y1)},0,${Math.round(e.moveMs)})` : `\\pos(${f1(e.x1)},${f1(e.y1)})`;
     const fade = e.fadeIn || e.fadeOut ? `\\fad(${Math.round(e.fadeIn)},${Math.round(e.fadeOut)})` : '';
-    const scale = e.scale ? `\\fscx${f1(e.scale.x0)}\\fscy${f1(e.scale.y0)}\\t(0,${Math.round(e.scale.ms)},\\fscx${f1(e.scale.x1)}\\fscy${f1(e.scale.y1)})` : '';
-    const fill = `\\1c${assColor(e.color)}\\1a${a255(e.alpha ?? 1)}`;
+    const acc = e.scaleAccel && e.scaleAccel !== 1 ? `${f2(e.scaleAccel)},` : '';
+    const scale = e.scale ? `\\fscx${f1(e.scale.x0)}\\fscy${f1(e.scale.y0)}\\t(0,${Math.round(e.scale.ms)},${acc}\\fscx${f1(e.scale.x1)}\\fscy${f1(e.scale.y1)})` : '';
+    // Fill colour keys (gradient sweep): first colour, then one \t per key.
+    let fill = `\\1c${assColor(e.colors ? e.colors[0][1] : e.color)}\\1a${a255(e.alpha ?? 1)}`;
+    if (e.colors) for (let i = 1; i < e.colors.length; i++) fill += `\\t(${Math.round(e.colors[i - 1][0])},${Math.round(e.colors[i][0])},\\1c${assColor(e.colors[i][1])})`;
+    // Moving mask (clip-path reveal): \clip, animated with \t and its accel.
+    let clip = '';
+    if (e.clip) {
+      const r = (b) => b.map((v) => String(Math.round(v))).join(',');
+      clip = `\\clip(${r(e.clip.from)})`;
+      if (e.clip.ms > 0) clip += `\\t(0,${Math.round(e.clip.ms)},${f2(e.clip.accel ?? 1)},\\clip(${r(e.clip.to)}))`;
+    }
+    if (e.kind === 'glass') {
+      // The blur itself is in the filter graph (glassFilters); here the tint and the light border.
+      styles.add('Gfx');
+      const w = Math.round(e.w);
+      const h = Math.round(e.h);
+      const at = `\\an7\\pos(${f1(e.x1 - w / 2)},${f1(e.y1 - h / 2)})${fade}`;
+      const path = roundRectPath(w, h, e.radius ?? 0);
+      if (e.tint) events.push(`Dialogue: ${e.layer},${assTime(s)},${assTime(t)},Gfx,,0,0,0,,{${at}\\bord0\\shad0\\1c${assColor(e.tint.color)}\\1a${a255(e.tint.alpha)}\\p1}${path}{\\p0}`);
+      if (e.border) events.push(`Dialogue: ${e.layer},${assTime(s)},${assTime(t)},Gfx,,0,0,0,,{${at}\\bord${f1(e.border.width)}\\shad0\\1a&HFF&\\3c${assColor(e.border.color)}\\3a${a255(e.border.alpha)}\\p1}${path}{\\p0}`);
+      continue;
+    }
     if (e.kind === 'rect') {
       styles.add('Gfx');
       const w = i0(e.w);
@@ -628,7 +650,7 @@ function graphicAss(c, W, H, events, styles, files, userFonts) {
       look = `\\bord${f1(e.box.pad)}\\shad0\\3c${assColor(e.box.color)}\\3a${a255(e.box.alpha)}`;
     } else if (e.shadow) look = `\\bord0\\xshad${f1(e.shadow.x)}\\yshad${f1(e.shadow.y)}\\4c${assColor(e.shadow.color)}\\4a${a255(e.shadow.alpha)}`;
     styles.add(style);
-    events.push(`Dialogue: ${e.layer},${assTime(s)},${assTime(t)},${style},,0,0,0,,{\\an${e.an}${place}${fade}${scale}\\fn${fam}\\fs${f1(e.size)}${look}${fill}}${assText(e.text)}`);
+    events.push(`Dialogue: ${e.layer},${assTime(s)},${assTime(t)},${style},,0,0,0,,{\\an${e.an}${place}${fade}${scale}${clip}\\fn${fam}\\fs${f1(e.size)}${look}${fill}}${assText(e.text)}`);
   }
 }
 
@@ -1009,6 +1031,35 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
     }
   }
 
+  // Glass cards (Apple template): the picture under the card is blurred, with rounded corners and the
+  // card's fades, before the captions and graphics are drawn over it (preview: src/engine/graphics.ts).
+  let gi = 0;
+  for (const track of project.tracks) {
+    if (track.kind !== 'text' || track.hidden) continue;
+    for (const c of track.clips) {
+      if (!c.graphic) continue;
+      for (const e of graphicEvents(c.graphic, clipDuration(c), W, H)) {
+        if (e.kind !== 'glass') continue;
+        const w = Math.max(2, Math.round(e.w / 2) * 2);
+        const h = Math.max(2, Math.round(e.h / 2) * 2);
+        const x = Math.max(0, Math.min(W - w, Math.round((e.x1 - w / 2) / 2) * 2));
+        const y = Math.max(0, Math.min(H - h, Math.round((e.y1 - h / 2) / 2) * 2));
+        const s0 = r3(c.start + e.t0);
+        const s1 = r3(c.start + e.t1);
+        const R = Math.max(0, Math.min(e.radius ?? 0, w / 2, h / 2));
+        const inside = `lte(hypot(max(abs(X-${w / 2})-${r3(w / 2 - R)},0),max(abs(Y-${h / 2})-${r3(h / 2 - R)},0)),${r3(R)})`;
+        const fades = [];
+        if (e.fadeIn > 0) fades.push(`fade=t=in:st=${s0}:d=${r3(e.fadeIn / 1000)}:alpha=1`);
+        if (e.fadeOut > 0) fades.push(`fade=t=out:st=${r3(s1 - e.fadeOut / 1000)}:d=${r3(e.fadeOut / 1000)}:alpha=1`);
+        const g = `gl${gi++}`;
+        filters.push(`[${base}]split=2[${g}a][${g}b]`);
+        filters.push(`[${g}b]crop=${w}:${h}:${x}:${y},gblur=sigma=${r3(e.blur ?? 20)},format=yuva444p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='255*${inside}'${fades.length ? ',' + fades.join(',') : ''}[${g}c]`);
+        filters.push(`[${g}a][${g}c]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${s0},${s1})'[${g}d]`);
+        base = `${g}d`;
+      }
+    }
+  }
+
   const fonts = new Set();
   const ass = buildAss(project, { files: fonts });
   // Captions, then the front layers over them (the captions pass behind the person).
@@ -1054,7 +1105,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
 /** Run the export; onProgress(0..1). Resolves with the output path. */
 function runExport(project, outPath, { onProgress = () => {}, encoder, quality, signal } = {}) {
   const { args, duration, ass, luts, fonts, extraFiles } = buildExport(project, outPath, { encoder, quality });
-  const work = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'elite-cinema-'));
+  const work = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'cinemex-'));
   if (ass) {
     fs.writeFileSync(path.join(work, 'caps.ass'), ass, 'utf8');
     // Bundled caption fonts, so libass draws the same letters as the preview.

@@ -2,12 +2,15 @@
 // expressions built from the same numbers), so both move the same way.
 //
 // Interpolation of the segment that starts at a keyframe (keyframe.ease):
-//   smooth    ease in-out (smoothstep, Elite Cinema's default)
+//   smooth    ease in-out (smoothstep, Cinemex's default)
 //   linear    constant speed
 //   hold      keeps the value until the next keyframe (AE "Toggle Hold Keyframe")
 //   easy      AE "Easy Ease" (cubic bezier 0.333,0 0.667,1)
 //   easy_in   AE "Easy Ease In" (arrives slowly: 0,0 0.667,1)
 //   easy_out  AE "Easy Ease Out" (leaves slowly: 0.333,0 1,1)
+//   apple     apple.com page transitions (cubic bezier 0.37,0 0.63,1: calm in-out)
+//   apple_out apple.com reveals (0.165,0.84 0.44,1: fast start, long soft landing)
+//   apple_pop apple.com buttons (0.34,2.16 0.64,1: goes past the value and settles back)
 //   bezier    own speed curve keyframe.bz = [x1, y1, x2, y2] (CSS cubic-bezier, AE graph editor)
 //
 // Modifiers per property (clip.mods[prop]), like the usual AE expressions:
@@ -15,9 +18,9 @@
 //   loop      { mode: 'cycle' | 'pingpong' } loopOut(): repeats the keyframes until the clip ends
 //   overshoot { amp, freq, decay }           inertial bounce after every keyframe
 
-export const EASES = ['smooth', 'linear', 'hold', 'easy', 'easy_in', 'easy_out', 'bezier'];
-export const EASE_LABELS = { smooth: 'Suave', linear: 'Linear', hold: 'Hold', easy: 'Easy ease', easy_in: 'Easy ease in', easy_out: 'Easy ease out', bezier: 'Curva' };
-const CURVES = { easy: [0.333, 0, 0.667, 1], easy_in: [0, 0, 0.667, 1], easy_out: [0.333, 0, 1, 1] };
+export const EASES = ['smooth', 'linear', 'hold', 'easy', 'easy_in', 'easy_out', 'apple', 'apple_out', 'apple_pop', 'bezier'];
+export const EASE_LABELS = { smooth: 'Suave', linear: 'Linear', hold: 'Hold', easy: 'Easy ease', easy_in: 'Easy ease in', easy_out: 'Easy ease out', apple: 'Apple', apple_out: 'Apple revelar', apple_pop: 'Apple salto', bezier: 'Curva' };
+export const CURVES = { easy: [0.333, 0, 0.667, 1], easy_in: [0, 0, 0.667, 1], easy_out: [0.333, 0, 1, 1], apple: [0.37, 0, 0.63, 1], apple_out: [0.165, 0.84, 0.44, 1], apple_pop: [0.34, 2.16, 0.64, 1] };
 /** Newton iterations solving x(s) = u; fixed so the ffmpeg expression does exactly the same. */
 export const NEWTON = 6;
 

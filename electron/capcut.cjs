@@ -1,4 +1,4 @@
-// CapCut drafts → Elite Cinema projects. CapCut (9.x) keeps each draft as readable JSON in
+// CapCut drafts → Cinemex projects. CapCut (9.x) keeps each draft as readable JSON in
 // %LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft\<draft>\draft_content.json
 // (times in microseconds, positions from -1 to 1). We read it; we never write to CapCut's files.
 const fs = require('node:fs');

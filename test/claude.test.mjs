@@ -11,7 +11,7 @@ const { buildClaudeArgs, buildChildEnv, buildMcpConfig, assertEditorOnlyConfig, 
 
 const SID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 // The app's data folder, as an absolute path of the system the tests run on (Windows or macOS).
-const DATA = process.platform === 'win32' ? 'C:\\Users\\x\\AppData\\Roaming\\Elite Cinema' : '/Users/x/Library/Application Support/Elite Cinema';
+const DATA = process.platform === 'win32' ? 'C:\\Users\\x\\AppData\\Roaming\\Cinemex' : '/Users/x/Library/Application Support/Cinemex';
 const base = { mcpConfigPath: path.join(DATA, 'claude-mcp.json'), systemPromptPath: path.join(DATA, 'claude-chat', 'system-prompt.txt'), sessionId: SID };
 const flag = (args, f) => args[args.indexOf(f) + 1];
 
@@ -25,7 +25,7 @@ test('args: headless stream-json, no built-in tools, only the editor MCP, new vs
   assert.equal(flag(a, '--setting-sources'), '');
   assert.ok(!a.includes('--safe-mode'), '--safe-mode would drop the editor MCP');
   assert.equal(flag(a, '--mcp-config'), base.mcpConfigPath);
-  assert.equal(flag(a, '--allowedTools'), 'mcp__elite-cinema__*');
+  assert.equal(flag(a, '--allowedTools'), 'mcp__cinemex__*');
   assert.equal(flag(a, '--permission-mode'), 'dontAsk');
   assert.equal(flag(a, '--session-id'), SID);
   assert.ok(!a.includes('--resume'));
@@ -38,7 +38,7 @@ test('args: headless stream-json, no built-in tools, only the editor MCP, new vs
 
 test('args: refuses tools outside the editor, bad session ids and unsafe paths', () => {
   assert.throws(() => buildClaudeArgs({ ...base, resume: false, allowedTools: ['Bash'] }), /ferramentas do editor/);
-  assert.throws(() => buildClaudeArgs({ ...base, resume: false, allowedTools: ['mcp__elite-cinema__*', 'Edit'] }), /ferramentas do editor/);
+  assert.throws(() => buildClaudeArgs({ ...base, resume: false, allowedTools: ['mcp__cinemex__*', 'Edit'] }), /ferramentas do editor/);
   assert.throws(() => buildClaudeArgs({ ...base, resume: false, allowedTools: ['mcp__other__*'] }), /ferramentas do editor/);
   assert.throws(() => buildClaudeArgs({ ...base, resume: false, sessionId: 'x; rm -rf' }), /Sessão/);
   assert.throws(() => buildClaudeArgs({ ...base, resume: false, mcpConfigPath: 'relative.json' }), /Caminho/);
@@ -58,14 +58,14 @@ test('env: strips Anthropic overrides and nested Claude Code session variables, 
 
 test('mcp config: only the local editor server, token checked; anything else refused', () => {
   const cfg = buildMcpConfig({ url: 'http://127.0.0.1:4545/mcp', token: 'abc123' });
-  assert.deepEqual(Object.keys(cfg.mcpServers), ['elite-cinema']);
-  assert.equal(cfg.mcpServers['elite-cinema'].type, 'http');
-  assert.equal(cfg.mcpServers['elite-cinema'].headers.Authorization, 'Bearer abc123');
+  assert.deepEqual(Object.keys(cfg.mcpServers), ['cinemex']);
+  assert.equal(cfg.mcpServers['cinemex'].type, 'http');
+  assert.equal(cfg.mcpServers['cinemex'].headers.Authorization, 'Bearer abc123');
   assert.ok(assertEditorOnlyConfig(cfg));
   assert.throws(() => buildMcpConfig({ url: 'http://evil.com/mcp', token: 'abc' }), /local/);
   assert.throws(() => buildMcpConfig({ url: 'http://127.0.0.1:4545/mcp', token: 'a b"' }), /Token/);
   assert.throws(() => assertEditorOnlyConfig({ mcpServers: { ...cfg.mcpServers, fs: { type: 'stdio', command: 'npx' } } }), /recusada/);
-  assert.throws(() => assertEditorOnlyConfig({ mcpServers: { 'elite-cinema': { type: 'http', url: 'http://10.0.0.2/mcp' } } }), /local/);
+  assert.throws(() => assertEditorOnlyConfig({ mcpServers: { 'cinemex': { type: 'http', url: 'http://10.0.0.2/mcp' } } }), /local/);
 });
 
 test('redact: bearer tokens and long hex secrets never reach the UI', () => {
@@ -74,26 +74,26 @@ test('redact: bearer tokens and long hex secrets never reach the UI', () => {
 });
 
 test('tool labels for the chips', () => {
-  assert.deepEqual(toolLabel('mcp__elite-cinema__update_clip', { clip_id: 'c1', volume: 0.15 }), { tool: 'update_clip', area: 'som' });
-  assert.deepEqual(toolLabel('mcp__elite-cinema__update_clip', { clip_id: 'c1', style: 'felipe' }), { tool: 'update_clip', area: 'legendas' });
-  assert.equal(toolLabel('mcp__elite-cinema__auto_captions').area, 'legendas');
-  assert.equal(toolLabel('mcp__elite-cinema__cut_silences').area, 'corte');
-  assert.equal(toolLabel('mcp__elite-cinema__set_color').area, 'cor');
-  assert.equal(toolLabel('mcp__elite-cinema__export_video').area, 'exportar');
-  assert.equal(toolLabel('mcp__elite-cinema__get_project').area, 'projeto');
-  assert.equal(toolLabel('mcp__elite-cinema__fusion_add_node').area, 'fusion');
+  assert.deepEqual(toolLabel('mcp__cinemex__update_clip', { clip_id: 'c1', volume: 0.15 }), { tool: 'update_clip', area: 'som' });
+  assert.deepEqual(toolLabel('mcp__cinemex__update_clip', { clip_id: 'c1', style: 'felipe' }), { tool: 'update_clip', area: 'legendas' });
+  assert.equal(toolLabel('mcp__cinemex__auto_captions').area, 'legendas');
+  assert.equal(toolLabel('mcp__cinemex__cut_silences').area, 'corte');
+  assert.equal(toolLabel('mcp__cinemex__set_color').area, 'cor');
+  assert.equal(toolLabel('mcp__cinemex__export_video').area, 'exportar');
+  assert.equal(toolLabel('mcp__cinemex__get_project').area, 'projeto');
+  assert.equal(toolLabel('mcp__cinemex__fusion_add_node').area, 'fusion');
 });
 
 // Lines shaped like Claude Code 2.1 `-p --output-format stream-json --verbose --include-partial-messages`.
 const L = (o) => JSON.stringify(o) + '\n';
 const turn = [
   L({ type: 'system', subtype: 'ui_invalidate', session_id: SID }),
-  L({ type: 'system', subtype: 'init', session_id: SID, model: 'claude-opus-5-5', tools: ['mcp__elite-cinema__get_project', 'mcp__elite-cinema__update_clip'], mcp_servers: [{ name: 'elite-cinema', status: 'connected' }] }),
+  L({ type: 'system', subtype: 'init', session_id: SID, model: 'claude-opus-5-5', tools: ['mcp__cinemex__get_project', 'mcp__cinemex__update_clip'], mcp_servers: [{ name: 'cinemex', status: 'connected' }] }),
   L({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_1' } } }),
   L({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Vou ver ' } } }),
   L({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'o projeto.' } } }),
   L({ type: 'assistant', message: { id: 'msg_1', content: [{ type: 'text', text: 'Vou ver o projeto.' }] } }),
-  L({ type: 'assistant', message: { id: 'msg_1', content: [{ type: 'tool_use', id: 'tu_1', name: 'mcp__elite-cinema__update_clip', input: { clip_id: 'c9', volume: 0.15 } }] } }),
+  L({ type: 'assistant', message: { id: 'msg_1', content: [{ type: 'tool_use', id: 'tu_1', name: 'mcp__cinemex__update_clip', input: { clip_id: 'c9', volume: 0.15 } }] } }),
   L({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'ok' }] } }),
   L({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_2' } } }),
   L({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Música a 15 %.' } } }),
@@ -126,7 +126,7 @@ test('parser: non-streamed text, failed tool, garbage lines and subagent events 
   const ev = [];
   const p = createStreamParser((e) => ev.push(e));
   p.push('not json\n{"broken":\n');
-  p.push(L({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'Olá' }, { type: 'tool_use', id: 't', name: 'mcp__elite-cinema__export_video', input: {} }] } }));
+  p.push(L({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'Olá' }, { type: 'tool_use', id: 't', name: 'mcp__cinemex__export_video', input: {} }] } }));
   p.push(L({ type: 'assistant', parent_tool_use_id: 'x', message: { id: 'sub', content: [{ type: 'text', text: 'subagente' }] } }));
   p.push(L({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: 'Erro' }] } }));
   p.end();

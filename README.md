@@ -1,8 +1,8 @@
-# Elite Cinema
+# Cinemex
 
 The Elite Agency's video editor. It takes the best ideas from three programs we studied by reverse engineering for interoperability, without copying their code or their look:
 
-| Idea | Inspired by | In Elite Cinema |
+| Idea | Inspired by | In Cinemex |
 |---|---|---|
 | Built-in MCP server so an AI can edit | Premiere Pro 2026 (`dvamcp.dll`, "Premiere MCP Server") | `electron/mcp.cjs`: 54 tools over HTTP at `127.0.0.1:4545/mcp` (token required) |
 | Media bins and multi-track editing | Premiere | Media panel, tracks V1/V2, Captions, Music |
@@ -35,8 +35,8 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 
 ## Opening it
 
-- Windows: Start menu → **Elite Cinema**, or double-click `Abrir Elite Cinema.vbs`.
-- macOS: double-click `Abrir Elite Cinema.command` (installs on the first run, rebuilds the interface every time).
+- Windows: Start menu → **Cinemex**, or double-click `Abrir Cinemex.vbs`.
+- macOS: double-click `Abrir Cinemex.command` (installs on the first run, rebuilds the interface every time).
 - For development: `pnpm app` (builds and opens), `pnpm test` (engine tests, including a real ffmpeg export).
 
 ## Using it
@@ -52,13 +52,13 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 
 ## Claude editing
 
-1. Open Elite Cinema once (it creates the access token).
+1. Open Cinemex once (it creates the access token).
 2. Run `powershell -File ligar-ao-claude.ps1` (registers the MCP in Claude Code). On macOS: `sh ligar-ao-claude.sh`.
 3. In a new Claude session: "import C:\...\video.mp4, cut the pauses, put Elite Pop captions on it and export it in 9:16".
 
 MCP tools (48): `get_project`, `import_media`, `add_clip`, `move_clip`, `trim_clip`, `split_clip`, `delete_clip`, `add_text`, `update_clip`, `auto_captions`, `cut_silences`, `set_speed`, `set_transition`, `dissolve`, `set_keyframe`, `animate_clip`, `list_capcut`, `import_capcut`, `set_canvas`, `set_color`, `set_caption_style`, `export_srt`, `import_srt`, `set_audio`, `add_mask`, `update_mask`, `remove_mask`, `fusion_add_node`, `fusion_set`, `fusion_link`, `fusion_remove`, `show_page`, `seek`, `export_video`, `save_project`, `open_project`, `list_caption_styles`, `save_caption_style`, `delete_caption_style`, and in v0.10 `add_graphic`, `update_graphic`, `list_sfx`, `add_sfx`, `auto_sfx`, `detect_beats`, `beat_sync`, `add_marker`, `freeze_frame`, and in v0.11 `set_keyframe_ease`, `set_modifier`, `set_blend`, `set_matte`, `add_effect`, `update_effect`.
 
-Security: the server only listens on 127.0.0.1, requires a bearer token (kept in the app's data folder, not in the discovery file `~/.elite-cinema/mcp.json`), and refuses any request coming from a web page (Origin header). The interface only plays files that were imported or that are in opened projects.
+Security: the server only listens on 127.0.0.1, requires a bearer token (kept in the app's data folder, not in the discovery file `~/.cinemex/mcp.json`), and refuses any request coming from a web page (Origin header). The interface only plays files that were imported or that are in opened projects.
 
 ## Structure
 
@@ -68,7 +68,7 @@ electron/mcp.cjs       MCP server (JSON-RPC 2.0, Streamable HTTP with JSON repli
 electron/render.cjs    project → ffmpeg command (overlays, mixing, ASS captions)
 electron/media.cjs     ffprobe + thumbnails
 electron/captions.cjs  Whisper and grouping words into captions
-electron/capcut.cjs    CapCut draft → Elite Cinema project (read only)
+electron/capcut.cjs    CapCut draft → Cinemex project (read only)
 engine/transcribe.py   faster-whisper with word timestamps
 src/store.ts           editor state (Zustand) with undo/redo
 src/engine/player.ts   canvas preview in sync with the timeline
@@ -87,14 +87,14 @@ Requirements: Node 20+, pnpm, ffmpeg/ffprobe on the PATH, Python with `faster-wh
 The same code runs on a Mac; `electron/bin.cjs` finds the programs on each system.
 
 - **ffmpeg:** the plain Homebrew `ffmpeg` has no libass/freetype, so exports with captions, graphics or text mattes fail (`No such filter: subtitles` / `drawtext`). Install `brew install ffmpeg-full`; it is found on its own in `/opt/homebrew/opt/ffmpeg-full` (or set `ELITE_FFMPEG` / `ELITE_FFPROBE`).
-- **Captions:** the Homebrew Python does not take `pip install`, so Whisper lives in a venv that the app picks up: `python3 -m venv ~/.elite-cinema/venv && ~/.elite-cinema/venv/bin/pip install faster-whisper "av<19"` (PyAV 19 dropped an argument faster-whisper 1.2 still passes). It runs on the CPU.
+- **Captions:** the Homebrew Python does not take `pip install`, so Whisper lives in a venv that the app picks up: `python3 -m venv ~/.cinemex/venv && ~/.cinemex/venv/bin/pip install faster-whisper "av<19"` (PyAV 19 dropped an argument faster-whisper 1.2 still passes). It runs on the CPU.
 - **GPU export:** `gpu: true` / *Placa gráfica* uses VideoToolbox (`h264_videotoolbox`) instead of NVIDIA.
 - Fonts come from `~/Library/Fonts`, `/Library/Fonts` and `/System/Library/Fonts`; CapCut drafts from `~/Movies/CapCut`.
 
 ## Colaborar (GitHub)
 
-Repositório: https://github.com/Eliteagy/elite-cinema. Só o programa: os projetos (`.ecproj`), vídeos, `node_modules` e `dist` ficam fora.
+Repositório: https://github.com/Eliteagy/cinemex. Só o programa: os projetos (`.ecproj`), vídeos, `node_modules` e `dist` ficam fora.
 
-- Instalar: `git clone https://github.com/Eliteagy/elite-cinema.git`, depois `pnpm install` e `pnpm app` (precisa de Node 24+, pnpm, ffmpeg no PATH e Python 3 com faster-whisper para as legendas).
+- Instalar: `git clone https://github.com/Eliteagy/cinemex.git`, depois `pnpm install` e `pnpm app` (precisa de Node 24+, pnpm, ffmpeg no PATH e Python 3 com faster-whisper para as legendas).
 - Enviar alterações: commit no `main` e `git push` (os colaboradores são convidados pelo dono do repositório).
 - Sincronização automática neste PC (push a cada commit, pull a cada 15 min): `powershell -ExecutionPolicy Bypass -File tools\sync\instalar-sync.ps1` (desligar com `-Remover`).

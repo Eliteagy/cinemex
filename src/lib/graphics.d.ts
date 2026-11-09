@@ -6,7 +6,7 @@ export const GFX_FONT: string;
 export type FullGraphic = Required<Omit<Graphic, 'kind'>> & { kind: GraphicKind };
 export function graphicOf(g: Partial<Graphic> | undefined): FullGraphic;
 export interface GfxEvent {
-  kind: 'rect' | 'text';
+  kind: 'rect' | 'text' | 'glass';
   layer: number;
   t0: number;
   t1: number;
@@ -28,6 +28,17 @@ export interface GfxEvent {
   size?: number;
   box?: { color: string; alpha: number; pad: number };
   shadow?: { color: string; alpha: number; x: number; y: number };
+  scaleAccel?: number;
+  clip?: { from: [number, number, number, number]; to: [number, number, number, number]; ms: number; accel?: number };
+  colors?: [number, string][];
+  radius?: number;
+  blur?: number;
+  tint?: { color: string; alpha: number };
+  border?: { color: string; alpha: number; width: number };
 }
 export function graphicEvents(g: Partial<Graphic>, dur: number, W: number, H: number): GfxEvent[];
-export function eventAt(e: GfxEvent, local: number): { x: number; y: number; sx: number; sy: number; alpha: number } | null;
+export function eventAt(e: GfxEvent, local: number): { x: number; y: number; sx: number; sy: number; alpha: number; clip: [number, number, number, number] | null; color: string } | null;
+export function mixColor(a: string, b: string, k: number): string;
+export function colorAt(keys: [number, string][] | undefined, ms: number): string | null;
+export function roundRectPath(w: number, h: number, r: number): string;
+export const SWEEP: { strips: number; samples: number; delayMs: number; ms: number; span: number; travel: number };

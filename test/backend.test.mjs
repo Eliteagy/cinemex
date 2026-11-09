@@ -86,7 +86,7 @@ test('MCP server: token, origin and JSON-RPC', async () => {
     assert.equal((await post({ jsonrpc: '2.0', id: 1, method: 'ping' }, { Authorization: 'Bearer errado00000' })).status, 401);
     assert.equal((await post({ jsonrpc: '2.0', id: 1, method: 'ping' }, { Origin: 'https://evil.example' })).status, 403);
     const init = await (await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).json();
-    assert.equal(init.result.serverInfo.name, 'elite-cinema');
+    assert.equal(init.result.serverInfo.name, 'cinemex');
     assert.equal((await post({ jsonrpc: '2.0', method: 'notifications/initialized' })).status, 202);
     const list = await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json();
     assert.equal(list.result.tools.length, TOOLS.length);
@@ -111,7 +111,7 @@ test('real ffmpeg export of a generated clip with captions', { skip: spawnSync('
       media: [{ id: 'm1', path: src, kind: 'video', duration: 4, hasAudio: true }],
       tracks: [
         { id: 'v1', kind: 'video', clips: [{ id: 'a', mediaId: 'm1', start: 0, in: 0.5, out: 2.5, volume: 1, fit: 'fill' }, { id: 'b', mediaId: 'm1', start: 2, in: 3, out: 4, volume: 1, fit: 'fit' }] },
-        { id: 't1', kind: 'text', clips: [{ id: 't', start: 0.2, in: 0, out: 1.5, text: 'Elite Cinema', style: 'elite', words: [{ w: 'Elite', s: 0, e: 0.6 }, { w: 'Cinema', s: 0.7, e: 1.2 }] }] },
+        { id: 't1', kind: 'text', clips: [{ id: 't', start: 0.2, in: 0, out: 1.5, text: 'Cinemex', style: 'elite', words: [{ w: 'Elite', s: 0, e: 0.6 }, { w: 'Cinema', s: 0.7, e: 1.2 }] }] },
       ],
     };
     const out = join(dir, 'out.mp4');
@@ -148,7 +148,7 @@ test('speed, transitions and keyframes reach the ffmpeg command', () => {
   assert.equal(kfExpr([], 1), '1');
 });
 
-test('CapCut drafts become Elite Cinema projects', async () => {
+test('CapCut drafts become Cinemex projects', async () => {
   const { convertDraft, textOf } = require('../electron/capcut.cjs');
   const { writeFileSync, mkdirSync } = await import('node:fs');
   const dir = mkdtempSync(join(tmpdir(), 'cc-'));

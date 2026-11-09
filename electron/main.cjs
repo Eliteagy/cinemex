@@ -1,4 +1,4 @@
-// Elite Cinema — main process: window, media protocol (with byte ranges for seeking),
+// Cinemex — main process: window, media protocol (with byte ranges for seeking),
 // import/transcribe/export through IPC, and the MCP server bridged to the editor UI.
 const { app, BrowserWindow, dialog, ipcMain, protocol, shell, nativeTheme } = require('electron');
 const fs = require('node:fs');
@@ -30,10 +30,34 @@ let aiChats = null; // GPT and Gemini chats (cleaned up on quit)
 let exportAbort = null;
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'ec-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
-app.setName('Elite Cinema');
+app.setName('Cinemex');
 // Test mode runs beside the real app: its own profile (lock, token) and discovery file.
-if (process.env.ELITE_HIDDEN) app.setPath('userData', path.join(os.tmpdir(), 'elite-cinema-test-profile'));
+if (process.env.ELITE_HIDDEN) app.setPath('userData', path.join(os.tmpdir(), 'cinemex-test-profile'));
+else migrateFromEliteCinema();
 if (!app.requestSingleInstanceLock()) app.quit();
+
+/**
+ * The app was called Elite Cinema until 09/11/2026. On the first start as Cinemex, copy the old
+ * data folder (saved caption styles, MCP token, font cache, models, window state, preferences) and
+ * the old discovery folder (~/.elite-cinema, with the Mac's Python venv) to the new names. Copies,
+ * never moves: the old folders stay as a backup. Runs once, before anything opens the new folder.
+ */
+function migrateFromEliteCinema() {
+  const copyOnce = (from, to) => {
+    try {
+      if (fs.existsSync(to) || !fs.existsSync(from)) return;
+      fs.cpSync(from, to, {
+        recursive: true,
+        // Chromium lock and cache files are recreated; skipping them avoids copying a live lock.
+        filter: (src) => !/[\\/](SingletonLock|SingletonCookie|SingletonSocket|lockfile|Cache|Code Cache|GPUCache|DawnCache|DawnGraphiteCache|DawnWebGPUCache)$/i.test(src),
+      });
+    } catch (err) {
+      console.error('Cinemex: could not copy the old Elite Cinema data', from, err);
+    }
+  };
+  copyOnce(path.join(app.getPath('appData'), 'Elite Cinema'), app.getPath('userData'));
+  copyOnce(path.join(os.homedir(), '.elite-cinema'), path.join(os.homedir(), '.cinemex'));
+}
 
 const norm = (p) => path.resolve(p).toLowerCase();
 const allow = (p) => allowed.add(norm(p));
@@ -74,7 +98,7 @@ async function importPaths(paths) {
 
 function defaultExportPath(name) {
   const dir = app.getPath('videos');
-  const base = String(name || 'Elite Cinema').replace(/[<>:"/\\|?*]+/g, ' ').trim() || 'Elite Cinema';
+  const base = String(name || 'Cinemex').replace(/[<>:"/\\|?*]+/g, ' ').trim() || 'Cinemex';
   let file = path.join(dir, `${base}.mp4`);
   for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, `${base} (${i}).mp4`);
   return file;
@@ -83,7 +107,7 @@ function defaultExportPath(name) {
 // ------------------------------------------------------------------ MCP bridge to the editor UI
 const pending = new Map();
 function callEditor(name, args) {
-  if (!win || win.isDestroyed()) return Promise.reject(new Error('O Elite Cinema não tem janela aberta'));
+  if (!win || win.isDestroyed()) return Promise.reject(new Error('O Cinemex não tem janela aberta'));
   const id = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -112,7 +136,7 @@ async function startMcp() {
   const port = await mcp.listen(Number(process.env.ELITE_MCP_PORT) || 4545);
   mcpUrl = `http://127.0.0.1:${port}/mcp`;
   // Discovery file for clients (no token inside; the token stays in its own file).
-  const disc = process.env.ELITE_DISCOVERY_DIR || path.join(os.homedir(), '.elite-cinema');
+  const disc = process.env.ELITE_DISCOVERY_DIR || path.join(os.homedir(), '.cinemex');
   fs.mkdirSync(disc, { recursive: true });
   fs.writeFileSync(path.join(disc, 'mcp.json'), JSON.stringify({ url: mcpUrl, tokenFile }, null, 2));
 }
@@ -197,7 +221,7 @@ function handlers() {
   ipcMain.handle('project:save', async (_e, project, file) => {
     let out = file;
     if (!out) {
-      const r = await dialog.showSaveDialog(win, { title: 'Guardar projeto', defaultPath: path.join(app.getPath('documents'), `${project.name || 'Projeto'}.ecproj`), filters: [{ name: 'Projeto Elite Cinema', extensions: ['ecproj'] }] });
+      const r = await dialog.showSaveDialog(win, { title: 'Guardar projeto', defaultPath: path.join(app.getPath('documents'), `${project.name || 'Projeto'}.ecproj`), filters: [{ name: 'Projeto Cinemex', extensions: ['ecproj'] }] });
       if (r.canceled) return null;
       out = r.filePath;
     }
@@ -212,7 +236,7 @@ function handlers() {
       if (fs.statSync(given).size > 50 * 1024 * 1024) throw new Error('Projeto grande demais');
       file = given;
     } else {
-      const r = await dialog.showOpenDialog(win, { title: 'Abrir projeto', properties: ['openFile'], filters: [{ name: 'Projeto Elite Cinema', extensions: ['ecproj'] }] });
+      const r = await dialog.showOpenDialog(win, { title: 'Abrir projeto', properties: ['openFile'], filters: [{ name: 'Projeto Cinemex', extensions: ['ecproj'] }] });
       if (r.canceled) return null;
       file = r.filePaths[0];
     }
@@ -334,7 +358,7 @@ function showSplash() {
     center: true,
     show: false,
     icon: ICON,
-    title: 'Elite Cinema',
+    title: 'Cinemex',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   splash.once('ready-to-show', () => splash.show());
@@ -350,7 +374,7 @@ function createWindow() {
     height: 960,
     minWidth: 1100,
     minHeight: 680,
-    title: 'Elite Cinema',
+    title: 'Cinemex',
     icon: ICON,
     show: !intro,
     // Test mode: a real, painting window placed off-screen (hidden windows stop repainting).

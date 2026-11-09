@@ -2,6 +2,7 @@ import type { Clip, Ease, Keyframe, KeyProp, Modifier } from '../types';
 
 export const EASES: Ease[];
 export const EASE_LABELS: Record<Ease, string>;
+export const CURVES: Record<string, [number, number, number, number]>;
 export const NEWTON: number;
 export function curveOf(k: Keyframe | undefined): [number, number, number, number] | null;
 export function bezierAt(c: number[], u: number): number;

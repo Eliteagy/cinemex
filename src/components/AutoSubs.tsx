@@ -13,11 +13,11 @@ import type { CaptionOverride, CaptionStyle } from '../types';
 type Opts = Required<Pick<AutoCaptionOptions, 'style' | 'model' | 'language' | 'translate' | 'density' | 'maxChars' | 'maxLines' | 'maxWords' | 'textCase' | 'stripPunct' | 'prompt'>> & { censor: string; onlySelected: boolean; look: CaptionOverride; size: number | null };
 
 const DEFAULTS: Opts = { style: 'elite', model: 'auto', language: 'pt', translate: false, density: 'custom', maxChars: 0, maxLines: 2, maxWords: 3, textCase: 'none', stripPunct: false, prompt: '', censor: '', onlySelected: false, look: {}, size: null };
-const KEY = 'elite-cinema.autosubs';
+const KEY = 'cinemex.autosubs';
 
 function load(): Opts {
   try {
-    return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Opts>) };
+    return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem('elite-cinema.autosubs') ?? '{}') as Partial<Opts>) };
   } catch {
     return DEFAULTS;
   }

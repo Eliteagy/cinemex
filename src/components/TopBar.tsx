@@ -21,7 +21,7 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <img className="logo" src="logo.png" alt="Elite Cinema" />
+        <img className="logo" src="logo.png" alt="Cinemex" />
       </div>
       <span className="crumb" aria-hidden="true">/</span>
       <input

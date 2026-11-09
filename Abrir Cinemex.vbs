@@ -1,4 +1,4 @@
-' Abre o Elite Cinema sem janela de consola (compila a interface se ainda não existir).
+' Abre o Cinemex sem janela de consola (compila a interface se ainda não existir).
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)

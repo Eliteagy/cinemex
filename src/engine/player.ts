@@ -484,7 +484,7 @@ export class Player {
     for (const c of track.clips) {
       if (t < c.start || t >= end(c)) continue;
       if (c.graphic) {
-        drawGraphic(this.ctx, c.graphic, t - c.start, end(c) - c.start, project.canvas.w, project.canvas.h, cw, ch);
+        drawGraphic(this.ctx, c.graphic, t - c.start, end(c) - c.start, project.canvas.w, project.canvas.h, cw, ch, this.lastVideo);
         continue;
       }
       if (!c.text) continue;

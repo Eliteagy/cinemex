@@ -98,3 +98,4 @@ Repositório: https://github.com/Eliteagy/cinemex. Só o programa: os projetos (
 - Instalar: `git clone https://github.com/Eliteagy/cinemex.git`, depois `pnpm install` e `pnpm app` (precisa de Node 24+, pnpm, ffmpeg no PATH e Python 3 com faster-whisper para as legendas).
 - Enviar alterações: commit no `main` e `git push` (os colaboradores são convidados pelo dono do repositório).
 - Sincronização automática neste PC (push a cada commit, pull a cada 15 min): `powershell -ExecutionPolicy Bypass -File tools\sync\instalar-sync.ps1` (desligar com `-Remover`).
+- No Mac: `sh tools/sync/instalar-sync.sh` (LaunchAgent em vez de tarefa agendada; `--so-pull` só recebe, `--remover` desliga; o registo do pull fica em `~/Library/Logs/cinemex-sync.log`).

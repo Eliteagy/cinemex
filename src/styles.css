@@ -236,6 +236,7 @@ input[type="range"].range.grade-temperature::-webkit-slider-runnable-track { bac
 /* ------------------------------------------------------------------------------ panels */
 .workspace { display: grid; grid-template-columns: 300px minmax(0, 1fr) 320px; gap: var(--gutter); min-height: 0; }
 .page-media .workspace { grid-template-columns: minmax(420px, 1fr) minmax(0, 1.2fr); }
+.page-edit .workspace { grid-template-columns: 300px minmax(0, 1fr) 320px 260px; } /* media, viewer, inspector, Testes */
 .page-color .workspace, .page-captions .workspace { grid-template-columns: 340px minmax(0, 1fr) 320px; }
 .panel {
   display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;

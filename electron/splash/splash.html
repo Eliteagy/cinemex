@@ -5,37 +5,46 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'" />
     <title>Cinemex</title>
     <style>
-      /* Opening: only the logo, straight on the desktop (transparent window, no card, no black; logo-splash.png
-         is logo.png with its black disc turned transparent).
-         It comes in small, grows big, and opens out into the editor. Timing matches SPLASH_MS. */
+      /* Opening: only the logo, straight on the desktop (transparent window, no card, no black;
+         logo-splash.png is logo.png with its black disc turned transparent).
+         It beats like a heart (two "lub-dub" beats, each with a gold flash), then bursts open into
+         the editor. Total 2.95 s, matching SPLASH_MS in electron/main.cjs. */
       html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-app-region: drag; }
       body { display: grid; place-items: center; }
       .logo {
-        width: 420px; height: 420px;
+        width: 340px; height: 340px;
         opacity: 0;
-        transform: scale(0.12);
-        filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.35)) drop-shadow(0 0 0 rgba(212, 175, 55, 0));
+        transform: scale(0.3);
         will-change: transform, opacity, filter;
         animation:
-          grow 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards,
-          glow 1.2s ease-out 0.9s forwards,
-          open 0.5s cubic-bezier(0.4, 0, 1, 1) 2.45s forwards;
+          heart 2.2s linear 0s forwards,
+          open 0.75s cubic-bezier(0.5, 0, 0.9, 0.6) 2.2s forwards;
       }
-      /* small → big (a touch past full size, then settles) */
-      @keyframes grow {
-        0% { opacity: 0; transform: scale(0.12); }
-        25% { opacity: 1; }
-        78% { transform: scale(1.04); }
-        100% { opacity: 1; transform: scale(1); }
+      /* Beat up fast (snap), relax slower: like a heartbeat. Glow and brightness follow each beat. */
+      @keyframes heart {
+        0%   { opacity: 0; transform: scale(0.3);  filter: brightness(1) drop-shadow(0 0 0 rgba(212, 175, 55, 0)); animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1); }
+        14%  { opacity: 1; transform: scale(0.7);  filter: brightness(1) drop-shadow(0 0 10px rgba(212, 175, 55, 0.3)); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1.4); }
+        /* beat 1: lub */
+        25%  { transform: scale(1.02); filter: brightness(1.35) drop-shadow(0 0 34px rgba(255, 196, 70, 0.85)); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
+        34%  { transform: scale(0.78); filter: brightness(1.05) drop-shadow(0 0 14px rgba(212, 175, 55, 0.4)); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1.3); }
+        /* dub */
+        41%  { transform: scale(0.95); filter: brightness(1.25) drop-shadow(0 0 26px rgba(255, 196, 70, 0.7)); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
+        52%  { transform: scale(0.74); filter: brightness(1) drop-shadow(0 0 12px rgba(212, 175, 55, 0.35)); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1.4); }
+        /* beat 2: stronger */
+        66%  { transform: scale(1.14); filter: brightness(1.55) drop-shadow(0 0 48px rgba(255, 200, 80, 1)); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
+        75%  { transform: scale(0.84); filter: brightness(1.1) drop-shadow(0 0 18px rgba(212, 175, 55, 0.5)); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1.3); }
+        82%  { transform: scale(1.06); filter: brightness(1.4) drop-shadow(0 0 36px rgba(255, 200, 80, 0.9)); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
+        93%  { transform: scale(0.86); filter: brightness(1.1) drop-shadow(0 0 18px rgba(212, 175, 55, 0.5)); }
+        100% { opacity: 1; transform: scale(0.9); filter: brightness(1.2) drop-shadow(0 0 24px rgba(255, 196, 70, 0.7)); }
       }
-      @keyframes glow { to { filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.35)) drop-shadow(0 0 26px rgba(212, 175, 55, 0.5)); } }
-      /* opens out: keeps growing and fades as the editor appears */
-      @keyframes open { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.35); } }
-      @media (prefers-reduced-motion: reduce) {
-        .logo { transform: none; animation: fade-in 300ms forwards, fade-out 300ms ease-in 2.6s forwards; }
-        @keyframes fade-in { to { opacity: 1; } }
-        @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+      /* Bursts open: flares bright, grows past the window and fades as the editor appears. */
+      @keyframes open {
+        0%   { opacity: 1; transform: scale(0.9); filter: brightness(1.2) drop-shadow(0 0 24px rgba(255, 196, 70, 0.7)); }
+        30%  { opacity: 1; transform: scale(1.2); filter: brightness(1.9) drop-shadow(0 0 60px rgba(255, 210, 100, 1)); }
+        100% { opacity: 0; transform: scale(2.1); filter: brightness(2.2) drop-shadow(0 0 80px rgba(255, 210, 100, 0)); }
       }
+      /* No prefers-reduced-motion fallback here on purpose: the heartbeat was asked for explicitly on a
+         Windows PC with "Animation effects" off. The rest of the app still honours that setting. */
     </style>
   </head>
   <body>

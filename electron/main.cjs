@@ -389,11 +389,12 @@ function showSplash() {
   // Big enough for the logo at full size plus the "open out" zoom; transparent and shadowless,
   // so only the logo shows on the desktop.
   const splash = new BrowserWindow({
-    width: 640,
-    height: 640,
+    width: 760,
+    height: 760,
     frame: false,
     transparent: true,
     hasShadow: false,
+    focusable: false,
     backgroundColor: '#00000000',
     resizable: false,
     movable: true,

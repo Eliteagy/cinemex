@@ -11,6 +11,7 @@ const MAX_PEERS = 8;
 const MAX_FRAME = 1024 * 1024;
 const RATE_WINDOW = 10_000;
 const RATE_MAX = 400;
+const STALE = 60_000; // no ping for this long: the app is gone
 
 export default {
   async fetch(request, env) {
@@ -47,10 +48,39 @@ if(ok){document.getElementById('open').href=app;location.href=app;}else{document
 export class Room {
   constructor(state) {
     this.state = state;
+    // Apps send "ping" every 20 s; the runtime answers "pong" without waking the room.
+    this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+  }
+
+  /** Last sign of life of a socket: its last ping, else its last message, else when it joined. */
+  lastSeen(ws) {
+    const meta = ws.deserializeAttachment() || {};
+    const ping = this.state.getWebSocketAutoResponseTimestamp(ws);
+    return Math.max(ping ? ping.getTime() : 0, meta.last || 0, meta.joined || 0);
+  }
+
+  /** Closes sockets that stopped answering and tells the others they left. */
+  prune() {
+    const now = Date.now();
+    for (const ws of this.state.getWebSockets()) {
+      if (now - this.lastSeen(ws) <= STALE) continue;
+      const id = ws.deserializeAttachment()?.id;
+      try {
+        ws.close(1001, 'gone');
+      } catch {
+        /* already closed */
+      }
+      if (id) this.broadcast(JSON.stringify({ t: 'leave', id }), ws);
+    }
   }
 
   peers() {
-    return this.state.getWebSockets().map((ws) => ws.deserializeAttachment()?.id).filter(Boolean);
+    const now = Date.now();
+    return this.state
+      .getWebSockets()
+      .filter((ws) => now - this.lastSeen(ws) <= STALE)
+      .map((ws) => ws.deserializeAttachment()?.id)
+      .filter(Boolean);
   }
 
   broadcast(text, except) {
@@ -65,12 +95,13 @@ export class Room {
   }
 
   async fetch() {
+    this.prune();
     if (this.state.getWebSockets().length >= MAX_PEERS) return new Response('room full', { status: 429 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     const id = crypto.randomUUID();
     this.state.acceptWebSocket(server);
-    server.serializeAttachment({ id, window: Date.now(), count: 0 });
+    server.serializeAttachment({ id, window: Date.now(), count: 0, joined: Date.now(), last: Date.now() });
     server.send(JSON.stringify({ t: 'peers', you: id, ids: this.peers() }));
     this.broadcast(JSON.stringify({ t: 'join', id }), server);
     return new Response(null, { status: 101, webSocket: client });
@@ -86,6 +117,7 @@ export class Room {
       meta.count = 0;
     }
     meta.count = (meta.count || 0) + 1;
+    meta.last = now;
     ws.serializeAttachment(meta);
     if (meta.count > RATE_MAX) return ws.close(1008, 'too many messages');
     if (typeof message !== 'string') return;
@@ -99,6 +131,7 @@ export class Room {
     if (!f || f.t !== 'm') return;
     f.from = meta.id;
     this.broadcast(JSON.stringify(f), ws);
+    this.prune();
   }
 
   async webSocketClose(ws, code) {

@@ -178,6 +178,14 @@ function onMessage(m: CollabIn) {
     case 'hello': {
       const h: PeerHello = { name: String(m.name || '').slice(0, 40), os: String(m.os || ''), version: m.version ?? null, session: m.session ?? null };
       touch({ hello: h });
+      // The same person reconnected (new id): drop the old entry that never said goodbye.
+      useCollab.setState((s) => {
+        const old = Object.values(s.peers).filter((p) => p.id !== from && p.hello && p.hello.name === h.name && p.hello.os === h.os);
+        if (!old.length) return s;
+        const peers = { ...s.peers };
+        for (const p of old) delete peers[p.id];
+        return { peers };
+      });
       if (!m.reply) hello(true);
       // Someone already has a shared project open: offer to join it.
       if (h.session && !st.session && st.joining !== h.session.id && st.invite?.session !== h.session.id) useCollab.setState({ invite: { from, session: h.session.id, name: h.session.name } });
@@ -228,6 +236,7 @@ export function initCollab() {
       // Peers the relay no longer lists are gone.
       const peers = Object.fromEntries(Object.entries(s.peers).filter(([id]) => status.peers.includes(id)));
       for (const id of status.peers) peers[id] ??= { id, hello: null, presence: null, seen: Date.now() };
+      if (status.state !== 'online') return { status, peers: {} };
       return { status, peers };
     });
     if (status.state === 'online' && !wasOnline) hello();
@@ -245,6 +254,20 @@ export function initCollab() {
   });
   void checkUpdate();
   setInterval(() => void checkUpdate(), 15 * 60 * 1000);
+  // Heartbeat: presence every 15 s even when nothing moved, so the other side knows we are here.
+  setInterval(() => {
+    if (S().status.state !== 'online') return;
+    lastPresence = '';
+    sendPresence();
+  }, 15000);
+  setInterval(() => {
+    const now = Date.now();
+    useCollab.setState((s) => {
+      const alive = Object.values(s.peers).filter((p) => now - p.seen < 60000);
+      if (alive.length === Object.keys(s.peers).length) return s;
+      return { peers: Object.fromEntries(alive.map((p) => [p.id, p])) };
+    });
+  }, 10000);
 }
 
 export async function checkUpdate(fetch = true) {

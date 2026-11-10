@@ -232,6 +232,8 @@ function createClient({ onMessage, onStatus, WebSocketImpl = globalThis.WebSocke
   let peers = [];
   const assemble = createAssembler();
   let state = { state: 'off', error: null };
+  let beat = null;
+  let lastHeard = 0;
 
   const status = (patch) => {
     state = { ...state, ...patch };
@@ -251,9 +253,22 @@ function createClient({ onMessage, onStatus, WebSocketImpl = globalThis.WebSocke
     ws = sock;
     sock.onopen = () => {
       retry = 0;
+      lastHeard = Date.now();
       status({ state: 'online', error: null });
+      clearInterval(beat);
+      beat = setInterval(() => {
+        if (ws !== sock) return clearInterval(beat);
+        if (Date.now() - lastHeard > 50000) {
+          // No pong: the network dropped without closing; reconnect (the relay drops the old one).
+          try { sock.close(4000, 'no answer'); } catch { /* closed */ }
+          return;
+        }
+        try { sock.send('ping'); } catch { /* closing */ }
+      }, 20000);
     };
     sock.onmessage = (ev) => {
+      lastHeard = Date.now();
+      if (ev.data === 'pong') return;
       let f;
       try {
         f = JSON.parse(String(ev.data));
@@ -285,6 +300,7 @@ function createClient({ onMessage, onStatus, WebSocketImpl = globalThis.WebSocke
       }
     };
     sock.onclose = () => {
+      clearInterval(beat);
       if (ws === sock) ws = null;
       peers = [];
       if (!stopped) {

@@ -95,6 +95,45 @@ export function LigacaoPanel() {
       </div>
 
       <div className="panel-body">
+        {/* Invite: one link instead of codes */}
+        <div className="card invite-card">
+          <h4>Convidar</h4>
+          <p>Manda este link ao teu amigo (WhatsApp, e-mail). Quando ele o abrir, o Cinemex dele liga-se ao teu.</p>
+          <button
+            className="btn primary block"
+            disabled={!v?.config.relayUrl}
+            onClick={() =>
+              void run(async () => {
+                const link = await window.ec.collabInvite();
+                setShownCode(link);
+                try {
+                  await navigator.clipboard.writeText(link);
+                } catch {
+                  throw new Error('Não consegui copiar sozinho: seleciona o link acima e copia-o.');
+                }
+              }, 'Link copiado. Cola-o na mensagem para o teu amigo.')
+            }
+          >
+            Copiar link de convite
+          </button>
+          {shownCode && <code className="code-box">{shownCode}</code>}
+          <label className="hint" htmlFor="lk-paste" style={{ display: 'block', marginTop: 12 }}>
+            Recebeste um link? Cola-o aqui:
+          </label>
+          <div className="row">
+            <input id="lk-paste" className="input" value={code} placeholder="https://…/l#cmx1-…" onChange={(e) => setCode(e.target.value)} />
+            <button className="btn sm primary" disabled={!code.trim()} onClick={() => void run(async () => (await window.ec.collabUseLink(code.trim()), setCode('')), 'Ligado pelo link.')}>
+              Ligar
+            </button>
+          </div>
+          {!v?.config.relayUrl && <p className="hint">O servidor de ligação ainda não está configurado (Avançado, em baixo).</p>}
+          {msg && (
+            <p className="hint" role="status">
+              {msg}
+            </p>
+          )}
+        </div>
+
         {/* Who is here */}
         <div className="card">
           <h4>Computadores</h4>
@@ -188,44 +227,12 @@ export function LigacaoPanel() {
 
         {/* Setup */}
         <div className="card">
-          <h4>Configuração</h4>
+          <h4>Definições</h4>
           <div className="field">
             <label htmlFor="lk-name">O teu nome</label>
             <input id="lk-name" className="input" value={name} placeholder={v?.defaultName} onChange={(e) => setName(e.target.value)} onBlur={() => name !== (v?.config.name ?? '') && void run(() => window.ec.collabSet({ name }))} />
           </div>
-          <div className="field">
-            <label htmlFor="lk-relay">Servidor de ligação</label>
-            <input id="lk-relay" className="input" value={relay} placeholder="https://cinemex-relay….workers.dev" onChange={(e) => setRelay(e.target.value)} onBlur={() => relay !== (v?.config.relayUrl ?? '') && void run(() => window.ec.collabSet({ relayUrl: relay }))} />
-          </div>
-          <div className="field">
-            <label>Código de ligação {v?.hasCode ? '(guardado)' : '(em falta)'}</label>
-            <p className="hint">O mesmo código nos dois computadores. É como uma chave: manda-o ao outro computador por mensagem privada e a mais ninguém.</p>
-            {shownCode && <code className="code-box">{shownCode}</code>}
-            <div className="row">
-              <button className="btn sm" onClick={() => void run(async () => setShownCode(await window.ec.collabNewCode()), 'Código novo criado: copia-o e manda-o ao outro computador.')}>
-                Criar código
-              </button>
-              {v?.hasCode && (
-                <button
-                  className="btn sm"
-                  onClick={() =>
-                    void run(async () => {
-                      const c = await window.ec.collabGetCode();
-                      if (c) await navigator.clipboard.writeText(c);
-                    }, 'Código copiado.')
-                  }
-                >
-                  Copiar código
-                </button>
-              )}
-            </div>
-            <div className="row">
-              <input className="input" value={code} placeholder="Colar o código (cmx1-…)" onChange={(e) => setCode(e.target.value)} aria-label="Colar código de ligação" />
-              <button className="btn sm" disabled={!code.trim()} onClick={() => void run(async () => (await window.ec.collabSetCode(code.trim()), setCode('')), 'Código guardado.')}>
-                Guardar
-              </button>
-            </div>
-          </div>
+
           <div className="field">
             <label>Pasta partilhada (Google Drive)</label>
             <p className="hint">{v?.sharedRoot ?? 'O Google Drive para computador não está instalado neste computador.'}</p>
@@ -252,11 +259,23 @@ export function LigacaoPanel() {
               Ligar
             </button>
           )}
-          {(msg || st.error) && (
+          {st.error && (
             <p className="hint" role="status">
-              {msg ?? st.error}
+              {st.error}
             </p>
           )}
+          <details className="advanced">
+            <summary>Avançado</summary>
+            <div className="field">
+              <label htmlFor="lk-relay">Servidor de ligação</label>
+              <input id="lk-relay" className="input" value={relay} placeholder="https://cinemex-relay….workers.dev" onChange={(e) => setRelay(e.target.value)} onBlur={() => relay !== (v?.config.relayUrl ?? '') && void run(() => window.ec.collabSet({ relayUrl: relay }))} />
+            </div>
+            <div className="row">
+              <button className="btn sm" onClick={() => void run(async () => (await window.ec.collabNewCode(), setShownCode(null)), 'Convite novo criado: o link antigo deixa de funcionar.')}>
+                Novo convite (anula o antigo)
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </aside>

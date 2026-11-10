@@ -18,6 +18,9 @@ export default {
     if (url.pathname === '/' || url.pathname === '/health') {
       return new Response(JSON.stringify({ ok: true, service: 'cinemex-relay' }), { headers: { 'content-type': 'application/json' } });
     }
+    if (url.pathname === '/l' || url.pathname === '/ligar') {
+      return new Response(INVITE_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" } });
+    }
     const m = url.pathname.match(/^\/room\/([0-9a-f]{64})$/);
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a websocket', { status: 426 });
@@ -25,6 +28,21 @@ export default {
     return stub.fetch(request);
   },
 };
+
+// Invite link page: https://<relay>/l#cmx1-... Opens Cinemex (cinemex://ligar?r=<relay>#code) and,
+// if the app is not registered for links (a Mac running from source), shows the link to paste in
+// Ligação. The part after "#" stays in the browser.
+const INVITE_PAGE = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Convite Cinemex</title>
+<style>:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 500px at 15% -10%,rgba(212,175,55,.22),transparent 60%),#070605;color:#f2f2f5;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:min(440px,calc(100% - 32px));padding:28px;border-radius:20px;background:rgba(22,20,17,.85);border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 60px -30px #000}
+h1{margin:0 0 6px;font-size:22px}p{margin:0 0 16px;color:#a8a8b3}a.btn{display:block;text-align:center;padding:12px 16px;border-radius:999px;background:linear-gradient(180deg,#e4c252,#d4af37);color:#1a1405;font-weight:600;text-decoration:none}
+code{display:block;margin-top:14px;padding:10px;border-radius:10px;background:#0b0a09;border:1px solid rgba(255,255,255,.1);font-size:12px;word-break:break-all;user-select:all;color:#e4c252}small{display:block;margin-top:10px;color:#8a8a95}</style></head>
+<body><main><h1>Convite para o Cinemex</h1><p>Abre este convite no Cinemex para editarem os dois ao mesmo tempo.</p>
+<a class="btn" id="open" href="#">Abrir no Cinemex</a>
+<small>Se não abrir sozinho: no Cinemex, carrega em <b>Ligação</b> e cola este link em "Colar link de convite".</small><code id="link"></code></main>
+<script>var c=location.hash.slice(1);var ok=/^cmx1-[A-Za-z0-9_-]{43}$/.test(c);var app='cinemex://ligar?r='+encodeURIComponent(location.origin)+'#'+c;
+document.getElementById('link').textContent=ok?location.href:'Link incompleto: pede outro.';
+if(ok){document.getElementById('open').href=app;location.href=app;}else{document.getElementById('open').style.display='none';}</script></body></html>`;
 
 export class Room {
   constructor(state) {

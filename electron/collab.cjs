@@ -135,13 +135,13 @@ function createStore(userData) {
     try {
       const c = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
       return {
-        relayUrl: typeof c.relayUrl === 'string' ? c.relayUrl : '',
+        relayUrl: typeof c.relayUrl === 'string' && c.relayUrl ? c.relayUrl : DEFAULT_RELAY,
         name: typeof c.name === 'string' ? c.name.slice(0, 40) : '',
         sharedRoot: typeof c.sharedRoot === 'string' && c.sharedRoot ? c.sharedRoot : null,
         autoConnect: c.autoConnect !== false,
       };
     } catch {
-      return { relayUrl: '', name: '', sharedRoot: null, autoConnect: true };
+      return { relayUrl: DEFAULT_RELAY, name: '', sharedRoot: null, autoConnect: true };
     }
   };
   return {
@@ -165,6 +165,40 @@ function createStore(userData) {
       fs.writeFileSync(codeFile, code.trim(), { mode: 0o600 });
     },
   };
+}
+
+/**
+ * The relay the apps use when none was typed in. Filled in once relay/ is published
+ * (npx wrangler deploy prints it).
+ */
+const DEFAULT_RELAY = '';
+
+/** The invite link for a relay and code: https://<relay>/l#<code> (the code stays after "#"). */
+function inviteLink(relayUrl, code) {
+  if (!validCode(code)) throw new Error('Código de ligação inválido');
+  relaySocketUrl(relayUrl, '0'.repeat(64)); // https only
+  return `${relayUrl.replace(/\/+$/, '')}/l#${code.trim()}`;
+}
+
+/**
+ * Relay and code from an invite link: https://<relay>/l#cmx1-… (pasted or opened in the browser)
+ * or cinemex://ligar?r=<relay>#cmx1-… (the browser handing it to the app).
+ */
+function parseInvite(link) {
+  let u;
+  try {
+    u = new URL(String(link || '').trim());
+  } catch {
+    throw new Error('Isto não é um link de convite do Cinemex');
+  }
+  const code = decodeURIComponent(u.hash.slice(1));
+  if (!validCode(code)) throw new Error('O link de convite está incompleto (falta o código depois de #)');
+  let relayUrl;
+  if (u.protocol === 'cinemex:') relayUrl = u.searchParams.get('r') || '';
+  else if (u.protocol === 'https:' || u.protocol === 'http:') relayUrl = u.origin;
+  else throw new Error('Isto não é um link de convite do Cinemex');
+  relaySocketUrl(relayUrl, '0'.repeat(64)); // https only (or local while testing)
+  return { relayUrl: new URL(relayUrl).origin, code };
 }
 
 /** Only https relays (or a local one while testing). */
@@ -303,4 +337,4 @@ function createClient({ onMessage, onStatus, WebSocketImpl = globalThis.WebSocke
   };
 }
 
-module.exports = { newCode, validCode, deriveKeys, seal, open, frames, createAssembler, findGoogleDrive, sharedRoot, createStore, relaySocketUrl, createClient, PART };
+module.exports = { DEFAULT_RELAY, inviteLink, parseInvite, newCode, validCode, deriveKeys, seal, open, frames, createAssembler, findGoogleDrive, sharedRoot, createStore, relaySocketUrl, createClient, PART };

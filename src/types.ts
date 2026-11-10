@@ -440,6 +440,10 @@ export interface EcBridge {
   collabMakeFolder(): Promise<CollabView>;
   collabNewCode(): Promise<string>;
   collabGetCode(): Promise<string | null>;
+  /** The invite link to send to the other person (creates the code the first time). */
+  collabInvite(): Promise<string>;
+  collabUseLink(link: string): Promise<CollabView>;
+  onCollabOpen(cb: () => void): () => void;
   collabSetCode(code: string | null): Promise<CollabView>;
   collabConnect(): Promise<CollabView>;
   collabDisconnect(): Promise<CollabView>;

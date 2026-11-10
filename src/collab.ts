@@ -233,6 +233,11 @@ export function initCollab() {
     if (status.state === 'online' && !wasOnline) hello();
   });
   ec().onCollabMessage(onMessage);
+  // An invite link opened from the browser: show the panel.
+  ec().onCollabOpen(() => {
+    useCollab.setState({ open: true });
+    void S().refresh();
+  });
   // Local edits go out while a project is shared; changes that came in are not sent back.
   useEditor.subscribe((s, prev) => {
     if (s.project !== prev.project && !applying && S().session) schedule();

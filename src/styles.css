@@ -805,3 +805,7 @@ input[type="range"].range.grade-temperature::-webkit-slider-runnable-track { bac
 .peer-head span { position: absolute; top: 2px; left: 4px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--pc); color: #000; font: 600 10.5px/1.4 var(--ui); white-space: nowrap; }
 .clip.peer-sel { box-shadow: inset 0 0 0 2px var(--pc), 0 0 12px -2px var(--pc); }
 @media (prefers-reduced-motion: reduce) { .peer-head { transition: none; } .link-panel { transition: none; } }
+.link-panel .advanced { margin-top: 12px; }
+.link-panel .advanced summary { cursor: pointer; color: var(--text-3); font-size: 12px; padding: 4px 0; }
+.link-panel .advanced[open] summary { margin-bottom: 8px; }
+.invite-card { background: radial-gradient(120% 80% at 0% 0%, rgba(212, 175, 55, 0.12), transparent 60%), linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)); }

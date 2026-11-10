@@ -109,7 +109,9 @@ Botão **Ligação** na barra de cima. Três coisas:
 
 **Pasta partilhada (Google Drive).** Com o Google Drive para computador instalado nos dois, a pasta `Cinemex` dentro de "O meu disco" é a pasta partilhada. Vídeos e projetos lá dentro ficam guardados como `@shared/...` e cada computador abre-os com o seu próprio caminho (G:\ no Windows, `~/Library/CloudStorage/GoogleDrive-…` no Mac). Pode escolher-se outra pasta no painel.
 
-**Segurança.** Os dois computadores usam o mesmo **código de ligação** (`cmx1-…`, criado no painel e enviado ao outro por mensagem privada). O código nunca sai do computador: dele saem o nome da sala e a chave AES-256-GCM, por isso o servidor só passa mensagens cifradas que não consegue ler, e não guarda nada.
+**Convidar.** No painel, "Copiar link de convite" e mandar o link ao outro (WhatsApp, e-mail). Ao abri-lo, o Cinemex dele liga-se sozinho (Windows); se não abrir, cola-se o link em "Recebeste um link?" no painel. "Avançado → Novo convite" anula o link antigo.
+
+**Segurança.** O link leva o **código de ligação** (`cmx1-…`) depois do `#`, que o browser nunca envia ao servidor; trata-o como uma chave e manda-o só por mensagem privada. O código nunca sai do computador: dele saem o nome da sala e a chave AES-256-GCM, por isso o servidor só passa mensagens cifradas que não consegue ler, e não guarda nada.
 
 **Servidor de ligação** (`relay/`, um Worker do Cloudflare com Durable Objects, plano grátis). Publicar uma vez:
 

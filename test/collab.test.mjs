@@ -203,3 +203,19 @@ test('client: two apps with the same code exchange messages through a relay', as
   ahlec.stop();
   assert.equal(gui.status().state, 'off');
 });
+
+test('invite link: one link carries the relay and the code; bad links are refused', async () => {
+  const { inviteLink, parseInvite } = require('../electron/collab.cjs');
+  const code = newCode();
+  const link = inviteLink('https://cinemex-relay.x.workers.dev/', code);
+  assert.equal(link, `https://cinemex-relay.x.workers.dev/l#${code}`);
+  assert.deepEqual(parseInvite(link), { relayUrl: 'https://cinemex-relay.x.workers.dev', code });
+  assert.deepEqual(parseInvite(`  ${link}  `), { relayUrl: 'https://cinemex-relay.x.workers.dev', code });
+  // What the invite page hands to the app.
+  assert.deepEqual(parseInvite(`cinemex://ligar?r=${encodeURIComponent('https://cinemex-relay.x.workers.dev')}#${code}`), { relayUrl: 'https://cinemex-relay.x.workers.dev', code });
+  assert.throws(() => parseInvite(`http://outro.com/l#${code}`), /https/);
+  assert.throws(() => parseInvite('https://cinemex-relay.x.workers.dev/l#cmx1-curto'), /incompleto/);
+  assert.throws(() => parseInvite(`javascript:alert(1)#${code}`), /não é um link/);
+  assert.throws(() => parseInvite('olá'), /não é um link/);
+  assert.throws(() => inviteLink('http://x.com', code), /https/);
+});

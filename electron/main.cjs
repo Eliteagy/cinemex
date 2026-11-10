@@ -455,7 +455,10 @@ function createWindow() {
   }
 }
 
-app.on('second-instance', () => {
+app.on('second-instance', (_e, argv) => {
+  // A cinemex:// invite opened while the app runs (Windows passes it on the command line).
+  const link = (argv || []).find((a) => typeof a === 'string' && a.startsWith('cinemex://'));
+  if (link) void openInvite(link, { ask: true });
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
@@ -482,6 +485,43 @@ const sendUi = (channel, payload) => {
 
 /** Messages the editor may send to the other computers, and the fields each may carry. */
 const OUT_KINDS = new Set(['hello', 'presence', 'op', 'snapshot', 'want', 'stop']);
+
+// Invite links: https://<relay>/l#<code> or cinemex://ligar?r=<relay>#<code>. A link the browser
+// hands over (not pasted by the user) asks first, because it points the app at someone's relay.
+let pendingInvite = (process.argv || []).find((a) => typeof a === 'string' && a.startsWith('cinemex://')) || null;
+app.on('open-url', (e, url) => {
+  e.preventDefault();
+  if (collabStore) void openInvite(url, { ask: true });
+  else pendingInvite = url;
+});
+
+async function openInvite(link, { ask = false } = {}) {
+  try {
+    const { relayUrl, code } = collab.parseInvite(link);
+    if (ask) {
+      const r = await dialog.showMessageBox(win ?? undefined, {
+        type: 'question',
+        buttons: ['Ligar', 'Cancelar'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Convite do Cinemex',
+        message: 'Ligar ao Cinemex de quem te mandou este convite?',
+        detail: `Servidor: ${new URL(relayUrl).host}
+Só aceites convites de pessoas que conheces: elas passam a ver o projeto que partilhares.`,
+      });
+      if (r.response !== 0) return false;
+    }
+    collabStore.write({ relayUrl, autoConnect: true });
+    collabStore.setCode(code);
+    collabClient.start(relayUrl, code);
+    sendUi('collab:open', true);
+    return true;
+  } catch (err) {
+    if (ask) dialog.showErrorBox('Convite do Cinemex', String(err.message || err));
+    else throw err;
+    return false;
+  }
+}
 
 function collabHandlers() {
   collabStore = collab.createStore(app.getPath('userData'));
@@ -554,6 +594,23 @@ function collabHandlers() {
     return code;
   });
   ipcMain.handle('collab:get-code', () => collabStore.code());
+  // The link to send: creates the code the first time.
+  ipcMain.handle('collab:invite', async () => {
+    const cfg = collabStore.read();
+    if (!cfg.relayUrl) throw new Error('O servidor de ligação ainda não está configurado');
+    let code = collabStore.code();
+    if (!code) {
+      code = collab.newCode();
+      collabStore.setCode(code);
+    }
+    if (collabClient.status().state === 'off') collabClient.start(cfg.relayUrl, code);
+    return collab.inviteLink(cfg.relayUrl, code);
+  });
+  // A link pasted in the panel by the user.
+  ipcMain.handle('collab:use-link', async (_e, link) => {
+    await openInvite(String(link || ''), { ask: false });
+    return view();
+  });
   ipcMain.handle('collab:set-code', async (_e, code) => {
     collabStore.setCode(typeof code === 'string' ? code.trim() : null);
     return view();
@@ -583,6 +640,21 @@ function collabHandlers() {
     app.relaunch();
     app.exit(0);
   });
+
+  if (!process.env.ELITE_HIDDEN) {
+    // Links cinemex://… open this app (Windows: this Electron with the app folder).
+    try {
+      if (process.defaultApp) app.setAsDefaultProtocolClient('cinemex', process.execPath, [path.resolve(ROOT)]);
+      else app.setAsDefaultProtocolClient('cinemex');
+    } catch (err) {
+      console.error('cinemex:// não ficou registado:', err.message);
+    }
+  }
+  if (pendingInvite) {
+    const link = pendingInvite;
+    pendingInvite = null;
+    setTimeout(() => void openInvite(link, { ask: true }), 1500);
+  }
 
   const cfg = collabStore.read();
   if (cfg.autoConnect && cfg.relayUrl && collabStore.code() && !process.env.ELITE_HIDDEN) {

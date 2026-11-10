@@ -49,6 +49,13 @@ contextBridge.exposeInMainWorld('ec', {
   collabMakeFolder: () => ipcRenderer.invoke('collab:make-folder'),
   collabNewCode: () => ipcRenderer.invoke('collab:new-code'),
   collabGetCode: () => ipcRenderer.invoke('collab:get-code'),
+  collabInvite: () => ipcRenderer.invoke('collab:invite'),
+  collabUseLink: (link) => ipcRenderer.invoke('collab:use-link', link),
+  onCollabOpen: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('collab:open', f);
+    return () => ipcRenderer.removeListener('collab:open', f);
+  },
   collabSetCode: (code) => ipcRenderer.invoke('collab:set-code', code),
   collabConnect: () => ipcRenderer.invoke('collab:connect'),
   collabDisconnect: () => ipcRenderer.invoke('collab:disconnect'),

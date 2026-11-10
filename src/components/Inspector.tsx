@@ -569,9 +569,22 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
     return (
       <aside className="panel rinsp" aria-label="Inspetor">
         <div className="ri-head">
-          <span className="ri-name">Timeline · {project.name}</span>
+          <span className="ri-name">Inspetor</span>
+        </div>
+        {/* Nothing selected: the tabs stay in place, dimmed, so the panel is still the Inspector (Resolve: "Nothing to inspect"). */}
+        <div className="ri-tabs" role="tablist" aria-label="Separadores do Inspetor">
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={false} disabled>
+              <Glyph d={t.d} />
+              <span>{t.label}</span>
+            </button>
+          ))}
         </div>
         <div className="ri-body">
+          <div className="ri-empty">
+            <b>Nada selecionado</b>
+            <span>Clica num clip na timeline para ver Transformar, Recorte, Composição, Velocidade e o resto.</span>
+          </div>
           <Section id="project" title="Projeto" on open={open('project')} onToggle={toggle}>
             <Row label="Duração">
               <span className="ri-read">{fmtShort(projectDuration(project))}</span>
@@ -584,7 +597,6 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
                 {project.canvas.w} × {project.canvas.h} · {project.canvas.fps} fps
               </span>
             </Row>
-            <p className="ri-note">Seleciona um clip na timeline para o inspecionar.</p>
           </Section>
           <Section id="captions0" title="Legendas Automáticas" on={false} open={open('captions0')} onToggle={toggle}>
             <CaptionsCard />

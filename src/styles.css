@@ -809,3 +809,61 @@ input[type="range"].range.grade-temperature::-webkit-slider-runnable-track { bac
 .link-panel .advanced summary { cursor: pointer; color: var(--text-3); font-size: 12px; padding: 4px 0; }
 .link-panel .advanced[open] summary { margin-bottom: 8px; }
 .invite-card { background: radial-gradient(120% 80% at 0% 0%, rgba(212, 175, 55, 0.12), transparent 60%), linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)); }
+
+/* ------------------------------------------------------------------ Inspector (Editar)
+   Structure and behaviour follow DaVinci Resolve's Inspector (tabs, collapsible sections, rows of
+   "label · fields · keyframe · reset", labels right-aligned in one column, number boxes dragged
+   sideways); the proportions were measured on Resolve at 1x. The look is Cinemex's: the glass
+   panel, the gold accent and the app's own controls and type. */
+.page-edit .workspace { grid-template-columns: 300px minmax(0, 1fr) 400px; }
+.rinsp { font-size: 12px; color: var(--text); }
+.ri-head { display: flex; align-items: center; gap: 8px; flex: none; min-height: 48px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--stroke-1); }
+.ri-name { flex: 1; min-width: 0; font: 600 14px/1.25 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri-tabs { display: grid; grid-template-columns: repeat(6, 1fr); flex: none; height: 56px; padding: 0 6px; border-bottom: 1px solid var(--stroke-1); }
+.ri-tabs button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 4px 0 2px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); font: 500 11.5px/1 var(--display); cursor: pointer; transition: color 120ms ease; }
+.ri-tabs button:hover:not(:disabled) { color: var(--text); }
+.ri-tabs button.on { color: var(--text); }
+.ri-tabs button.on svg { color: var(--accent); filter: drop-shadow(0 0 5px var(--accent-glow)); }
+.ri-tabs button.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.ri-tabs button:disabled { color: var(--text-4); cursor: default; }
+.ri-tabs button:focus-visible, .ri-sec-title:focus-visible, .ri-tool:focus-visible, .ri-num:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ri-body { flex: 1; min-height: 0; overflow: auto; }
+.ri-sec { border-bottom: 1px solid var(--stroke-1); }
+.ri-sec-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px 34px; align-items: center; height: 36px; padding-left: 16px; }
+.ri-dot { position: relative; width: 26px; height: 14px; border-radius: var(--r-pill); background: var(--well); box-shadow: inset 0 0 0 1px var(--stroke-2); }
+.ri-dot::after { content: ""; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); transition: left 140ms var(--ease), background 140ms ease, box-shadow 140ms ease; }
+.ri-dot.on::after { left: 15px; background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+.ri-sec-title { height: 36px; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--text); font: 600 13px/1 var(--display); text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri-sec.off .ri-sec-title { display: flex; align-items: center; color: var(--text-4); font-weight: 500; cursor: default; }
+.ri-sec.off .ri-dot { opacity: 0.5; }
+.ri-sec-body { padding: 0 0 10px; }
+.ri-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 24px 34px; align-items: center; min-height: 30px; }
+.ri-label { padding-right: 10px; color: var(--text-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 8px; }
+.ri-slot { display: grid; place-items: center; }
+.ri-axis { flex: none; width: 10px; color: var(--text-3); font: 500 11px/1 var(--num); text-align: center; }
+.ri-link { flex: 1; display: grid; place-items: center; min-width: 16px; height: 16px; color: var(--text-4); }
+.ri-link.on { color: var(--accent); }
+.ri-num { flex: none; box-sizing: border-box; width: 60px; height: 24px; padding: 0 4px; border: 1px solid var(--stroke-2); border-radius: var(--r-sm); background: var(--well); color: var(--text); font: 500 12px/22px var(--num); font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; overflow: hidden; cursor: ew-resize; user-select: none; touch-action: none; transition: border-color 120ms ease; }
+.ri-num:hover { border-color: var(--stroke-3); }
+.ri-num.edit { cursor: text; user-select: text; outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ri-num.off { color: var(--text-4); cursor: default; }
+.rinsp .ri-range { flex: 1; min-width: 40px; margin: 0; }
+.ri-tool { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--text-3); cursor: pointer; transition: color 120ms ease, background-color 120ms ease; }
+.ri-tool:hover:not(:disabled) { color: var(--text); background: var(--bg-3); }
+.ri-tool:disabled { color: var(--text-4); cursor: default; }
+.ri-tool .icon { width: 15px; height: 15px; }
+.ri-key.armed { color: var(--text); }
+.ri-key.on { color: var(--accent); filter: drop-shadow(0 0 4px var(--accent-glow)); }
+.rinsp select.ri-select { flex: 1; min-width: 0; height: 26px; padding-top: 0; padding-bottom: 0; padding-left: 9px; font-size: 12px; }
+.rinsp .ri-seg { flex: 1; }
+.rinsp .ri-seg button { height: 22px; padding: 0 4px; font-size: 11.5px; }
+.rinsp .ri-btn { height: 24px; }
+.ri-read { min-width: 0; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri-read.path { direction: rtl; text-align: left; color: var(--text-2); }
+.ri-unit { color: var(--text-3); }
+.ri-note { margin: 2px 14px 2px 140px; color: var(--text-3); font-size: 11.5px; line-height: 1.4; }
+.ri-pad { padding: 6px 16px 4px; }
+/* Sections that still use the older cards: flat inside the section, their own title hidden (the section has it). */
+.rinsp .ri-sec-body > .card, .rinsp .ri-pad > .card { margin: 0; padding: 4px 16px 2px; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.rinsp .ri-sec-body > .card > h4 { display: none; }

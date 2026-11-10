@@ -56,7 +56,7 @@ function TransitionRow({ clip, side }: { clip: Clip; side: 'in' | 'out' }) {
   );
 }
 
-function Transitions({ clip }: { clip: Clip }) {
+export function Transitions({ clip }: { clip: Clip }) {
   return (
     <div className="card">
       <h4>Transições</h4>
@@ -189,7 +189,7 @@ function ShapeTools({ clip, m }: { clip: Clip; m: Mask }) {
   return null;
 }
 
-function Masks({ clip }: { clip: Clip }) {
+export function Masks({ clip }: { clip: Clip }) {
   const masks = clip.masks ?? [];
   const pct = (v: number) => Math.round(v * 100);
   return (
@@ -265,7 +265,7 @@ function Masks({ clip }: { clip: Clip }) {
   );
 }
 
-function Freeze({ clip }: { clip: Clip }) {
+export function Freeze({ clip }: { clip: Clip }) {
   const playhead = useEditor((s) => s.playhead);
   const inside = playhead > clip.start && playhead < clip.start + dur(clip);
   return (

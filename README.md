@@ -50,6 +50,14 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 - **Captions:** *Legendas* page. *Legendas automáticas* opens the AutoSubs-style options (model, language, translation, density, lines, case, punctuation, censored words). Click a block to apply it (Shift+click: only the selected caption). Edit the text and timing in the list; with Felipe or Marta, the selected caption shows its words: click one to make it the keyword. *O meu estilo* changes every caption at once; SRT in and out.
 - **Export:** *Export* → MP4 H.264 + AAC with the captions burned in (libass). The NVIDIA GPU is available through MCP (`gpu: true`).
 
+## Painéis (como no Premiere)
+
+Em todas as páginas os painéis (Média, Visor, Inspetor, Timeline…) mexem-se:
+
+- **Tamanho:** arrasta a borda entre dois painéis.
+- **Posição:** arrasta o separador com o nome do painel para cima de outro painel: nos lados fica ao lado, em cima ou em baixo; no meio ficam os dois no mesmo sítio, em separadores.
+- Cada página guarda a sua disposição neste computador. **Repor painéis** (canto inferior esquerdo) volta à disposição de origem da página.
+
 ## Claude editing
 
 1. Open Cinemex once (it creates the access token).

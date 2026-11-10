@@ -1,18 +1,12 @@
 import { useEffect } from 'react';
 import { TopBar } from './components/TopBar';
-import { MediaBin } from './components/MediaBin';
-import { Viewer } from './components/Viewer';
-import { Inspector } from './components/Inspector';
-import { Timeline } from './components/Timeline';
 import { useEditor } from './store';
 import { exportVideo, importDialog, importPaths, openProject, saveProject } from './actions';
 import { handleMcp } from './mcpHandler';
 import { useState } from 'react';
-import { DeliverQueue, DeliverSettings, type DoneExport } from './components/Deliver';
+import type { DoneExport } from './components/Deliver';
+import { DeliverContext, Dock, resetDock } from './components/Dock';
 import { Icon } from './components/Icon';
-import { ColorLooks, ColorPanel } from './components/Color';
-import { FusionInspector, FusionLibrary, NodeEditor } from './components/Fusion';
-import { CaptionList, CaptionStylePanel } from './components/Captions';
 import { ClaudePanel } from './components/ClaudePanel';
 import { LigacaoPanel } from './components/Ligacao';
 import { initCollab } from './collab';
@@ -30,6 +24,8 @@ const PAGES = [
 export function App() {
   const page = useEditor((s) => s.page);
   const [done, setDone] = useState<DoneExport[]>([]);
+  // Bumped by "Repor painéis": the dock of this page is mounted again with its default arrangement.
+  const [dockRev, setDockRev] = useState(0);
   const [mcp, setMcp] = useState('');
   useEffect(() => {
     void window.ec.mcpInfo().then((i) => setMcp(i.url));
@@ -107,14 +103,11 @@ export function App() {
   }, []);
 
   return (
-    <div className={`app page-${page}`}>
+    <div className={`app docked page-${page}`}>
       <TopBar />
-      <main className="workspace">
-        {page === 'deliver' ? <DeliverSettings onDone={(d) => setDone((x) => [d, ...x])} /> : page === 'fusion' ? <FusionLibrary /> : page === 'color' ? <ColorLooks /> : page === 'captions' ? <CaptionList /> : <MediaBin />}
-        <Viewer />
-        {page === 'deliver' ? <DeliverQueue items={done} /> : page === 'edit' ? <Inspector /> : page === 'fusion' ? <FusionInspector /> : page === 'color' ? <ColorPanel /> : page === 'captions' ? <CaptionStylePanel /> : null}
-      </main>
-      {page === 'fusion' ? <NodeEditor /> : page !== 'media' && <Timeline />}
+      <DeliverContext.Provider value={{ done, add: (d) => setDone((x) => [d, ...x]) }}>
+        <Dock key={`${page}:${dockRev}`} page={page} />
+      </DeliverContext.Provider>
       <ClaudePanel />
       <LigacaoPanel />
       <nav className="pagebar" aria-label="Páginas">
@@ -126,6 +119,16 @@ export function App() {
           </button>
         ))}
         </div>
+        <button
+          className="pill dock-reset"
+          title="Põe os painéis desta página como vieram (tamanhos e posições)"
+          onClick={() => {
+            resetDock(page);
+            setDockRev((r) => r + 1);
+          }}
+        >
+          Repor painéis
+        </button>
         <span className={`pill mcp${mcp ? ' on' : ''}`} title={mcp ? `Servidor MCP: ${mcp}` : 'Servidor MCP desligado'}>
           <span className="dot" />
           {mcp ? 'Claude pode editar' : 'MCP desligado'}

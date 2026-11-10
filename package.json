@@ -14,6 +14,7 @@
     "test": "node --test test/backend.test.mjs test/fusion.test.mjs test/captions.test.mjs test/capstyle.test.mjs test/claude.test.mjs test/fx.test.mjs test/ae.test.mjs test/ai.test.mjs test/apple.test.mjs test/collab.test.mjs test/crop.test.mjs"
   },
   "dependencies": {
+    "dockview-react": "8.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.0"

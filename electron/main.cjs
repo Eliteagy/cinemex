@@ -386,11 +386,15 @@ const SPLASH_MS = 2950; // matches the fade-out at the end of electron/splash/sp
 /** Animated logo shown while the editor loads. Skipped in test mode. Resolves when it may close. */
 function showSplash() {
   if (process.env.ELITE_HIDDEN) return null;
+  // Big enough for the logo at full size plus the "open out" zoom; transparent and shadowless,
+  // so only the logo shows on the desktop.
   const splash = new BrowserWindow({
-    width: 560,
-    height: 420,
+    width: 640,
+    height: 640,
     frame: false,
     transparent: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
     resizable: false,
     movable: true,
     alwaysOnTop: true,

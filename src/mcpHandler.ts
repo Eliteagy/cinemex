@@ -6,6 +6,7 @@ import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
 import type { Graphic, GraphicKind, TransitionType } from './types';
 import { projectDuration } from './lib/project';
+import { cropOf, setCrop } from './lib/crop.js';
 import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
@@ -169,6 +170,17 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (!BLEND_MODES.includes(mode)) throw new Error(`mode: ${BLEND_MODES.join(', ')}`);
       S().setBlend(String(a.clip_id), mode);
       return { ok: true };
+    }
+    case 'set_crop': {
+      const id = String(a.clip_id);
+      const f = findClip(S().project, id);
+      if (!f || !f.clip.mediaId || f.track.kind !== 'video') throw new Error('Recorte só em clips de vídeo ou imagem');
+      const patch = a.reset === true ? { left: 0, right: 0, top: 0, bottom: 0, soft: 0 } : { left: n(a.left), right: n(a.right), top: n(a.top), bottom: n(a.bottom), soft: n(a.softness) };
+      S().commit((p) => {
+        const c = findClip(p, id)?.clip;
+        if (c) setCrop(c, patch);
+      });
+      return { crop: cropOf(findClip(S().project, id)!.clip) };
     }
     case 'set_matte': {
       const kind = s(a.kind);

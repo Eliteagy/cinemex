@@ -2,14 +2,16 @@
 // Inspector: the clip name on top, a row of tabs (Vídeo, Áudio, Efeitos, Transição, Imagem,
 // Ficheiro) and collapsible sections whose rows are "label · fields · keyframe · reset", with
 // number boxes that are dragged sideways. The look is Cinemex's own (glass panel, gold accent,
-// the app's controls; see .rinsp in styles.css). What the engine does not do yet (Recorte,
-// Estabilização, Correção de Lente) is shown dimmed in its place, and the dot on each section
+// the app's controls; see .rinsp in styles.css). What the engine does not do yet (Estabilização,
+// Correção de Lente) is shown dimmed in its place, and the dot on each section
 // says "this section has changes" (there is no bypass yet).
 import { useRef, useState, type ReactNode } from 'react';
 import { useEditor } from '../store';
 import { KEY_DEFAULT, baseStyle, dur, findClip, fmtShort, kfValue, projectDuration, r3, speedOf } from '../lib/project';
 import { autoCaptions, cutSilences } from '../actions';
 import { BLEND_LABELS, BLEND_MODES } from '../lib/layerfx.js';
+import { CROP_ID, cropOf, setCrop } from '../lib/crop.js';
+import type { Crop } from '../lib/crop.js';
 import type { BlendMode, Clip, KeyProp, Media } from '../types';
 import type { MotionPreset } from '../lib/fx.js';
 import { Icon } from './Icon';
@@ -232,6 +234,38 @@ const PRESETS: { k: MotionPreset; label: string }[] = [
   { k: 'fade_in_out', label: 'Aparecer / sumir' },
 ];
 
+/** Recorte, as in Resolve: left, right, top and bottom in pixels of the frame, plus soft edges. */
+function CropSection({ clip, open, toggle }: { clip: Clip; open: (id: string) => boolean; toggle: (id: string) => void }) {
+  const canvas = useEditor((s) => s.project.canvas);
+  const crop = cropOf(clip);
+  const set = (patch: Partial<Crop>) =>
+    st().commit((p) => {
+      const f = findClip(p, clip.id);
+      if (f) setCrop(f.clip, patch);
+    });
+  const sides: { k: 'left' | 'right' | 'top' | 'bottom'; label: string; px: number }[] = [
+    { k: 'left', label: 'Recortar Esquerda', px: canvas.w },
+    { k: 'right', label: 'Recortar Direita', px: canvas.w },
+    { k: 'top', label: 'Recortar Cima', px: canvas.h },
+    { k: 'bottom', label: 'Recortar Baixo', px: canvas.h },
+  ];
+  const any = sides.some((x) => crop[x.k] > 0) || crop.soft > 0;
+  return (
+    <Section id="crop" title="Recorte" on={any} open={open('crop')} onToggle={toggle} onReset={() => set({ left: 0, right: 0, top: 0, bottom: 0, soft: 0 })}>
+      {sides.map((x) => (
+        <Row key={x.k} label={x.label} onReset={() => set({ [x.k]: 0 })}>
+          <RowSlider label={x.label} value={crop[x.k] * x.px} min={0} max={x.px} step={1} onChange={(v) => set({ [x.k]: v / x.px })} />
+          <NumField label={`${x.label}, píxeis`} value={crop[x.k] * x.px} min={0} max={x.px} step={1} onChange={(v) => set({ [x.k]: v / x.px })} />
+        </Row>
+      ))}
+      <Row label="Suavidade" onReset={() => set({ soft: 0 })}>
+        <RowSlider label="Suavidade" value={crop.soft * 100} min={0} max={100} step={1} onChange={(v) => set({ soft: v / 100 })} />
+        <NumField label="Suavidade" value={crop.soft * 100} min={0} max={100} step={1} dec={2} onChange={(v) => set({ soft: v / 100 })} />
+      </Row>
+    </Section>
+  );
+}
+
 // ------------------------------------------------------------------ Vídeo
 function VideoTab({ clip, media, open, toggle }: { clip: Clip; media: Media; open: (id: string) => boolean; toggle: (id: string) => void }) {
   const canvas = useEditor((s) => s.project.canvas);
@@ -286,7 +320,7 @@ function VideoTab({ clip, media, open, toggle }: { clip: Clip; media: Media; ope
         {zoom.value <= 1.001 && <p className="ri-note">A posição só mexe a imagem com Zoom acima de 1.000.</p>}
       </Section>
 
-      <Unavailable title="Recorte" />
+      <CropSection clip={clip} open={open} toggle={toggle} />
 
       <Section id="dynzoom" title="Zoom Dinâmico" on={keyframes > 0 && [zoom, x, y].some((p) => p.count >= 2)} open={open('dynzoom')} onToggle={toggle} onReset={() => st().clearKeyframes(clip.id)}>
         <Row label="Animação">
@@ -513,7 +547,7 @@ const TABS: { id: Tab; label: string; d: string }[] = [
   { id: 'file', label: 'Ficheiro', d: G.file },
 ];
 /** Sections open the first time, like a fresh Resolve project (the rest open with a click). */
-const OPEN_DEFAULT = new Set(['transform', 'dynzoom', 'composite', 'speed', 'scaling', 'volume', 'timing', 'fileinfo', 'title', 'graphic', 'project', 'captions0', 'text0', 'transitions', 'effects', 'masks']);
+const OPEN_DEFAULT = new Set(['transform', 'crop', 'dynzoom', 'composite', 'speed', 'scaling', 'volume', 'timing', 'fileinfo', 'title', 'graphic', 'project', 'captions0', 'text0', 'transitions', 'effects', 'masks']);
 
 export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
   const styleOptions = useStyleOptions();
@@ -643,7 +677,7 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
             <Section id="effects" title="Efeitos de Camada" on={Boolean(clip.effects?.length)} open={open('effects')} onToggle={toggle}>
               <EffectsCard clip={clip} />
             </Section>
-            <Section id="masks" title="Máscaras" on={Boolean(clip.masks?.length)} open={open('masks')} onToggle={toggle}>
+            <Section id="masks" title="Máscaras" on={Boolean(clip.masks?.some((mk) => mk.id !== CROP_ID))} open={open('masks')} onToggle={toggle}>
               <Masks clip={clip} />
             </Section>
             <Section id="matte" title="Track Matte" on={Boolean(clip.matte)} open={open('matte')} onToggle={toggle} onReset={() => st().setMatte(clip.id, null)}>

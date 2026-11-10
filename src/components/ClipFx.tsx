@@ -7,6 +7,7 @@ import { TRANSITIONS, TRANSITION_TYPES } from '../lib/fx.js';
 import type { MotionPreset } from '../lib/fx.js';
 import { freezeFrame, personMatte } from '../actions';
 import { CompositeCard, EaseCard, EffectsCard, ExpressionsCard } from './AeFx';
+import { CROP_ID } from '../lib/crop.js';
 
 const st = useEditor.getState;
 
@@ -190,7 +191,8 @@ function ShapeTools({ clip, m }: { clip: Clip; m: Mask }) {
 }
 
 export function Masks({ clip }: { clip: Clip }) {
-  const masks = clip.masks ?? [];
+  // The Recorte of the Inspector is a mask too (src/lib/crop.js); it has its own section, not this list.
+  const masks = (clip.masks ?? []).filter((m) => m.id !== CROP_ID);
   const pct = (v: number) => Math.round(v * 100);
   return (
     <div className="card">

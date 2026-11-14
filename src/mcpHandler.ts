@@ -7,6 +7,8 @@ import { GRAPHIC_KINDS } from './lib/graphics.js';
 import type { Graphic, GraphicKind, TransitionType } from './types';
 import { projectDuration } from './lib/project';
 import { cropOf, setCrop } from './lib/crop.js';
+import { BG_KINDS, FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from './lib/frame.js';
+import type { FrameBg } from './types';
 import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
@@ -181,6 +183,36 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         if (c) setCrop(c, patch);
       });
       return { crop: cropOf(findClip(S().project, id)!.clip) };
+    }
+    case 'set_frame': {
+      const id = String(a.clip_id);
+      const f = findClip(S().project, id);
+      if (!f || !f.clip.mediaId || f.track.kind !== 'video') throw new Error('Moldura só em clips de vídeo ou imagem');
+      const cur = cleanFrame(f.clip.frame) ?? FRAME_DEFAULT;
+      const kind = a.background === undefined ? cur.bg.kind : String(a.background);
+      if (!BG_KINDS.includes(kind as FrameBg['kind'])) throw new Error(`Fundo desconhecido: ${kind}. Usa none, color ou gradient.`);
+      if (typeof a.gradient === 'string' && !GRADIENTS[a.gradient]) throw new Error(`Gradiente desconhecido: ${a.gradient}. Há: ${GRADIENT_IDS.join(', ')}.`);
+      const old = cur.bg;
+      const bg: FrameBg =
+        kind === 'color'
+          ? { kind: 'color', color: typeof a.color === 'string' ? a.color : old.kind === 'color' ? old.color : undefined }
+          : kind === 'gradient'
+            ? typeof a.gradient === 'string'
+              ? { kind: 'gradient', preset: a.gradient }
+              : typeof a.from === 'string' && typeof a.to === 'string'
+                ? { kind: 'gradient', from: a.from, to: a.to, angle: n(a.angle) ?? 135 }
+                : old.kind === 'gradient'
+                  ? old
+                  : { kind: 'gradient', preset: 'oceano' }
+            : { kind: 'none' };
+      const next = a.off === true ? null : cleanFrame({ padding: n(a.padding) ?? cur.padding, radius: n(a.radius) ?? cur.radius, shadow: n(a.shadow) ?? cur.shadow, border: n(a.border) ?? cur.border, borderColor: typeof a.border_color === 'string' ? a.border_color : cur.borderColor, bg });
+      S().commit((p) => {
+        const c = findClip(p, id)?.clip;
+        if (!c) return;
+        if (next) c.frame = next;
+        else delete c.frame;
+      });
+      return { frame: cleanFrame(findClip(S().project, id)!.clip.frame) };
     }
     case 'set_matte': {
       const kind = s(a.kind);

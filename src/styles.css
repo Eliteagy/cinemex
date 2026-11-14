@@ -918,3 +918,13 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .pagebar .pill.dock-reset { position: absolute; left: 0; border: 0; color: var(--text-3); font: inherit; font-size: 12px; cursor: pointer; }
 .pagebar .pill.dock-reset:hover { color: var(--text); }
 .pagebar .pill.dock-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ Moldura e fundo (Inspector) */
+.grad-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 4px 62px 8px 16px; }
+.grad { aspect-ratio: 16 / 10; padding: 0; border: 0; border-radius: var(--r-md); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); transition: transform 90ms ease, box-shadow 120ms ease; }
+.grad:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
+.grad:active { transform: var(--press); }
+.grad.on { box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px #f1f1f3; }
+.grad:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ri-note.wide { margin: 6px 16px 2px; }
+.frame-bg { padding: 2px 62px 6px 16px; }

@@ -4,7 +4,7 @@ The Elite Agency's video editor. It takes the best ideas from three programs we 
 
 | Idea | Inspired by | In Cinemex |
 |---|---|---|
-| Built-in MCP server so an AI can edit | Premiere Pro 2026 (`dvamcp.dll`, "Premiere MCP Server") | `electron/mcp.cjs`: 54 tools over HTTP at `127.0.0.1:4545/mcp` (token required) |
+| Built-in MCP server so an AI can edit | Premiere Pro 2026 (`dvamcp.dll`, "Premiere MCP Server") | `electron/mcp.cjs`: 56 tools over HTTP at `127.0.0.1:4545/mcp` (token required) |
 | Media bins and multi-track editing | Premiere | Media panel, tracks V1/V2, Captions, Music |
 | Word-level transcription, automatic captions | DaVinci Resolve 21 (`GetTranscription`, `AutoCaptionSettings`) | Local Whisper (large-v3-turbo on the GPU) and word-by-word captions |
 | Readable JSON project | CapCut (`draft_content.json`) | `.ecproj` in JSON, times in seconds |

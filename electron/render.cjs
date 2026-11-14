@@ -15,6 +15,7 @@ const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
 const anim = require('../src/lib/anim.js');
 const { layerFx, BLEND_FFMPEG } = require('../src/lib/layerfx.js');
 const xform = require('../src/lib/xform.js');
+const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 const { FFMPEG } = require('./bin.cjs');
 
@@ -936,6 +937,16 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           const pre = `pl${layer}`;
           filters.push(`${src}${chain.join(',')}[${pre}]`);
           src = `[${layerFx(filters, c, pre, `${layer}`, { W, H, FPS, dur, media, addInput, files: extraFiles, fontFile: matteFont })}]`;
+          chain.length = 0;
+        }
+        // Moldura e fundo (src/lib/frame.js): the finished picture goes into its rounded box over a
+        // background; the result is a full-canvas RGBA layer, as the preview draws it.
+        if (hasFrame(c.frame)) {
+          chain.push('format=rgba');
+          if (c.fit === 'fit' && !keyed) chain.push(`pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`);
+          const pre = `pq${layer}`;
+          filters.push(`${src}${chain.join(',')}[${pre}]`);
+          src = `[${frameFilters(filters, c.frame, pre, `${layer}`, { W, H, FPS: FPSc, dur })}]`;
           chain.length = 0;
         }
         const frontMasks = (c.masks || []).filter((m) => m.mode === 'front' && maskReady(m));

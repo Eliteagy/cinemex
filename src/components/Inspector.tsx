@@ -12,6 +12,8 @@ import { autoCaptions, cutSilences } from '../actions';
 import { BLEND_LABELS, BLEND_MODES } from '../lib/layerfx.js';
 import { CROP_ID, cropOf, setCrop } from '../lib/crop.js';
 import type { Crop } from '../lib/crop.js';
+import { FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from '../lib/frame.js';
+import type { Frame, FrameBg } from '../types';
 import type { BlendMode, Clip, KeyProp, Media } from '../types';
 import type { MotionPreset } from '../lib/fx.js';
 import { Icon } from './Icon';
@@ -266,6 +268,88 @@ function CropSection({ clip, open, toggle }: { clip: Clip; open: (id: string) =>
   );
 }
 
+/** Moldura e fundo: the picture smaller, with rounded corners, a shadow and an outline, over a background. */
+function FrameSection({ clip, open, toggle }: { clip: Clip; open: (id: string) => boolean; toggle: (id: string) => void }) {
+  const canvas = useEditor((s) => s.project.canvas);
+  const short = Math.min(canvas.w, canvas.h);
+  const frame = cleanFrame(clip.frame);
+  const write = (next: Frame | null) =>
+    st().commit((p) => {
+      const c = findClip(p, clip.id)?.clip;
+      if (!c) return;
+      const clean = next ? cleanFrame(next) : null;
+      if (clean) c.frame = clean;
+      else delete c.frame;
+    });
+  if (!frame) {
+    return (
+      <Section id="frame" title="Moldura e Fundo" on={false} open={open('frame')} onToggle={toggle}>
+        <div className="ri-pad">
+          <button className="btn ri-btn" style={{ width: '100%' }} onClick={() => write(FRAME_DEFAULT)}>
+            Pôr moldura
+          </button>
+        </div>
+        <p className="ri-note wide">A imagem fica mais pequena, com cantos redondos e sombra, sobre um fundo.</p>
+      </Section>
+    );
+  }
+  const set = (patch: Partial<Frame>) => write({ ...frame, ...patch });
+  const kinds: { k: FrameBg['kind']; label: string }[] = [
+    { k: 'none', label: 'Sem fundo' },
+    { k: 'color', label: 'Cor' },
+    { k: 'gradient', label: 'Gradiente' },
+  ];
+  const pick = (k: FrameBg['kind']) => set({ bg: k === 'color' ? { kind: 'color', color: '#101011' } : k === 'gradient' ? { kind: 'gradient', preset: 'oceano' } : { kind: 'none' } });
+  const slider = (label: string, value: number, max: number, onChange: (v: number) => void, def: number, dec = 0) => (
+    <Row label={label} onReset={() => onChange(def)}>
+      <RowSlider label={label} value={value} min={0} max={max} step={max > 50 ? 1 : 0.5} onChange={onChange} />
+      <NumField label={label} value={value} min={0} max={max} step={1} dec={dec} onChange={onChange} />
+    </Row>
+  );
+  return (
+    <Section id="frame" title="Moldura e Fundo" on open={open('frame')} onToggle={toggle} onReset={() => write(null)}>
+      <div className="frame-bg">
+        <div className="seg" role="group" aria-label="Fundo">
+          {kinds.map((x) => (
+            <button key={x.k} className={frame.bg.kind === x.k ? 'on' : ''} aria-pressed={frame.bg.kind === x.k} onClick={() => pick(x.k)}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {frame.bg.kind === 'color' && (
+        <Row label="Cor do fundo">
+          <label className="swatch">
+            <input type="color" aria-label="Cor do fundo" value={frame.bg.color ?? '#101011'} onChange={(e) => set({ bg: { kind: 'color', color: e.target.value } })} />
+            <span className="ri-read">{(frame.bg.color ?? '#101011').toUpperCase()}</span>
+          </label>
+        </Row>
+      )}
+      {frame.bg.kind === 'gradient' && (
+        <div className="grad-grid" role="group" aria-label="Gradiente do fundo">
+          {GRADIENT_IDS.map((id) => {
+            const g = GRADIENTS[id]!;
+            const on = frame.bg.kind === 'gradient' && frame.bg.preset === id;
+            return <button key={id} className={`grad${on ? ' on' : ''}`} title={g.label} aria-label={g.label} aria-pressed={on} style={{ background: `linear-gradient(${g.angle + 90}deg, ${g.from}, ${g.to})` }} onClick={() => set({ bg: { kind: 'gradient', preset: id } })} />;
+          })}
+        </div>
+      )}
+      {slider('Margem', frame.padding * 100, 35, (v) => set({ padding: v / 100 }), FRAME_DEFAULT.padding * 100)}
+      {slider('Cantos', frame.radius * 100, 50, (v) => set({ radius: v / 100 }), FRAME_DEFAULT.radius * 100)}
+      {slider('Sombra', frame.shadow * 100, 100, (v) => set({ shadow: v / 100 }), FRAME_DEFAULT.shadow * 100)}
+      {slider('Contorno', frame.border * short, Math.round(0.02 * short), (v) => set({ border: v / short }), 0)}
+      {frame.border > 0 && (
+        <Row label="Cor do contorno">
+          <label className="swatch">
+            <input type="color" aria-label="Cor do contorno" value={frame.borderColor} onChange={(e) => set({ borderColor: e.target.value })} />
+            <span className="ri-read">{frame.borderColor.toUpperCase()}</span>
+          </label>
+        </Row>
+      )}
+    </Section>
+  );
+}
+
 // ------------------------------------------------------------------ Vídeo
 function VideoTab({ clip, media, open, toggle }: { clip: Clip; media: Media; open: (id: string) => boolean; toggle: (id: string) => void }) {
   const canvas = useEditor((s) => s.project.canvas);
@@ -321,6 +405,8 @@ function VideoTab({ clip, media, open, toggle }: { clip: Clip; media: Media; ope
       </Section>
 
       <CropSection clip={clip} open={open} toggle={toggle} />
+
+      <FrameSection clip={clip} open={open} toggle={toggle} />
 
       <Section id="dynzoom" title="Zoom Dinâmico" on={keyframes > 0 && [zoom, x, y].some((p) => p.count >= 2)} open={open('dynzoom')} onToggle={toggle} onReset={() => st().clearKeyframes(clip.id)}>
         <Row label="Animação">

@@ -139,6 +139,21 @@ export type Keyframes = Partial<Record<KeyProp, Keyframe[]>>;
 
 export type TrackKind = 'video' | 'text' | 'audio';
 
+/** Background behind a framed clip: nothing (the tracks below show), one colour, or a two-colour gradient. */
+export type FrameBg = { kind: 'none' } | { kind: 'color'; color?: string } | { kind: 'gradient'; preset?: string; from?: string; to?: string; angle?: number };
+export interface Frame {
+  /** Margin on each side, fraction of the canvas (0..0.35). */
+  padding: number;
+  /** Corner radius, fraction of the picture's short side (0..0.5). */
+  radius: number;
+  /** Shadow strength, 0..1. */
+  shadow: number;
+  /** Outline width, fraction of the canvas's short side (0..0.02). */
+  border: number;
+  borderColor: string;
+  bg: FrameBg;
+}
+
 export interface Clip {
   id: string;
   mediaId?: string;
@@ -175,6 +190,8 @@ export interface Clip {
   textAnim?: TextAnim;
   color?: Grade;
   masks?: Mask[];
+  /** Moldura e fundo: the picture smaller, rounded, over a background (src/lib/frame.js). */
+  frame?: Frame;
   fusion?: Fusion;
   text?: string;
   style?: string;

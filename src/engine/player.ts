@@ -11,6 +11,8 @@ import { drawGraphic } from './graphics';
 import { propAt } from '../lib/anim.js';
 import { BLEND_CANVAS } from '../lib/layerfx.js';
 import { applyLayerFx } from './layerfx';
+import { applyFrame } from './frame';
+import { hasFrame } from '../lib/frame.js';
 
 type El = HTMLVideoElement | HTMLAudioElement;
 
@@ -304,7 +306,7 @@ export class Player {
       const fused = hasFusion(clip.fusion);
       // Rotation, opacity, transition blur and flash/dip are applied when the clip layer is
       // composited (after masks and Fusion), in the same order as the export.
-      const masked = Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal');
+      const masked = Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal') || hasFrame(clip.frame);
       const x = masked ? this.layer(cw, ch) : ctx;
       const alpha = masked ? 1 : tr.alpha;
       const slide = masked ? 0 : tr.slide;
@@ -394,6 +396,8 @@ export class Player {
             return el.readyState >= 2 ? el : null;
           });
         }
+        // Moldura e fundo: after everything that works on the picture, before it is composited.
+        if (hasFrame(clip.frame)) applyFrame(this.layerCanvas!, clip.frame, W, H);
         const layer = this.layerCanvas!;
         ctx.save();
         ctx.globalCompositeOperation = BLEND_CANVAS[clip.blend ?? 'normal'] ?? 'source-over';

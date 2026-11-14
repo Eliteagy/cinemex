@@ -11,24 +11,17 @@ export function MediaBin() {
 
   return (
     <aside className="panel" aria-label="Média">
-      <div className="panel-head">
-        <div>
-          <div className="panel-title">Média</div>
-          <div className="panel-sub">{media.length ? `${media.length} ficheiros` : 'Arrasta ficheiros para a janela'}</div>
-        </div>
-        <div className="spacer" />
-        {tab === 'media' && (
-          <button className="btn sm" onClick={() => void importDialog()} title="Importar (Ctrl+I)">
-            <Icon name="import" /> Importar
+      <div className="bin-bar">
+        <div className="seg" role="tablist">
+          <button role="tab" aria-selected={tab === 'media'} className={tab === 'media' ? 'on' : ''} onClick={() => setTab('media')}>
+            Média
           </button>
-        )}
-      </div>
-      <div className="seg bin-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'media'} className={tab === 'media' ? 'on' : ''} onClick={() => setTab('media')}>
-          Média
-        </button>
-        <button role="tab" aria-selected={tab === 'fx'} className={tab === 'fx' ? 'on' : ''} onClick={() => setTab('fx')}>
-          Efeitos
+          <button role="tab" aria-selected={tab === 'fx'} className={tab === 'fx' ? 'on' : ''} onClick={() => setTab('fx')}>
+            Efeitos
+          </button>
+        </div>
+        <button className="btn icon round" onClick={() => void importDialog()} title="Importar ficheiros (Ctrl+I)" aria-label="Importar ficheiros">
+          <Icon name="plus" />
         </button>
       </div>
       <div className="panel-body">
@@ -61,10 +54,9 @@ export function MediaBin() {
                 <div className={`media-thumb ${m.kind}${m.kind === 'audio' && m.duration < 8 ? ' fx' : ''}`} style={m.thumb ? { backgroundImage: `url(${m.thumb})` } : undefined}>
                   {m.kind === 'audio' && <Icon name="sound" className="icon" />}
                   {m.kind === 'video' && !m.thumb && <Icon name="play" className="icon" />}
-                  <span className="kind">{m.kind === 'video' ? 'Vídeo' : m.kind === 'audio' ? 'Áudio' : 'Imagem'}</span>
                   {m.kind !== 'image' && <span className="badge">{fmtShort(m.duration)}</span>}
                 </div>
-                <div className="media-name">{m.name}</div>
+                {m.kind === 'audio' && <div className="media-name">{m.name}</div>}
               </div>
             ))}
           </div>

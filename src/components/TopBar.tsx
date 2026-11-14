@@ -12,6 +12,8 @@ export function TopBar() {
   const preset = useEditor((s) => s.project.canvas.preset);
   const dirty = useEditor((s) => s.dirty);
   const exporting = useEditor((s) => s.exportProgress !== null);
+  const canUndo = useEditor((s) => s.past.length > 0);
+  const canRedo = useEditor((s) => s.future.length > 0);
   const chatOpen = useChat((s) => s.open);
   const chatRunning = useChat((s) => s.running);
   const provider = useChat((s) => s.provider);
@@ -22,9 +24,10 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <img className="logo" src="logo.png" alt="Cinemex" />
+        <img className="logo" src="logo.png" alt="" />
+        <span>Cinemex</span>
       </div>
-      <span className="crumb" aria-hidden="true">/</span>
+      <span className="tb-sep" aria-hidden="true" />
       <input
         className="name-input"
         value={draft}
@@ -36,25 +39,22 @@ export function TopBar() {
       {dirty && <span className="unsaved" title="Alterações por guardar" role="status" aria-label="Alterações por guardar" />}
       <div className="spacer" />
 
-      <select className="select" value={preset} aria-label="Formato" onChange={(e) => useEditor.getState().setCanvas(e.target.value as CanvasPreset)}>
+      <select className="select tb-format" value={preset} aria-label="Formato" onChange={(e) => useEditor.getState().setCanvas(e.target.value as CanvasPreset)}>
         {Object.entries(PRESETS).map(([k, v]) => (
           <option key={k} value={k}>
             {v.label}
           </option>
         ))}
       </select>
-      <span className="tb-sep" aria-hidden="true" />
-      <button className="btn ghost" onClick={() => void importCapcut().catch(() => {})} title="Abrir um projeto do CapCut (vídeos, textos, velocidades)">
-        <Icon name="import" /> Importar CapCut
+      <div className="spacer" />
+
+      <button className="btn ghost icon round" onClick={() => void openProject()} title="Abrir projeto (Ctrl+O)" aria-label="Abrir projeto">
+        <Icon name="folder" />
       </button>
-      <button className="btn ghost" onClick={() => void openProject()} title="Abrir projeto (Ctrl+O)">
-        <Icon name="folder" /> Abrir
+      <button className="btn ghost icon round" onClick={() => void importCapcut().catch(() => {})} title="Importar um projeto do CapCut (vídeos, textos, velocidades)" aria-label="Importar projeto do CapCut">
+        <Icon name="import" />
       </button>
-      <span className="tb-sep" aria-hidden="true" />
       <LigacaoButton />
-      <button className="btn" onClick={() => void saveProject()} title="Guardar (Ctrl+S)">
-        <Icon name="save" /> Guardar
-      </button>
       <div className="ai-switch" role="group" aria-label="Assistente de IA">
         {(['claude', 'gemini', 'gpt'] as const).map((p) => (
           <button
@@ -68,8 +68,19 @@ export function TopBar() {
           </button>
         ))}
       </div>
+      <div className="tb-undo" role="group" aria-label="Desfazer e refazer">
+        <button className="btn ghost icon" disabled={!canUndo} onClick={() => useEditor.getState().undo()} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">
+          <Icon name="undo" />
+        </button>
+        <button className="btn ghost icon" disabled={!canRedo} onClick={() => useEditor.getState().redo()} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">
+          <Icon name="redo" />
+        </button>
+      </div>
+      <button className="btn" onClick={() => void saveProject()} title="Guardar (Ctrl+S)">
+        Guardar
+      </button>
       <button className="btn primary" disabled={exporting} onClick={() => void exportVideo().catch(() => {})} title="Exportar MP4 (Ctrl+E)">
-        <Icon name="export" /> Exportar
+        Exportar
       </button>
     </header>
   );

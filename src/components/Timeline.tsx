@@ -44,8 +44,6 @@ export function Timeline() {
   const status = useEditor((s) => s.status);
   const busy = useEditor((s) => s.busy);
   const progress = useEditor((s) => s.exportProgress);
-  const canUndo = useEditor((s) => s.past.length > 0);
-  const canRedo = useEditor((s) => s.future.length > 0);
   const scroll = useRef<HTMLDivElement>(null);
   const heads = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -174,34 +172,28 @@ export function Timeline() {
   return (
     <section className="timeline" aria-label="Timeline">
       <div className="tl-tools">
-        <button className="btn ghost icon" disabled={!canUndo} onClick={() => st().undo()} title="Desfazer (Ctrl+Z)" aria-label="Desfazer">
-          <Icon name="undo" />
+        <button className="btn icon round" onClick={() => st().addText('Texto', st().playhead, 3, 'title')} title="Acrescentar texto (T)" aria-label="Acrescentar texto">
+          <Icon name="text" />
         </button>
-        <button className="btn ghost icon" disabled={!canRedo} onClick={() => st().redo()} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">
-          <Icon name="redo" />
+        <button className="btn icon round" onClick={() => st().splitAt(st().playhead, sel)} title="Cortar na cabeça de leitura (S)" aria-label="Cortar na cabeça de leitura">
+          <Icon name="scissors" />
         </button>
-        <span className="sep" />
-        <button className="btn sm" onClick={() => st().splitAt(st().playhead, sel)} title="Cortar na cabeça de leitura (S)">
-          <Icon name="split" /> Cortar
+        <button className="btn icon round" disabled={!sel} onClick={() => sel && st().deleteClip(sel, true)} title="Apagar e fechar o espaço (Shift+Delete)" aria-label="Apagar e fechar o espaço">
+          <Icon name="trash" />
         </button>
-        <button className="btn sm" disabled={!sel} onClick={() => sel && st().deleteClip(sel, true)} title="Apagar e fechar o espaço (Shift+Delete)">
-          <Icon name="trash" /> Apagar e juntar
-        </button>
-        <button className="btn sm" onClick={() => st().addText('Texto', st().playhead, 3, 'title')} title="Acrescentar texto (T)">
-          <Icon name="text" /> Texto
-        </button>
-        <span className="sep" />
-        <button className={`btn ghost icon${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips" aria-pressed={snap} aria-label="Íman">
+        <button className={`btn icon round${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips" aria-pressed={snap} aria-label="Íman">
           <Icon name="magnet" />
         </button>
         <div className="spacer" />
-        <button className="btn ghost icon" onClick={() => st().setZoom(zoom / 1.4)} title="Afastar (-)" aria-label="Afastar">
-          <Icon name="zoomOut" />
-        </button>
-        <input className="range" style={{ width: 140 }} type="range" min={8} max={600} value={zoom} onChange={(e) => st().setZoom(Number(e.target.value))} aria-label="Zoom" />
-        <button className="btn ghost icon" onClick={() => st().setZoom(zoom * 1.4)} title="Aproximar (+)" aria-label="Aproximar">
-          <Icon name="zoomIn" />
-        </button>
+        <div className="tl-zoom" role="group" aria-label="Zoom da timeline">
+          <button className="btn ghost icon" onClick={() => st().setZoom(zoom / 1.4)} title="Afastar (-)" aria-label="Afastar">
+            <Icon name="zoomOut" />
+          </button>
+          <input className="range" type="range" min={8} max={600} value={zoom} onChange={(e) => st().setZoom(Number(e.target.value))} aria-label="Zoom" />
+          <button className="btn ghost icon" onClick={() => st().setZoom(zoom * 1.4)} title="Aproximar (+)" aria-label="Aproximar">
+            <Icon name="zoomIn" />
+          </button>
+        </div>
       </div>
 
       <div className="tl-body">

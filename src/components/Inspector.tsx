@@ -155,9 +155,10 @@ function Section({ id, title, on, open, onToggle, onReset, keyBtn, children }: {
   return (
     <section className={`ri-sec${open ? ' open' : ''}`} data-sec={id}>
       <header className="ri-sec-head">
-        <span className={`ri-dot${on ? ' on' : ''}`} title={on ? 'Esta secção tem alterações' : 'Sem alterações'} aria-hidden />
         <button className="ri-sec-title" aria-expanded={open} onClick={() => onToggle(id)}>
+          <span className="ri-chev" aria-hidden />
           {title}
+          {on && <i className="ri-on" title="Esta secção tem alterações" />}
         </button>
         <span className="ri-slot">{keyBtn}</span>
         <span className="ri-slot">{onReset && <ResetBtn onClick={onReset} title={`Repor ${title}`} />}</span>
@@ -378,28 +379,20 @@ function VideoTab({ clip, media, open, toggle }: { clip: Clip; media: Media; ope
         keyBtn={<KeyBtn on={xform.every((p) => p.here)} armed={xform.some((p) => p.armed)} title="Keyframe em todos os parâmetros de Transformar" onClick={() => (xform.every((p) => p.here) ? xform.forEach((p) => p.here && p.toggleKey()) : xform.forEach((p) => !p.here && p.toggleKey()))} />}
       >
         <Row label="Zoom" keyBtn={<KeyBtn on={zoom.here} armed={zoom.armed} onClick={zoom.toggleKey} />} onReset={zoom.reset}>
-          <span className="ri-axis">X</span>
-          <NumField label="Zoom X" value={zoom.value} min={1} max={4} step={0.005} onChange={zoom.set} />
-          <span className="ri-link on" title="X e Y ligados (o Cinemex faz zoom igual nos dois eixos)">
-            <Glyph d={G.link} size={16} />
-          </span>
-          <span className="ri-axis">Y</span>
-          <NumField label="Zoom Y" value={zoom.value} min={1} max={4} step={0.005} onChange={zoom.set} />
+          <RowSlider label="Zoom" value={zoom.value} min={1} max={4} step={0.005} onChange={zoom.set} />
+          <NumField label="Zoom" value={zoom.value} min={1} max={4} step={0.005} dec={2} onChange={zoom.set} />
         </Row>
-        <Row
-          label="Posição"
-          keyBtn={<KeyBtn on={x.here && y.here} armed={x.armed || y.armed} onClick={() => (x.here && y.here ? (x.toggleKey(), y.toggleKey()) : (!x.here && x.toggleKey(), !y.here && y.toggleKey()))} />}
-          onReset={() => (x.reset(), y.reset())}
-        >
-          <span className="ri-axis">X</span>
-          <NumField label="Posição X" value={posX} min={-canvas.w / 2} max={canvas.w / 2} step={1} onChange={(v) => x.set(-v / canvas.w)} />
-          <span className="ri-link" />
-          <span className="ri-axis">Y</span>
-          <NumField label="Posição Y" value={posY} min={-canvas.h / 2} max={canvas.h / 2} step={1} onChange={(v) => y.set(v / canvas.h)} />
+        <Row label="Posição X" keyBtn={<KeyBtn on={x.here} armed={x.armed} onClick={x.toggleKey} />} onReset={x.reset}>
+          <RowSlider label="Posição X" value={posX} min={-canvas.w / 2} max={canvas.w / 2} step={1} onChange={(v) => x.set(-v / canvas.w)} />
+          <NumField label="Posição X" value={posX} min={-canvas.w / 2} max={canvas.w / 2} step={1} dec={0} onChange={(v) => x.set(-v / canvas.w)} />
         </Row>
-        <Row label="Ângulo de Rotação" keyBtn={<KeyBtn on={rot.here} armed={rot.armed} onClick={rot.toggleKey} />} onReset={rot.reset}>
+        <Row label="Posição Y" keyBtn={<KeyBtn on={y.here} armed={y.armed} onClick={y.toggleKey} />} onReset={y.reset}>
+          <RowSlider label="Posição Y" value={posY} min={-canvas.h / 2} max={canvas.h / 2} step={1} onChange={(v) => y.set(v / canvas.h)} />
+          <NumField label="Posição Y" value={posY} min={-canvas.h / 2} max={canvas.h / 2} step={1} dec={0} onChange={(v) => y.set(v / canvas.h)} />
+        </Row>
+        <Row label="Rotação" keyBtn={<KeyBtn on={rot.here} armed={rot.armed} onClick={rot.toggleKey} />} onReset={rot.reset}>
           <RowSlider label="Ângulo de Rotação" value={rot.value} min={-180} max={180} step={0.1} onChange={rot.set} />
-          <NumField label="Ângulo de Rotação" value={rot.value} min={-180} max={180} step={0.25} onChange={rot.set} />
+          <NumField label="Ângulo de Rotação" value={rot.value} min={-180} max={180} step={0.25} dec={1} onChange={rot.set} />
         </Row>
         {zoom.value <= 1.001 && <p className="ri-note">A posição só mexe a imagem com Zoom acima de 1.000.</p>}
       </Section>

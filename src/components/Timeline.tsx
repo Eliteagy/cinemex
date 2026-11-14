@@ -307,7 +307,9 @@ export function Timeline() {
                 </div>
               ) : null,
             )}
-            <div className="playhead" style={{ left: playhead * zoom }} />
+            <div className="playhead" style={{ left: playhead * zoom }}>
+              <span>{fmtTime(playhead, project.canvas.fps)}</span>
+            </div>
           </div>
         </div>
       </div>

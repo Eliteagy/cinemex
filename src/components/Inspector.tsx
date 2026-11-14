@@ -574,7 +574,7 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
         {/* Nothing selected: the tabs stay in place, dimmed, so the panel is still the Inspector (Resolve: "Nothing to inspect"). */}
         <div className="ri-tabs" role="tablist" aria-label="Separadores do Inspetor">
           {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={false} disabled>
+            <button key={t.id} role="tab" aria-selected={false} title={t.label} disabled>
               <Glyph d={t.d} />
               <span>{t.label}</span>
             </button>
@@ -642,7 +642,7 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
       </div>
       <div className="ri-tabs" role="tablist" aria-label="Separadores do Inspetor">
         {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} disabled={!usable[t.id]} onClick={() => setTab(t.id)}>
+          <button key={t.id} role="tab" aria-selected={current === t.id} className={current === t.id ? 'on' : ''} title={t.id === 'video' && isText ? 'Título' : t.label} disabled={!usable[t.id]} onClick={() => setTab(t.id)}>
             <Glyph d={t.d} />
             <span>{t.id === 'video' && isText ? 'Título' : t.label}</span>
           </button>

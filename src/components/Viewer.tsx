@@ -42,11 +42,6 @@ export function Viewer() {
   const s = useEditor.getState;
   return (
     <section className="viewer" aria-label="Visor">
-      <div className="ph vh">
-        <span>{project.name}</span>
-        <span className="spacer" />
-        <span className="tc">{fmtTime(playhead, fps)}</span>
-      </div>
       <div className="stage" ref={stage}>
         <canvas ref={ref} style={{ width: Math.floor(project.canvas.w * k), height: Math.floor(project.canvas.h * k) }} />
         <MaskOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
@@ -64,6 +59,9 @@ export function Viewer() {
         )}
       </div>
       <div className="transport">
+        <div className="timecode now" aria-label="Posição">
+          {fmtTime(playhead, fps)}
+        </div>
         <button className="btn ghost icon" onClick={() => s().seek(0)} title="Início (Home)" aria-label="Início">
           <Icon name="start" />
         </button>
@@ -73,8 +71,8 @@ export function Viewer() {
         <button className="btn ghost icon" onClick={() => s().seek(total)} title="Fim (End)" aria-label="Fim">
           <Icon name="end" />
         </button>
-        <div className="timecode">
-          {fmtTime(playhead, fps)} <span>/ {fmtTime(total, fps)}</span>
+        <div className="timecode total" aria-label="Duração">
+          {fmtTime(total, fps)}
         </div>
       </div>
     </section>

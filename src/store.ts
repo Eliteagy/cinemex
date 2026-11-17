@@ -62,6 +62,10 @@ export interface EditorState {
   deleteClip(id: string, ripple?: boolean): void;
   cutSilences(id: string, minPause?: number, padding?: number): { removed: number; pieces: number; ids: string[]; range: { start: number; end: number } };
   toggleTrack(id: string, key: 'muted' | 'hidden'): void;
+  /** New empty track: video above the other video tracks, audio and text after their own kind. Returns its id. */
+  addTrack(kind: Track['kind'], name?: string): string;
+  /** Removes an empty track (the last track of a kind stays). */
+  removeTrack(id: string): void;
   setSpeed(id: string, speed: number): void;
   setTransition(id: string, side: 'in' | 'out', tr: Transition | null): void;
   dissolveWithPrevious(id: string, d?: number): void;
@@ -1084,6 +1088,30 @@ export const useEditor = create<EditorState>((set, get) => ({
     get().commit((p) => {
       const t = p.tracks.find((x) => x.id === id);
       if (t) t[key] = !t[key];
+    });
+  },
+  addTrack(kind, name) {
+    const prefix = kind === 'video' ? 'v' : kind === 'audio' ? 'a' : 't';
+    let id = '';
+    get().commit((p) => {
+      const same = p.tracks.filter((t) => t.kind === kind);
+      let n = same.length + 1;
+      while (p.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
+      id = `${prefix}${n}`;
+      const label = name?.trim() || (kind === 'video' ? `V${n}` : kind === 'audio' ? `A${n}` : `Texto ${n}`);
+      const last = p.tracks.map((t) => t.kind).lastIndexOf(kind);
+      const at = last >= 0 ? last + 1 : kind === 'video' ? 0 : p.tracks.length;
+      p.tracks.splice(at, 0, { id, kind, name: label, clips: [] });
+    });
+    return id;
+  },
+  removeTrack(id) {
+    get().commit((p) => {
+      const t = p.tracks.find((x) => x.id === id);
+      if (!t) throw new Error('Pista desconhecida');
+      if (t.clips.length) throw new Error('A pista tem clips: apaga-os ou move-os primeiro');
+      if (p.tracks.filter((x) => x.kind === t.kind).length <= 1) throw new Error('É a única pista deste tipo');
+      p.tracks.splice(p.tracks.indexOf(t), 1);
     });
   },
 

@@ -1024,3 +1024,9 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .sh-tr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .sh-tr .input { flex: 1; min-width: 120px; }
 .sh-note { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--well); color: var(--text-2); font: 12px/1.5 var(--ui); white-space: pre-wrap; }
+
+/* New track menu (timeline toolbar) */
+.tl-add { position: relative; }
+.tl-add-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; display: flex; flex-direction: column; min-width: 160px; padding: 4px; border: 1px solid var(--stroke-2); border-radius: var(--r-md); background: var(--bg-2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.tl-add-menu button { padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.tl-add-menu button:hover, .tl-add-menu button:focus-visible { background: var(--bg-3); outline: none; }

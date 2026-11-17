@@ -48,6 +48,7 @@ export function Timeline() {
   const heads = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const st = useEditor.getState;
 
   const total = projectDuration(project);
@@ -184,6 +185,33 @@ export function Timeline() {
         <button className={`btn icon round${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips" aria-pressed={snap} aria-label="Íman">
           <Icon name="magnet" />
         </button>
+        <div className="tl-add" role="group" aria-label="Nova pista">
+          <button className="btn icon round" onClick={() => setAddOpen((o) => !o)} title="Nova pista" aria-label="Nova pista" aria-expanded={addOpen}>
+            <Icon name="plus" />
+          </button>
+          {addOpen && (
+            <div className="tl-add-menu" role="menu">
+              {(
+                [
+                  ['video', 'Pista de vídeo'],
+                  ['audio', 'Pista de áudio'],
+                  ['text', 'Pista de texto'],
+                ] as const
+              ).map(([k, l]) => (
+                <button
+                  key={k}
+                  role="menuitem"
+                  onClick={() => {
+                    st().addTrack(k);
+                    setAddOpen(false);
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="spacer" />
         <div className="tl-zoom" role="group" aria-label="Zoom da timeline">
           <button className="btn ghost icon" onClick={() => st().setZoom(zoom / 1.4)} title="Afastar (-)" aria-label="Afastar">
@@ -212,6 +240,11 @@ export function Timeline() {
               {t.kind !== 'text' && (
                 <button className={t.muted ? 'off' : ''} onClick={() => st().toggleTrack(t.id, 'muted')} title={t.muted ? 'Ligar som' : 'Silenciar pista'} aria-label="Som da pista">
                   <Icon name={t.muted ? 'mute' : 'sound'} />
+                </button>
+              )}
+              {!t.clips.length && tracks.filter((x) => x.kind === t.kind).length > 1 && (
+                <button onClick={() => st().removeTrack(t.id)} title="Apagar pista vazia" aria-label="Apagar pista">
+                  <Icon name="close" />
                 </button>
               )}
             </div>

@@ -46,9 +46,17 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       const r = await importPaths(paths);
       return { imported: r.media.map((m) => ({ id: m.id, name: m.name, kind: m.kind, duration: m.duration })), errors: r.errors };
     }
+    case 'add_track': {
+      const kind = s(a.kind);
+      if (kind !== 'video' && kind !== 'audio' && kind !== 'text') throw new Error('kind: video, audio ou text');
+      return { track_id: S().addTrack(kind, s(a.name)) };
+    }
+    case 'remove_track':
+      S().removeTrack(String(a.track_id));
+      return { ok: true };
     case 'add_clip': {
       const tk = s(a.track);
-      const track = tk === 'audio' ? 'a1' : tk && S().project.tracks.some((t) => t.id === tk) ? tk : undefined;
+      const track = tk && S().project.tracks.some((t) => t.id === tk) ? tk : tk === 'audio' ? S().project.tracks.find((t) => t.kind === 'audio')?.id : undefined;
       const id = S().addClip(String(a.media_id), { start: n(a.start), in: n(a.in), out: n(a.out), trackId: track });
       return { clip_id: id };
     }

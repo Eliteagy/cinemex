@@ -13,6 +13,8 @@ import { BLEND_CANVAS } from '../lib/layerfx.js';
 import { applyLayerFx } from './layerfx';
 import { applyFrame } from './frame';
 import { hasFrame } from '../lib/frame.js';
+import { colorGL, needsLut } from './glcolor';
+import { blendGL } from './glblend';
 
 type El = HTMLVideoElement | HTMLAudioElement;
 
@@ -319,17 +321,30 @@ export class Player {
       x.scale(z, z);
       x.translate(-cx * cw, -cy * ch);
       const graded = isGraded(clip.color);
+      // Colour: the same 3D LUT as the export (src/lib/develop.js), applied on the GPU at the size the
+      // frame is drawn (never above the source). Without WebGL it falls back to the old canvas filters.
+      let pic: CanvasImageSource = src;
+      let gpu = false;
+      if (clip.color && needsLut(clip.color)) {
+        const sc = Math.min(1, k * z);
+        const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true));
+        if (out) {
+          pic = out;
+          gpu = true;
+        }
+      }
       const g = graded ? gradeMath(clip.color) : null;
-      if (g) x.filter = `brightness(${g.bright}) contrast(${g.contrast}) saturate(${g.saturation})`;
+      const legacy = g && !gpu;
+      if (legacy) x.filter = `brightness(${g.bright}) contrast(${g.contrast}) saturate(${g.saturation})`;
       if (orient) {
         x.save();
         x.translate(cw / 2, ch / 2);
         x.rotate((-orient * Math.PI) / 180);
-        x.drawImage(src, (-sw * k) / 2, (-sh * k) / 2, sw * k, sh * k);
+        x.drawImage(pic, (-sw * k) / 2, (-sh * k) / 2, sw * k, sh * k);
         x.restore();
-      } else x.drawImage(src, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+      } else x.drawImage(pic, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
       x.filter = 'none';
-      if (g) {
+      if (legacy) {
         // Temperature: multiply by a warm/cool tint (same factors as the export's colorchannelmixer).
         if (g.warm.some((w) => Math.abs(w - 1) > 1e-3)) {
           const top = Math.max(...g.warm);
@@ -399,27 +414,45 @@ export class Player {
         // Moldura e fundo: after everything that works on the picture, before it is composited.
         if (hasFrame(clip.frame)) applyFrame(this.layerCanvas!, clip.frame, W, H);
         const layer = this.layerCanvas!;
-        ctx.save();
-        ctx.globalCompositeOperation = BLEND_CANVAS[clip.blend ?? 'normal'] ?? 'source-over';
-        ctx.globalAlpha = tr.alpha * opacity;
-        ctx.translate(cw / 2 + tr.slide * cw, ch / 2);
-        ctx.rotate(rot);
-        ctx.beginPath();
-        ctx.rect(-cw / 2, -ch / 2, cw, ch);
-        ctx.clip();
+        // Blend modes: the clip is drawn into its own layer, then blended with what is under it on the
+        // GPU with the export's formulas (glblend.ts). Without WebGL: the canvas's own operations.
+        const bm = clip.blend && clip.blend !== 'normal' ? clip.blend : null;
+        const gb = bm && !blendGL().failed ? blendGL() : null;
+        const d = gb ? gb.target(cw, ch) : ctx;
+        d.save();
+        d.globalCompositeOperation = gb ? 'source-over' : (BLEND_CANVAS[clip.blend ?? 'normal'] ?? 'source-over');
+        d.globalAlpha = tr.alpha * opacity;
+        d.translate(cw / 2 + tr.slide * cw, ch / 2);
+        d.rotate(rot);
+        d.beginPath();
+        d.rect(-cw / 2, -ch / 2, cw, ch);
+        d.clip();
         if (blurPx > 0.3 && tr.blurDir) {
           // Horizontal motion blur (whip): average of shifted copies, like gblur with sigmaV ~ 0.
           const n = 9;
-          const a0 = ctx.globalAlpha;
+          const a0 = d.globalAlpha;
           for (let i = 0; i < n; i++) {
-            ctx.globalAlpha = a0 / (i + 1);
-            ctx.drawImage(layer, -cw / 2 + (i / (n - 1) - 0.5) * 4 * blurPx, -ch / 2);
+            d.globalAlpha = a0 / (i + 1);
+            d.drawImage(layer, -cw / 2 + (i / (n - 1) - 0.5) * 4 * blurPx, -ch / 2);
           }
-          ctx.globalAlpha = a0;
+          d.globalAlpha = a0;
         } else {
-          if (blurPx > 0.3) ctx.filter = `blur(${blurPx}px)`;
-          ctx.drawImage(layer, -cw / 2, -ch / 2);
-          ctx.filter = 'none';
+          if (blurPx > 0.3) d.filter = `blur(${blurPx}px)`;
+          d.drawImage(layer, -cw / 2, -ch / 2);
+          d.filter = 'none';
+        }
+        d.globalCompositeOperation = 'source-over';
+        if (gb) {
+          d.restore();
+          if (!gb.composite(ctx, bm!)) ctx.drawImage(gb.layer, 0, 0);
+          // The flashes below draw on the result with the clip's own transform.
+          ctx.save();
+          ctx.globalAlpha = tr.alpha * opacity;
+          ctx.translate(cw / 2 + tr.slide * cw, ch / 2);
+          ctx.rotate(rot);
+          ctx.beginPath();
+          ctx.rect(-cw / 2, -ch / 2, cw, ch);
+          ctx.clip();
         }
         ctx.globalCompositeOperation = 'source-over';
         if (tr.bright > 0) {

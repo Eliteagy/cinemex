@@ -75,7 +75,7 @@ test('export graph: blend, matte and effects are in the command', () => {
     ],
   };
   const fc = buildExport(p, 'o.mp4').args.find((a) => a.includes('[base0]'));
-  assert.match(fc, /blend=all_mode=screen\[bl1\]/);
+  assert.ok(fc.includes("blend=all_expr='st(0,A/255);st(1,B/255);255*clip(ld(0)+ld(1)-ld(0)*ld(1),0,1)'[bl1]"), 'screen blend expression');
   assert.match(fc, /tpad=start_duration=0.5:color=black@0/);
   assert.match(fc, /lutrgb=r=0:g=0:b=0,gblur/);
   assert.match(fc, /blend=all_mode=screen:all_opacity=0.5/);

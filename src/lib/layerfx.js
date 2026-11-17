@@ -9,6 +9,8 @@
 //   gradient Gradient Ramp: linear gradient c0 -> c1 from (x0, y0) to (x1, y1) (fractions), over the layer at opacity
 // Track matte: text (the layer shows inside the letters) or another media's alpha / brightness; invert.
 
+import { BLENDS, BLEND_ORDER } from './blend.js';
+
 export const EFFECT_TYPES = ['shadow', 'glow', 'sweep', 'gradient'];
 export const EFFECT_LABELS = { shadow: 'Sombra (Drop Shadow)', glow: 'Glow', sweep: 'Light Sweep', gradient: 'Gradient Ramp' };
 export const EFFECT_DEFAULTS = {
@@ -17,11 +19,11 @@ export const EFFECT_DEFAULTS = {
   sweep: { color: '#FFFFFF', angle: 20, width: 0.12, intensity: 0.55, start: 0, duration: 0.9 },
   gradient: { c0: '#D4AF37', c1: '#83163A', x0: 0.5, y0: 0, x1: 0.5, y1: 1, opacity: 0.35 },
 };
-export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'add', 'lighten', 'darken', 'difference'];
-export const BLEND_LABELS = { normal: 'Normal', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay', add: 'Add', lighten: 'Lighten', darken: 'Darken', difference: 'Difference' };
-/** ffmpeg blend modes (base is the first input, like the W3C backdrop) and canvas composite operations. */
-export const BLEND_FFMPEG = { multiply: 'multiply', screen: 'screen', overlay: 'overlay', add: 'addition', lighten: 'lighten', darken: 'darken', difference: 'difference' };
-export const BLEND_CANVAS = { normal: 'source-over', multiply: 'multiply', screen: 'screen', overlay: 'overlay', add: 'lighter', lighten: 'lighten', darken: 'darken', difference: 'difference' };
+// Blend modes: the full Photoshop set lives in src/lib/blend.js (formulas shared by preview and export).
+export const BLEND_MODES = BLEND_ORDER;
+export const BLEND_LABELS = { normal: 'Normal', ...Object.fromEntries(Object.entries(BLENDS).map(([k, v]) => [k, v.label])) };
+/** Canvas fallback when WebGL is unavailable (the preview normally blends on the GPU, src/engine/glblend.ts). */
+export const BLEND_CANVAS = { normal: 'source-over', multiply: 'multiply', screen: 'screen', overlay: 'overlay', add: 'lighter', lighten: 'lighten', darken: 'darken', difference: 'difference', colorburn: 'color-burn', colordodge: 'color-dodge', softlight: 'soft-light', hardlight: 'hard-light', exclusion: 'exclusion' };
 export const MATTE_FONT = 'Inter Black';
 
 const fx = (n) => String(Math.round(n * 10000) / 10000);

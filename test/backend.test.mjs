@@ -193,11 +193,10 @@ test('colour grade, LUT, caption style and sound settings reach the ffmpeg comma
   const { gradeFilters, gradeMath } = require('../electron/render.cjs');
   assert.deepEqual(gradeFilters(undefined), []);
   assert.deepEqual(gradeFilters({ exposure: 0, contrast: 0 }), [], 'neutral grade adds nothing');
-  const f = gradeFilters({ exposure: 0.5, contrast: 0.25, saturation: -1, temperature: 1, vignette: 1 }, 'lut0.cube');
-  assert.match(f[0], /^colorchannelmixer=rr=1\.3:gg=1\.196:bb=0\.988$/);
-  assert.equal(f[1], 'eq=contrast=1.2:saturation=0');
-  assert.equal(f[2], 'lut3d=file=lut0.cube');
-  assert.match(f[3], /^vignette=angle=1$/);
+  // The whole grade is one baked LUT (src/lib/develop.js), the same the preview uses on the GPU.
+  const f = gradeFilters({ exposure: 0.5, contrast: 0.25, saturation: -1, temperature: 1, vignette: 1 }, 'grade0.cube');
+  assert.deepEqual(f.slice(0, 2), ['format=gbrp16le', 'lut3d=file=grade0.cube:interp=trilinear']);
+  assert.match(f[2], /^vignette=angle=1$/);
   assert.deepEqual(gradeMath({ temperature: -1 }).warm, [0.76, 0.92, 1]);
 
   const p = project();
@@ -206,9 +205,10 @@ test('colour grade, LUT, caption style and sound settings reach the ffmpeg comma
   p.audio = { duck: true, normalize: true };
   p.captionStyle = { label: 'Meu', font: 'Impact, X', size: 0.05, color: '#00FF00', highlight: '#FF0000', outline: 0.004, outlineColor: '#000000', box: false, uppercase: false, y: 0.6 };
   p.tracks[2].clips[0].style = 'custom';
-  const { args, ass, luts } = buildExport(p, 'o.mp4');
+  const { args, ass, luts, extraFiles } = buildExport(p, 'o.mp4');
   const fc = args[args.indexOf('-filter_complex') + 1];
-  assert.match(fc, /\[0:v\][^;]*eq=contrast=1:saturation=1\.3/);
+  assert.match(fc, /\[0:v\][^;]*lut3d=file=grade0\.cube/);
+  assert.match(extraFiles.find((x) => x.name === 'grade0.cube').content, /LUT_3D_SIZE 33/);
   assert.equal(luts.length, 0, 'a LUT file that does not exist is skipped');
   assert.match(fc, /\[vmix\]asplit=2\[vkey\]\[vout0\]/);
   assert.match(fc, /\[mmix\]\[vkey\]sidechaincompress/);

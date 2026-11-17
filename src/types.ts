@@ -54,7 +54,7 @@ export type Modifier =
   | { type: 'overshoot'; amp: number; freq: number; decay: number };
 
 /** Blend mode of a clip over what is underneath (AE layer modes). */
-export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'add' | 'lighten' | 'darken' | 'difference';
+export type BlendMode = 'normal' | 'darken' | 'multiply' | 'colorburn' | 'linearburn' | 'lighten' | 'screen' | 'colordodge' | 'add' | 'overlay' | 'softlight' | 'hardlight' | 'vividlight' | 'linearlight' | 'pinlight' | 'hardmix' | 'difference' | 'exclusion' | 'subtract' | 'divide' | 'reflect' | 'glow' | 'negation';
 
 /** Track matte (AE): the clip shows only inside a text, or inside the alpha/brightness of a media file. */
 export type Matte =
@@ -77,8 +77,10 @@ export interface Grade {
   saturation?: number;
   temperature?: number;
   vignette?: number;
-  /** Path of a .cube LUT applied after the sliders (export only). */
+  /** Path of a .cube LUT applied after the sliders (composed into the same 3D LUT as the grade). */
   lut?: string;
+  /** Lightroom-style develop settings (LightCraft units, src/lib/develop.js). */
+  dev?: import('./lib/develop.js').DevSettings;
 }
 
 /** Mask (like Premiere's): a shape on the frame that limits an effect, or cuts the clip out. */

@@ -34,7 +34,7 @@ export function gradeMath(g: Grade | undefined) {
   const warm = t > 0 ? [1, 1 - 0.08 * t, 1 - 0.24 * t] : [1 + 0.24 * t, 1 + 0.08 * t, 1];
   return { bright, contrast: 1 + c * 0.8, saturation: 1 + s, warm: warm as [number, number, number], vignette: clamp(g?.vignette ?? 0, 0, 1) };
 }
-export const isGraded = (g?: Grade) => Boolean(g && (g.lut || ['exposure', 'contrast', 'saturation', 'temperature', 'vignette'].some((k) => Math.abs(Number(g[k as keyof Grade] ?? 0)) > 1e-3)));
+export const isGraded = (g?: Grade) => Boolean(g && (g.lut || (g.dev && Object.keys(g.dev).length > 0) || ['exposure', 'contrast', 'saturation', 'temperature', 'vignette'].some((k) => Math.abs(Number(g[k as keyof Grade] ?? 0)) > 1e-3)));
 
 /** SRT (subtitles file) from the text clips, and back. */
 const srtTime = (t: number) => {

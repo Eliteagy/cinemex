@@ -13,9 +13,11 @@ const { findUserFont, findFamily, familyName } = require('./fonts.cjs');
 const { TRANSITIONS, BLUR_STEPS, BFLASH, blurWindow, stageSigma } = require('../src/lib/fx.js');
 const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
 const anim = require('../src/lib/anim.js');
-const { layerFx, BLEND_FFMPEG } = require('../src/lib/layerfx.js');
+const { layerFx } = require('../src/lib/layerfx.js');
+const { blendFF } = require('../src/lib/blend.js');
 const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
+const develop = require('../src/lib/develop.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 const { FFMPEG } = require('./bin.cjs');
 
@@ -45,15 +47,52 @@ function gradeMath(g) {
   return { bright: 1 + e * 0.6, contrast: 1 + c * 0.8, saturation: 1 + s, warm, vignette: clampN(g?.vignette, 0, 1) };
 }
 
-/** ffmpeg filters for a clip's grade. lutName is the LUT file name in the working folder. */
-function gradeFilters(g, lutName) {
-  if (!g) return [];
+/** Fusion 'color' node: the old slider filters (its preview, src/engine/fusion.ts, uses gradeMath too). */
+function legacyGradeFilters(g) {
   const m = gradeMath(g);
   const out = [];
   const [r, gr, b] = m.warm.map((w) => w * m.bright);
   if (Math.abs(r - 1) + Math.abs(gr - 1) + Math.abs(b - 1) > 1e-3) out.push(`colorchannelmixer=rr=${fx(r)}:gg=${fx(gr)}:bb=${fx(b)}`);
   if (Math.abs(m.contrast - 1) > 1e-3 || Math.abs(m.saturation - 1) > 1e-3) out.push(`eq=contrast=${fx(m.contrast)}:saturation=${fx(m.saturation)}`);
-  if (lutName) out.push(`lut3d=file=${lutName}`);
+  return out;
+}
+
+/** Size of the baked grade LUT: the same as the preview's 3D texture (src/engine/glcolor.ts PREVIEW_N). */
+const GRADE_N = 33;
+
+/**
+ * The clip's whole colour (develop settings, legacy sliders and the user's .cube) baked into one 3D
+ * LUT by src/lib/develop.js, the function the preview uses on the GPU. Written as a file in the work
+ * folder (`files`); equal grades share one file. Returns the file name, or null when nothing changes.
+ */
+function gradeLut(g, files, cache) {
+  if (!g) return null;
+  const cube = g.lut && /\.cube$/i.test(g.lut) && fs.existsSync(g.lut) ? g.lut : null;
+  if (develop.isIdentityDev(g) && !cube) return null;
+  const { vignette: _v, ...rest } = g;
+  const key = JSON.stringify(rest);
+  if (cache.has(key)) return cache.get(key);
+  let user = null;
+  if (cube) {
+    try {
+      user = develop.parseCube(fs.readFileSync(cube, 'utf8'));
+    } catch {
+      user = null;
+    }
+  }
+  const name = `grade${cache.size}.cube`;
+  files.push({ name, content: develop.toCube(develop.bakeLut(g, GRADE_N, user), GRADE_N, 'Cinemex grade') });
+  cache.set(key, name);
+  return name;
+}
+
+/** ffmpeg filters for a clip's grade. lutName is the baked grade LUT in the working folder (gradeLut). */
+function gradeFilters(g, lutName) {
+  if (!g) return [];
+  const m = gradeMath(g);
+  const out = [];
+  // 16-bit planes before the LUT so the trilinear lookup does not band (same lookup as the preview).
+  if (lutName) out.push('format=gbrp16le', `lut3d=file=${lutName}:interp=trilinear`);
   if (m.vignette > 1e-3) out.push(`vignette=angle=${fx(0.25 + m.vignette * 0.75)}`);
   return out;
 }
@@ -247,7 +286,7 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
           filters.push(`[${l}a][${l}g]blend=all_mode=screen:all_opacity=${fx(Math.max(0, Math.min(1, num(n, 'amount'))))}[${l}]`);
           break;
         case 'color': {
-          const g = gradeFilters({ exposure: num(n, 'exposure'), contrast: num(n, 'contrast'), saturation: num(n, 'saturation'), temperature: num(n, 'temperature') });
+          const g = legacyGradeFilters({ exposure: num(n, 'exposure'), contrast: num(n, 'contrast'), saturation: num(n, 'saturation'), temperature: num(n, 'temperature') });
           filters.push(`[${inp(0)}]${g.length ? g.join(',') : 'null'}[${l}]`);
           break;
         }
@@ -833,6 +872,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   const byId = new Map(project.tracks.flatMap((t) => t.clips).map((c) => [c.id, c]));
   /** Files the command needs next to it (track-matte texts, fonts): { name, content } or { name, from }. */
   const extraFiles = [];
+  const gradeLuts = new Map();
   const matteFont = (family) => {
     const want = String(family || 'Inter Black').toLowerCase();
     try {
@@ -889,12 +929,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         // Framing only (no grade): person mattes go through the same scale/crop/zoom as the clip.
         const geo = [...chain];
         let zoomF = null;
-        let lutName = null;
-        if (c.color?.lut && /\.cube$/i.test(c.color.lut) && fs.existsSync(c.color.lut)) {
-          lutName = `lut${luts.length}.cube`;
-          luts.push({ name: lutName, path: c.color.lut });
-        }
-        chain.push(...gradeFilters(c.color, lutName));
+        chain.push(...gradeFilters(c.color, gradeLut(c.color, extraFiles, gradeLuts)));
         if (keyed) {
           // Zoom/pan keyframes: crop window that follows the animation, rendered at canvas size.
           const T = `(on/${FPSc})`;
@@ -930,7 +965,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         }
         // After Effects-style layer: effect stack, track matte and blend mode work on a full-canvas
         // RGBA layer in local time (src/lib/layerfx.js builds the same steps the preview draws).
-        const blend = c.blend && c.blend !== 'normal' && BLEND_FFMPEG[c.blend] ? c.blend : null;
+        const blend = c.blend && c.blend !== 'normal' && blendFF(c.blend) ? c.blend : null;
         if ((c.effects && c.effects.length) || c.matte || blend) {
           chain.push('format=rgba');
           if (c.fit === 'fit' && !keyed) chain.push(`pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`);
@@ -1001,7 +1036,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           const next = `base${++layer}`;
           filters.push(`[${base}]split=2[bb${L}][bk${L}]`, `[${v}]split=2[vl${L}][va${L}]`);
           filters.push(`[bb${L}]format=gbrp[bg${L}]`, `[vl${L}]format=gbrp[vg${L}]`);
-          filters.push(`[bg${L}][vg${L}]blend=all_mode=${BLEND_FFMPEG[blend]}[bl${L}]`);
+          filters.push(`[bg${L}][vg${L}]blend=${blendFF(blend)}[bl${L}]`);
           filters.push(`[va${L}]alphaextract[vx${L}]`, `[bl${L}][vx${L}]alphamerge[bm${L}]`);
           filters.push(`[bk${L}][bm${L}]overlay=format=auto:eof_action=pass:enable='between(t,${r6(start - half)},${r6(end - half)})'[${next}]`);
           base = next;
@@ -1174,4 +1209,4 @@ function runExport(project, outPath, { onProgress = () => {}, encoder, quality, 
   });
 }
 
-module.exports = { setFontCache, fusionChain, maskChain, buildExport, buildAss, runExport, projectDuration, assTime, assColor, kfExpr, atempo, gradeMath, gradeFilters, STYLES };
+module.exports = { setFontCache, fusionChain, maskChain, buildExport, buildAss, runExport, projectDuration, assTime, assColor, kfExpr, atempo, gradeMath, gradeFilters, gradeLut, legacyGradeFilters, STYLES };

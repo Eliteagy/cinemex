@@ -22,6 +22,20 @@ contextBridge.exposeInMainWorld('ec', {
   },
   exportVideo: (project, opts) => ipcRenderer.invoke('export:run', project, opts),
   cancelExport: () => ipcRenderer.invoke('export:cancel'),
+  aiAsk: (prompt, opts) => ipcRenderer.invoke('ai:ask', prompt, opts),
+  findHotclips: (words, opts) => ipcRenderer.invoke('ai:hotclips', words, opts),
+  cancelAi: () => ipcRenderer.invoke('ai:cancel'),
+  onAiProgress: (cb) => {
+    const f = (_e, p) => cb(p);
+    ipcRenderer.on('ai:progress', f);
+    return () => ipcRenderer.removeListener('ai:progress', f);
+  },
+  buildShorts: (media, clips, opts) => ipcRenderer.invoke('shorts:build', media, clips, opts),
+  onShortsProgress: (cb) => {
+    const f = (_e, p) => cb(p);
+    ipcRenderer.on('shorts:progress', f);
+    return () => ipcRenderer.removeListener('shorts:progress', f);
+  },
   onExportProgress: (cb) => {
     const f = (_e, p) => cb(p);
     ipcRenderer.on('export:progress', f);

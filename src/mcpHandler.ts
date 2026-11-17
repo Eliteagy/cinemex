@@ -13,9 +13,10 @@ import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
 import { LOOKS as DEV_LOOKS, autoTone, autoWhiteBalance, type DevSettings } from './lib/develop.js';
 import { sourcePixels } from './engine/glcolor';
+import { aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from './aiActions';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
 import type { AutoCaptionOptions } from './actions';
-import type { CanvasPreset } from './types';
+import type { CanvasPreset, Hotclip } from './types';
 import { LOOKS, PRESETS, STYLES, findClip, parseSrt, toSrt } from './lib/project';
 import type { CaptionStyle, FNodeType, Grade, Mask, MaskMode } from './types';
 import { MY_STYLE_ID, applyOverride, cleanOverride, validateStyle } from './lib/capstyle.js';
@@ -327,6 +328,28 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (!clips) throw new Error('Não há clips de vídeo para corrigir');
       return { clips };
     }
+    case 'find_hotclips':
+      return (await findHotclips({ mediaId: s(a.media_id), count: n(a.count), min: n(a.min), max: n(a.max), context: s(a.context) })).map((c, i) => ({ index: i, ...c }));
+    case 'make_shorts': {
+      let clips: Hotclip[];
+      if (Array.isArray(a.clips) && a.clips.length) {
+        clips = (a.clips as Record<string, unknown>[]).map((c) => ({ start: Number(c.start), end: Number(c.end), duration: Number(c.end) - Number(c.start), score: Number(c.score) || 0, hook: String(c.hook ?? ''), outro: String(c.outro ?? ''), why: String(c.why ?? ''), title: String(c.title ?? c.hook ?? ''), hashtags: Array.isArray(c.hashtags) ? c.hashtags.map(String) : [], text: '' }));
+        if (clips.some((c) => !(c.end > c.start))) throw new Error('Cada momento precisa de start < end');
+      } else {
+        if (!hotclipState.clips.length) throw new Error('Corre find_hotclips primeiro (ou passa clips)');
+        const idx = Array.isArray(a.indices) && a.indices.length ? a.indices.map(Number) : hotclipState.clips.map((_, i) => i);
+        clips = idx.map((i) => hotclipState.clips[i]).filter((c): c is Hotclip => Boolean(c));
+      }
+      const preset = s(a.preset) as CanvasPreset | undefined;
+      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : 'cover', cards: a.cards !== false, preset, gpu: a.gpu === true });
+      return out ? out.map((o) => ({ file: o.file, project: o.project, title: o.title })) : { cancelled: true };
+    }
+    case 'ai_chapters':
+      return aiChapters({ mediaId: s(a.media_id), markers: a.markers !== false });
+    case 'translate_captions':
+      return translateCaptions(String(a.language), { mode: s(a.mode) === 'bilingual' ? 'bilingual' : 'replace', trackId: s(a.track_id) });
+    case 'check_captions':
+      return a.fix === true ? fixCaptionTrack(s(a.track_id)) : { issues: checkCaptionTrack(s(a.track_id)) };
     case 'list_looks':
       return DEV_LOOKS.map((l) => ({ id: l.id, label: l.label, group: l.group }));
     case 'set_caption_style': {

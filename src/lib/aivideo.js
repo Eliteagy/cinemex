@@ -49,7 +49,7 @@ export function sentences(words, { gap = 0.5, comma = 50, cap = 70 } = {}) {
     }
     const next = words[i + 1];
     const nextLower = next && /^[a-zà-ÿ]/.test(String(next.w ?? '').trim());
-    if (TERMINAL.test(w) && !ABBR.test(w) && !/\d[.,]$/.test(w) && !(w.endsWith('...') && nextLower)) close();
+    if (TERMINAL.test(w) && !ABBR.test(w) && !(w.endsWith('...') && nextLower)) close();
     else if (cur && /,$/.test(w) && cur.text.length >= comma) close();
     else if (cur && cur.text.length >= cap) close();
   });

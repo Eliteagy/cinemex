@@ -33,7 +33,7 @@ export async function importPaths(paths: string[]) {
 const DEFAULT_KEY = 'auto|pt|transcribe|';
 export const transcriptKey = (o: TranscribeOptions = {}) => `${o.model || 'auto'}|${o.language || 'pt'}|${o.translate ? 'translate' : 'transcribe'}|${o.prompt ?? ''}`;
 
-async function ensureTranscript(m: Media, opts: TranscribeOptions = {}) {
+export async function ensureTranscript(m: Media, opts: TranscribeOptions = {}) {
   const key = transcriptKey(opts);
   if (m.transcript && (m.transcriptKey ?? DEFAULT_KEY) === key) return m.transcript;
   S().setStatus(`A transcrever ${m.name} no teu PC${opts.translate ? ' (a traduzir para inglês)' : ''}…`, true);

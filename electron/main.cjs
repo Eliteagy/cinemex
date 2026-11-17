@@ -16,6 +16,8 @@ const { createStyleStore } = require('./styles.cjs');
 const { USER_FONTS } = require('../src/lib/emphasis.js');
 const { runExport, setFontCache } = require('./render.cjs');
 const { createMcpServer } = require('./mcp.cjs');
+const shorts = require('./shorts.cjs');
+const { askJson } = require('./llm.cjs');
 const { createClaudeChat } = require('./claude-chat.cjs');
 const { createGptChat, createGeminiChat } = require('./ai-providers.cjs');
 const collab = require('./collab.cjs');
@@ -255,6 +257,48 @@ function handlers() {
     }
   });
   ipcMain.handle('export:cancel', () => exportAbort?.abort());
+  // AI (VideoCraft features): one-shot Claude calls without tools; prompts built in src/lib/aivideo.js.
+  let aiAbort = null;
+  ipcMain.handle('ai:ask', async (_e, prompt, opts = {}) => {
+    aiAbort = new AbortController();
+    try {
+      return await askJson(String(prompt).slice(0, 400_000), { model: ['opus', 'sonnet', 'haiku'].includes(opts.model) ? opts.model : 'sonnet', signal: aiAbort.signal });
+    } finally {
+      aiAbort = null;
+    }
+  });
+  ipcMain.handle('ai:hotclips', async (e, words, opts = {}) => {
+    aiAbort = new AbortController();
+    try {
+      return await shorts.findHotclips(words, { count: opts.count, min: opts.min, max: opts.max, chapters: opts.chapters, context: typeof opts.context === 'string' ? opts.context.slice(0, 4000) : '', model: opts.model, signal: aiAbort.signal, onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('ai:progress', p) });
+    } finally {
+      aiAbort = null;
+    }
+  });
+  ipcMain.handle('ai:cancel', () => aiAbort?.abort());
+  ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
+    if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
+    let outDir = opts.outDir;
+    if (!outDir) {
+      const r = await dialog.showOpenDialog(win, { title: 'Pasta para os shorts', defaultPath: app.getPath('videos'), properties: ['openDirectory', 'createDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return null;
+      outDir = r.filePaths[0];
+    }
+    exportAbort = new AbortController();
+    try {
+      return await shorts.buildShorts(media, clips, path.resolve(String(outDir)), {
+        style: typeof opts.style === 'string' ? opts.style : 'felipe',
+        reframe: opts.reframe === 'fit' ? 'fit' : 'cover',
+        cards: opts.cards !== false,
+        preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',
+        encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',
+        signal: exportAbort.signal,
+        onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('shorts:progress', p),
+      });
+    } finally {
+      exportAbort = null;
+    }
+  });
   ipcMain.handle('project:save', async (_e, project, file) => {
     let out = file;
     if (!out) {

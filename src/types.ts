@@ -239,6 +239,20 @@ export interface Graphic {
   scale?: number;
 }
 
+/** A best moment found by the AI (src/lib/aivideo.js parseHotclips): times in source seconds, text cut from the real transcript. */
+export interface Hotclip {
+  start: number;
+  end: number;
+  duration: number;
+  score: number;
+  hook: string;
+  outro: string;
+  why: string;
+  title: string;
+  hashtags: string[];
+  text: string;
+}
+
 /** Timeline marker (all three editors have them); beats found in music are markers too. */
 export interface Marker {
   id: string;
@@ -428,6 +442,13 @@ export interface EcBridge {
   onMatteProgress(cb: (m: { id?: string; progress?: number; status?: string }) => void): () => void;
   exportVideo(project: Project, opts: { path?: string; gpu?: boolean; ask?: boolean; quality?: 'alta' | 'media' | 'leve' }): Promise<string | null>;
   cancelExport(): Promise<void>;
+  /** One-shot Claude call (no tools) that answers JSON. */
+  aiAsk(prompt: string, opts?: { model?: 'opus' | 'sonnet' | 'haiku' }): Promise<unknown>;
+  findHotclips(words: Word[], opts?: { count?: number; min?: number; max?: number; chapters?: { start: number }[]; context?: string; model?: string }): Promise<Hotclip[]>;
+  cancelAi(): Promise<void>;
+  onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
+  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
+  onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string }) => void): () => void;
   onExportProgress(cb: (p: number) => void): () => void;
   saveProject(project: Project, file?: string | null): Promise<string | null>;
   openProject(file?: string): Promise<{ project: Project; path: string } | null>;

@@ -998,3 +998,29 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .cmp-tag { position: absolute; top: 12px; padding: 4px 10px; border-radius: var(--r-pill); background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; white-space: nowrap; }
 .cmp-tag.left { right: 16px; }
 .cmp-tag.right { left: 16px; background: #fff; color: #000; }
+
+/* ---------------------------------------------------------------- Shorts e IA (VideoCraft features) */
+.shorts { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.sh-body { display: flex; flex-direction: column; gap: 10px; }
+.sh-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sh-nums label, .sh-opts label { display: flex; flex-direction: column; gap: 4px; color: var(--text-3); font-size: 11.5px; }
+.sh-ctx { resize: vertical; min-height: 44px; font: inherit; }
+.sh-err { margin: 0; color: #ff6b6b; font-size: 12px; }
+.sh-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sh-list li { padding: 10px 12px; border: 1px solid var(--stroke-1); border-radius: var(--r-md); background: var(--bg-2); opacity: 0.6; transition: opacity 120ms ease, border-color 120ms ease; }
+.sh-list li.on { opacity: 1; border-color: var(--stroke-3); }
+.sh-list label { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; cursor: pointer; }
+.sh-score { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 600 12px/1 var(--num); }
+.sh-title { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-time { color: var(--text-3); font: 500 11.5px/1 var(--num); white-space: nowrap; }
+.sh-hook { margin: 8px 0 4px; color: var(--text); font-size: 12.5px; }
+.sh-text { margin: 0 0 4px; color: var(--text-2); font-size: 12px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sh-why, .sh-tags { margin: 0; color: var(--text-3); font-size: 11.5px; }
+.sh-opts { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.sh-opts label.sh-check, .sh-tr label.sh-check { flex-direction: row; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.sh-check { display: flex; align-items: center; gap: 6px; }
+.sh-done { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-3); }
+.sh-done p { margin: 0; font-size: 12px; }
+.sh-tr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sh-tr .input { flex: 1; min-width: 120px; }
+.sh-note { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--well); color: var(--text-2); font: 12px/1.5 var(--ui); white-space: pre-wrap; }

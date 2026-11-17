@@ -5,6 +5,8 @@ import { fmtTime, projectDuration } from '../lib/project';
 import { Icon } from './Icon';
 import { MaskOverlay } from './MaskOverlay';
 import { CaptionOverlay } from './CaptionOverlay';
+import { CompareOverlay } from './Color';
+import { onCompare } from '../engine/glcolor';
 
 export function Viewer() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -29,6 +31,7 @@ export function Viewer() {
     return () => p.destroy();
   }, []);
   useEffect(() => player.current?.invalidate(), [project, playhead]);
+  useEffect(() => onCompare(() => player.current?.invalidate()), []);
   // Fit the frame inside the stage, keeping the project's aspect ratio.
   useEffect(() => {
     const el = stage.current;
@@ -46,6 +49,7 @@ export function Viewer() {
         <canvas ref={ref} style={{ width: Math.floor(project.canvas.w * k), height: Math.floor(project.canvas.h * k) }} />
         <MaskOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
         <CaptionOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
+        <CompareOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
         {!total && (
           <div className="empty">
             <div className="empty-state">

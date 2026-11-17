@@ -11,6 +11,8 @@ import { BG_KINDS, FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from './
 import type { FrameBg } from './types';
 import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
+import { LOOKS as DEV_LOOKS, autoTone, autoWhiteBalance, type DevSettings } from './lib/develop.js';
+import { sourcePixels } from './engine/glcolor';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
 import type { AutoCaptionOptions } from './actions';
 import type { CanvasPreset } from './types';
@@ -295,10 +297,38 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         if (lut && !/^(?:[a-zA-Z]:[\\/]|\/).*\.cube$/i.test(lut)) throw new Error('A LUT tem de ser um caminho completo de um ficheiro .cube');
         g.lut = lut;
       }
-      const clips = S().setGrade(ids, g, Boolean(look));
+      let clips = 0;
+      if (look || Object.keys(g).length) clips = S().setGrade(ids, g, Boolean(look));
+      // Lightroom-style settings: merged one level deep into each clip's own dev.
+      const patch = (a.dev && typeof a.dev === 'object' ? a.dev : {}) as DevSettings;
+      const auto = s(a.auto);
+      if (auto && auto !== 'tone' && auto !== 'wb') throw new Error('auto: tone ou wb');
+      if (auto && ids === 'all') throw new Error('auto precisa de clip_id');
+      if (Object.keys(patch).length || auto) {
+        const p = S().project;
+        const targets = p.tracks.filter((t) => t.kind === 'video').flatMap((t) => t.clips).filter((c) => c.mediaId && (ids === 'all' || ids.includes(c.id)));
+        for (const c of targets) {
+          let extra: DevSettings = {};
+          if (auto) {
+            const px = sourcePixels(c.id);
+            if (!px) throw new Error('O frame deste clip ainda não foi desenhado: põe a cabeça de leitura sobre ele');
+            extra = auto === 'wb' ? autoWhiteBalance(px.data, px.width, px.height) : autoTone(px.data, px.width, px.height, c.color?.dev);
+          }
+          const cur = (c.color?.dev ?? {}) as Record<string, unknown>;
+          const next: Record<string, unknown> = { ...cur };
+          for (const [k, v] of Object.entries({ ...patch, ...extra })) {
+            const o = cur[k];
+            next[k] = v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o) ? { ...o, ...v } : v;
+          }
+          S().setGrade([c.id], { dev: next as DevSettings });
+          clips++;
+        }
+      }
       if (!clips) throw new Error('Não há clips de vídeo para corrigir');
       return { clips };
     }
+    case 'list_looks':
+      return DEV_LOOKS.map((l) => ({ id: l.id, label: l.label, group: l.group }));
     case 'set_caption_style': {
       const patch: Partial<CaptionStyle> = {};
       for (const [k, key] of [['font', 'font'], ['color', 'color'], ['highlight', 'highlight'], ['outline_color', 'outlineColor'], ['box_color', 'boxColor'], ['shadow_color', 'shadowColor'], ['marker', 'marker']] as const) {

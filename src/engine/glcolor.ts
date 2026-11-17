@@ -17,6 +17,7 @@ precision highp sampler3D;
 uniform sampler2D img;
 uniform sampler3D lut;
 uniform float n;
+uniform float split;
 in vec2 uv;
 out vec4 o;
 void main() {
@@ -24,6 +25,8 @@ void main() {
   vec3 rgb = c.a > 0.0 ? clamp(c.rgb / c.a, 0.0, 1.0) : vec3(0.0);
   // Texel centres: 0 -> 0.5/n, 1 -> 1 - 0.5/n (hardware trilinear, like lut3d=interp=trilinear).
   vec3 g = texture(lut, rgb * ((n - 1.0) / n) + 0.5 / n).rgb;
+  // Antes/Depois: left of the split line shows the frame without the grade.
+  if (uv.x < split) g = rgb;
   o = vec4(g * c.a, c.a);
 }`;
 
@@ -164,6 +167,7 @@ class ColorGL {
       gl.uniform1i(gl.getUniformLocation(this.prog!, 'img'), 0);
       gl.uniform1i(gl.getUniformLocation(this.prog!, 'lut'), 1);
       gl.uniform1f(gl.getUniformLocation(this.prog!, 'n'), PREVIEW_N);
+      gl.uniform1f(gl.getUniformLocation(this.prog!, 'split'), compare.on ? compare.x : -1);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -176,9 +180,46 @@ class ColorGL {
   }
 }
 
+/** Antes/Depois in the viewer: x = where the line is (0..1 of the frame). */
+export const compare = { on: false, x: 0.5 };
+const compareListeners = new Set<() => void>();
+export function setCompare(patch: Partial<typeof compare>) {
+  Object.assign(compare, patch);
+  compareListeners.forEach((f) => f());
+}
+export function onCompare(f: () => void): () => void {
+  compareListeners.add(f);
+  return () => compareListeners.delete(f);
+}
+
+/** The last ungraded frame source drawn for each clip (Auto tone / Auto WB and look thumbnails read it). */
+const sources = new Map<string, CanvasImageSource>();
+export function rememberSource(clipId: string, src: CanvasImageSource) {
+  sources.set(clipId, src);
+}
+/** Small RGBA copy of a clip's current ungraded frame, or null when it has not been drawn yet. */
+export function sourcePixels(clipId: string, w = 160, h = 90): ImageData | null {
+  const src = sources.get(clipId);
+  if (!src) return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true })!;
+  try {
+    x.drawImage(src, 0, 0, w, h);
+    return x.getImageData(0, 0, w, h);
+  } catch {
+    return null;
+  }
+}
+
 let shared: ColorGL | null = null;
 /** The shared GPU grader (created on first use). */
 export function colorGL(): ColorGL {
-  if (!shared) shared = new ColorGL();
+  if (!shared) {
+    shared = new ColorGL();
+    // Test hook (hidden test instances read the GPU state through CDP).
+    (window as unknown as { __cmxColorGL?: ColorGL }).__cmxColorGL = shared;
+  }
   return shared;
 }

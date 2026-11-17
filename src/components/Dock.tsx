@@ -39,8 +39,8 @@ const PANELS: Record<PanelId, { title: string; render: () => ReactNode }> = {
   fusionLib: { title: 'Nós', render: () => <FusionLibrary /> },
   fusionInspector: { title: 'Inspetor do nó', render: () => <FusionInspector /> },
   nodes: { title: 'Editor de nós', render: () => <NodeEditor /> },
-  colorLooks: { title: 'Looks', render: () => <ColorLooks /> },
-  colorPanel: { title: 'Correção de cor', render: () => <ColorPanel /> },
+  colorLooks: { title: 'Histograma e predefinições', render: () => <ColorLooks /> },
+  colorPanel: { title: 'Cor', render: () => <ColorPanel /> },
   captionList: { title: 'Legendas', render: () => <CaptionList /> },
   captionStyle: { title: 'Estilo das legendas', render: () => <CaptionStylePanel /> },
   deliverSettings: { title: 'Definições de exportação', render: () => <DeliverSettingsPanel /> },
@@ -52,7 +52,7 @@ const LAYOUTS: Record<Page, { left: PanelId; leftW: number; right?: PanelId; rig
   media: { left: 'media', leftW: 640 },
   edit: { left: 'media', leftW: 300, right: 'inspector', rightW: 400, bottom: 'timeline' },
   fusion: { left: 'fusionLib', leftW: 300, right: 'fusionInspector', rightW: 320, bottom: 'nodes' },
-  color: { left: 'colorLooks', leftW: 340, right: 'colorPanel', rightW: 320, bottom: 'timeline' },
+  color: { left: 'colorLooks', leftW: 300, right: 'colorPanel', rightW: 540, bottom: 'timeline' },
   captions: { left: 'captionList', leftW: 340, right: 'captionStyle', rightW: 320, bottom: 'timeline' },
   deliver: { left: 'deliverSettings', leftW: 300, right: 'deliverQueue', rightW: 320, bottom: 'timeline' },
 };
@@ -62,7 +62,8 @@ const panelsOf = (page: Page): PanelId[] => {
   const l = LAYOUTS[page];
   return ['viewer', l.left, ...(l.right ? [l.right] : []), ...(l.bottom ? [l.bottom] : [])];
 };
-const storeKey = (page: Page) => `cinemex.dock.v1.${page}`;
+// The colour page's layout changed with the Lightroom-style panel (v2): its old saved arrangement is ignored.
+const storeKey = (page: Page) => `cinemex.dock.${page === 'color' ? 'v2' : 'v1'}.${page}`;
 
 /** Forgets the saved arrangement of a page (the dock must be mounted again to show the default). */
 export function resetDock(page: Page) {

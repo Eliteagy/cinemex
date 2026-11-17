@@ -46,7 +46,7 @@ function Glyph({ d, size = 20 }: { d: string; size?: number }) {
 
 // ------------------------------------------------------------------ controls
 /** Resolve's number box: drag sideways to change, click to type. */
-function NumField({ value, onChange, step = 0.01, dec = 3, min = -Infinity, max = Infinity, label, disabled }: { value: number; onChange: (v: number) => void; step?: number; dec?: number; min?: number; max?: number; label: string; disabled?: boolean }) {
+export function NumField({ value, onChange, step = 0.01, dec = 3, min = -Infinity, max = Infinity, label, disabled }: { value: number; onChange: (v: number) => void; step?: number; dec?: number; min?: number; max?: number; label: string; disabled?: boolean }) {
   const [edit, setEdit] = useState<string | null>(null);
   const drag = useRef<{ x: number; v: number; moved: boolean } | null>(null);
   const clamp = (v: number) => Math.max(min, Math.min(max, v));
@@ -115,7 +115,7 @@ function NumField({ value, onChange, step = 0.01, dec = 3, min = -Infinity, max 
   );
 }
 
-function RowSlider({ value, min, max, step, onChange, label, disabled }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void; label: string; disabled?: boolean }) {
+export function RowSlider({ value, min, max, step, onChange, label, disabled }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void; label: string; disabled?: boolean }) {
   return <input className="range ri-range" type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={label} onPointerDown={() => st().startSlide()} onChange={(e) => onChange(Number(e.target.value))} />;
 }
 
@@ -139,7 +139,7 @@ function ResetBtn({ onClick, title = 'Repor' }: { onClick: () => void; title?: s
 }
 
 /** One parameter line: label on the right edge of its column, the controls, then keyframe and reset. */
-function Row({ label, children, keyBtn, onReset }: { label: string; children: ReactNode; keyBtn?: ReactNode; onReset?: () => void }) {
+export function Row({ label, children, keyBtn, onReset }: { label: string; children: ReactNode; keyBtn?: ReactNode; onReset?: () => void }) {
   return (
     <div className="ri-row">
       <span className="ri-label">{label}</span>
@@ -151,7 +151,7 @@ function Row({ label, children, keyBtn, onReset }: { label: string; children: Re
 }
 
 /** Collapsible section. `on` lights the dot: the section has something other than its defaults. */
-function Section({ id, title, on, open, onToggle, onReset, keyBtn, children }: { id: string; title: string; on?: boolean; open: boolean; onToggle: (id: string) => void; onReset?: () => void; keyBtn?: ReactNode; children: ReactNode }) {
+export function Section({ id, title, on, open, onToggle, onReset, keyBtn, children }: { id: string; title: string; on?: boolean; open: boolean; onToggle: (id: string) => void; onReset?: () => void; keyBtn?: ReactNode; children: ReactNode }) {
   return (
     <section className={`ri-sec${open ? ' open' : ''}`} data-sec={id}>
       <header className="ri-sec-head">

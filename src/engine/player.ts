@@ -13,7 +13,7 @@ import { BLEND_CANVAS } from '../lib/layerfx.js';
 import { applyLayerFx } from './layerfx';
 import { applyFrame } from './frame';
 import { hasFrame } from '../lib/frame.js';
-import { colorGL, needsLut } from './glcolor';
+import { colorGL, needsLut, rememberSource } from './glcolor';
 import { blendGL } from './glblend';
 
 type El = HTMLVideoElement | HTMLAudioElement;
@@ -325,6 +325,7 @@ export class Player {
       // frame is drawn (never above the source). Without WebGL it falls back to the old canvas filters.
       let pic: CanvasImageSource = src;
       let gpu = false;
+      rememberSource(clip.id, src);
       if (clip.color && needsLut(clip.color)) {
         const sc = Math.min(1, k * z);
         const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true));

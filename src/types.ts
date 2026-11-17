@@ -116,7 +116,7 @@ export interface Mask {
 }
 
 /** Fusion (node compositing, like DaVinci's): nodes and the links between them. */
-export type FNodeType = 'mediaIn' | 'mediaOut' | 'media' | 'background' | 'merge' | 'transform' | 'chroma' | 'blur' | 'glow' | 'color' | 'grain' | 'letterbox';
+export type FNodeType = 'mediaIn' | 'mediaOut' | 'media' | 'background' | 'merge' | 'transform' | 'chroma' | 'blur' | 'glow' | 'color' | 'grain' | 'letterbox' | 'tiltshift' | 'irisblur' | 'lensflare' | 'relight';
 export interface FNode {
   id: string;
   type: FNodeType;

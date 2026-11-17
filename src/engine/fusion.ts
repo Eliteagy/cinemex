@@ -3,6 +3,7 @@
 // shorter side, positions fractions of the frame.
 import nodesJson from '../lib/fusion-nodes.json';
 import { gradeMath } from '../lib/project';
+import { flareRGB, galleryMaxSigma, irisWeight, levelWeights, relightFactor, relightJS, relightParams, tiltWeight, LUMA709 } from '../lib/fusionfx.js';
 import type { FNode, FNodeType, Fusion } from '../types';
 
 export interface ParamSpec {
@@ -50,6 +51,44 @@ export interface FusionEnv {
   mediaSize(node: FNode, mediaId: string): { w: number; h: number } | null;
 }
 
+/** Static pictures (blur masks, flares) kept by their parameters and size. */
+const statics = new Map<string, HTMLCanvasElement>();
+function staticCanvas(key: string, w: number, h: number, paint: (img: ImageData) => void): HTMLCanvasElement {
+  const hit = statics.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const x = c.getContext('2d')!;
+  const img = x.createImageData(w, h);
+  paint(img);
+  x.putImageData(img, 0, 0);
+  if (statics.size > 16) statics.delete(statics.keys().next().value as string);
+  statics.set(key, c);
+  return c;
+}
+
+/** Gaussian-like blur (three box passes, edges clamped like ffmpeg's gblur) of a w × h plane, in place. */
+function boxBlur3(a: Float32Array, w: number, h: number, sigma: number) {
+  const r = Math.max(1, Math.round((Math.sqrt(4 * sigma * sigma + 1) - 1) / 2));
+  const tmp = new Float32Array(Math.max(w, h));
+  const pass = (n: number, count: number, idx: (line: number, i: number) => number) => {
+    for (let line = 0; line < count; line++) {
+      let acc = 0;
+      for (let i = -r; i <= r; i++) acc += a[idx(line, Math.max(0, Math.min(n - 1, i)))]!;
+      for (let i = 0; i < n; i++) {
+        tmp[i] = acc / (2 * r + 1);
+        acc += a[idx(line, Math.min(n - 1, i + r + 1))]! - a[idx(line, Math.max(0, i - r))]!;
+      }
+      for (let i = 0; i < n; i++) a[idx(line, i)] = tmp[i]!;
+    }
+  };
+  for (let k = 0; k < 3; k++) {
+    pass(w, h, (y, x) => y * w + x);
+    pass(h, w, (x, y) => y * w + x);
+  }
+}
+
 /** Evaluate the graph; returns the MediaOut image (or null if there is no Out). */
 export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanvasElement>): HTMLCanvasElement | null {
   const { w, h } = env;
@@ -62,7 +101,7 @@ export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanv
       c.width = w;
       c.height = h;
     }
-    const x = c.getContext('2d', { willReadFrequently: key.endsWith(':chroma') })!;
+    const x = c.getContext('2d', { willReadFrequently: key.endsWith(':chroma') || f.nodes.some((nn) => nn.id === key && nn.type === 'relight') })!;
     x.setTransform(1, 0, 0, 1, 0, 0);
     x.globalAlpha = 1;
     x.globalCompositeOperation = 'source-over';
@@ -182,6 +221,78 @@ export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanv
           x.globalCompositeOperation = 'destination-in';
           x.drawImage(inp(0), 0, 0);
         }
+        break;
+      }
+      case 'tiltshift':
+      case 'irisblur': {
+        // Three levels (sharp, σmax/2, σmax) mixed by the weight masks, like the export's maskedmerge.
+        const src = inp(0);
+        x.drawImage(src, 0, 0);
+        const p = Object.fromEntries(Object.keys(NODES[n.type].params).map((k) => [k, param(n, k)]));
+        const smax = galleryMaxSigma(p.blur as number, short);
+        if (smax < 0.3) break;
+        const weight = n.type === 'tiltshift' ? tiltWeight : irisWeight;
+        [smax / 2, smax].forEach((sigma, lvl) => {
+          const mask = staticCanvas(`${n.type}:${lvl}:${w}x${h}:${JSON.stringify(p)}`, w, h, (img) => {
+            const d = img.data;
+            for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+              const m = levelWeights(weight(xx + 0.5, yy + 0.5, w, h, p))[lvl]!;
+              d[(yy * w + xx) * 4 + 3] = Math.round(m * 255);
+            }
+          });
+          const { c: bc, x: bx } = surface(`${n.id}:l${lvl}`);
+          bx.filter = `blur(${Math.max(0.3, sigma)}px)`;
+          bx.drawImage(src, 0, 0);
+          bx.filter = 'none';
+          bx.globalCompositeOperation = 'destination-in';
+          bx.drawImage(mask, 0, 0);
+          x.drawImage(bc, 0, 0);
+        });
+        break;
+      }
+      case 'lensflare': {
+        const src = inp(0);
+        x.drawImage(src, 0, 0);
+        const p = Object.fromEntries(Object.keys(NODES[n.type].params).map((k) => [k, param(n, k)]));
+        // The flare is drawn at half size and scaled up (it is smooth); same function as the export.
+        const fw = Math.max(2, Math.round(w / 2));
+        const fh = Math.max(2, Math.round(h / 2));
+        const flare = staticCanvas(`flare:${fw}x${fh}:${JSON.stringify(p)}`, fw, fh, (img) => {
+          const d = img.data;
+          for (let yy = 0; yy < fh; yy++) for (let xx = 0; xx < fw; xx++) {
+            const v = flareRGB(xx + 0.5, yy + 0.5, fw, fh, p);
+            const o = (yy * fw + xx) * 4;
+            d[o] = v[0]! * 255;
+            d[o + 1] = v[1]! * 255;
+            d[o + 2] = v[2]! * 255;
+            d[o + 3] = 255;
+          }
+        });
+        x.globalCompositeOperation = 'screen';
+        x.drawImage(flare, 0, 0, w, h);
+        // keep the input's transparency (export: alpha plane taken from the input)
+        x.globalCompositeOperation = 'destination-in';
+        x.drawImage(src, 0, 0);
+        break;
+      }
+      case 'relight': {
+        const src = inp(0);
+        x.drawImage(src, 0, 0);
+        const p = Object.fromEntries(Object.keys(NODES[n.type].params).map((k) => [k, param(n, k)]));
+        const q = relightParams(p, short);
+        const img = x.getImageData(0, 0, w, h);
+        const d = img.data;
+        const S = new Float32Array(w * h);
+        for (let i = 0; i < w * h; i++) S[i] = (LUMA709[0]! * d[i * 4]! + LUMA709[1]! * d[i * 4 + 1]! + LUMA709[2]! * d[i * 4 + 2]!) / 255;
+        boxBlur3(S, w, h, q.sigma);
+        const at = (xx: number, yy: number) => S[Math.max(0, Math.min(h - 1, yy)) * w + Math.max(0, Math.min(w - 1, xx))]!;
+        const k = q.k;
+        for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+          const F = relightFactor(at(xx, yy), at(xx - k, yy), at(xx + k, yy), at(xx, yy - k), at(xx, yy + k), q);
+          const o = (yy * w + xx) * 4;
+          for (let ch = 0; ch < 3; ch++) d[o + ch] = Math.round(255 * relightJS(d[o + ch]! / 255, F, ch, q));
+        }
+        x.putImageData(img, 0, 0);
         break;
       }
       case 'letterbox': {

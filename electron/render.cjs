@@ -16,6 +16,7 @@ const anim = require('../src/lib/anim.js');
 const { layerFx } = require('../src/lib/layerfx.js');
 const { blendFF } = require('../src/lib/blend.js');
 const pslayer = require('../src/lib/pslayer.js');
+const ffx = require('../src/lib/fusionfx.js');
 const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const develop = require('../src/lib/develop.js');
@@ -295,6 +296,48 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
         case 'grain': {
           const a = Math.round(Math.max(0, Math.min(1, num(n, 'amount'))) * 40);
           filters.push(`[${inp(0)}]${a > 0 ? `noise=alls=${a}:allf=t` : 'null'}[${l}]`);
+          break;
+        }
+        case 'tiltshift':
+        case 'irisblur': {
+          // Three blur levels mixed by the static weight mask (src/lib/fusionfx.js), drawn once and looped.
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const smax = ffx.galleryMaxSigma(p.blur, short);
+          const w = n.type === 'tiltshift' ? ffx.tiltFF(W, H, p) : ffx.irisFF(W, H, p);
+          const still = (expr, lab) => {
+            filters.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gray,geq=lum='st(8,${w});255*${expr}',loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB),split=4[${lab}0][${lab}1][${lab}2][${lab}3]`);
+            filters.push(`[${lab}0][${lab}1][${lab}2][${lab}3]mergeplanes=0x00102030:gbrap[${lab}]`);
+          };
+          if (smax < 0.3) {
+            filters.push(`[${inp(0)}]null[${l}]`);
+            break;
+          }
+          still('clip(2*ld(8),0,1)', `${l}m1`);
+          still('clip(2*ld(8)-1,0,1)', `${l}m2`);
+          filters.push(`[${inp(0)}]format=gbrap,split=3[${l}a][${l}b][${l}c]`);
+          filters.push(`[${l}b]gblur=sigma=${fx(Math.max(0.3, smax / 2))}[${l}b2]`, `[${l}c]gblur=sigma=${fx(smax)}[${l}c2]`);
+          filters.push(`[${l}a][${l}b2][${l}m1]maskedmerge[${l}t]`, `[${l}t][${l}c2][${l}m2]maskedmerge[${l}]`);
+          break;
+        }
+        case 'lensflare': {
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const q = ffx.flareGeq(W, H, p);
+          filters.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gbrap,geq=r='${q.r}':g='${q.g}':b='${q.b}':a='255',loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB)[${l}f]`);
+          filters.push(`[${inp(0)}]format=gbrap[${l}i]`);
+          filters.push(`[${l}i][${l}f]blend=c0_mode=screen:c1_mode=screen:c2_mode=screen:c3_expr='A':shortest=1[${l}]`);
+          break;
+        }
+        case 'relight': {
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const q = ffx.relightParams(p, short);
+          const [lr, lg, lb] = ffx.LUMA709;
+          const grey = `colorchannelmixer=rr=${lr}:rg=${lg}:rb=${lb}:gr=${lr}:gg=${lg}:gb=${lb}:br=${lr}:bg=${lg}:bb=${lb}`;
+          filters.push(`[${inp(0)}]format=gbrap16le,split=2[${l}c][${l}y]`);
+          filters.push(`[${l}y]${grey},extractplanes=g,gblur=sigma=${fx(q.sigma)},geq=lum='${ffx.relightGeq(q)}',split=4[${l}f0][${l}f1][${l}f2][${l}f3]`);
+          filters.push(`[${l}f0][${l}f1][${l}f2][${l}f3]mergeplanes=0x00102030:gbrap16le[${l}f]`);
+          // gbrp plane order: c0 = G, c1 = B, c2 = R.
+          const ch = (i) => `st(0,A/65535);65535*clip(ld(0)+(ld(0)*B/65535*${ffx.F_MAX}*${fx(q.warm[i])}-ld(0))*${fx(q.amount)},0,1)`;
+          filters.push(`[${l}c][${l}f]blend=c0_expr='${ch(1)}':c1_expr='${ch(2)}':c2_expr='${ch(0)}':c3_expr='A'[${l}]`);
           break;
         }
         case 'letterbox': {

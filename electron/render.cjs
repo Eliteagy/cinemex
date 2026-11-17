@@ -15,6 +15,7 @@ const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
 const anim = require('../src/lib/anim.js');
 const { layerFx } = require('../src/lib/layerfx.js');
 const { blendFF } = require('../src/lib/blend.js');
+const pslayer = require('../src/lib/pslayer.js');
 const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const develop = require('../src/lib/develop.js');
@@ -977,7 +978,11 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         // After Effects-style layer: effect stack, track matte and blend mode work on a full-canvas
         // RGBA layer in local time (src/lib/layerfx.js builds the same steps the preview draws).
         const blend = c.blend && c.blend !== 'normal' && blendFF(c.blend) ? c.blend : null;
-        if ((c.effects && c.effects.length) || c.matte || blend) {
+        // Blend If (src/lib/pslayer.js): the layer's alpha × soft grey ranges of the layer and the backdrop,
+        // at composite time (same place as the blend mode, so it needs the same frame-aligned path).
+        const bif = pslayer.cleanBlendIf(c.blendIf);
+        const composite = blend || bif;
+        if ((c.effects && c.effects.length) || c.matte || blend || bif || pslayer.cleanColorToAlpha(c.colorToAlpha)) {
           chain.push('format=rgba');
           if (c.fit === 'fit' && !keyed) chain.push(`pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`);
           const pre = `pl${layer}`;
@@ -1037,18 +1042,31 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           chain.push('null');
         }
         // Blend modes need a frame at every moment of the base: pad the start instead of shifting it.
-        chain.push(blend ? `tpad=start_duration=${start}:color=black@0,format=rgba` : `setpts=PTS+${start}/TB`);
+        chain.push(composite ? `tpad=start_duration=${start}:color=black@0,format=rgba` : `setpts=PTS+${start}/TB`);
         const v = `v${layer}`;
         filters.push(`${src}${chain.join(',')}[${v}]`);
         let composed = false;
-        if (blend) {
-          // base (top) <mode> layer, kept only where the layer is opaque, during the clip.
+        if (composite) {
+          // base (top) <mode> layer, kept only where the layer is opaque (× Blend If), during the clip.
           const L = layer;
           const next = `base${++layer}`;
           filters.push(`[${base}]split=2[bb${L}][bk${L}]`, `[${v}]split=2[vl${L}][va${L}]`);
           filters.push(`[bb${L}]format=gbrp[bg${L}]`, `[vl${L}]format=gbrp[vg${L}]`);
-          filters.push(`[bg${L}][vg${L}]blend=${blendFF(blend)}[bl${L}]`);
-          filters.push(`[va${L}]alphaextract[vx${L}]`, `[bl${L}][vx${L}]alphamerge[bm${L}]`);
+          let bgL = `bg${L}`;
+          let vgL = `vg${L}`;
+          if (bif) {
+            // Rec.601 grey of each (exact, on RGB planes), then the weight of both ranges.
+            const grey = `colorchannelmixer=${['r', 'g', 'b'].map((o) => ['r', 'g', 'b'].map((i, n) => `${o}${i}=${pslayer.LUMA601[n]}`).join(':')).join(':')},extractplanes=g`;
+            filters.push(`[bg${L}]split=2[bg${L}a][bg${L}b]`, `[vg${L}]split=2[vg${L}a][vg${L}b]`);
+            filters.push(`[vg${L}b]${grey}[vy${L}]`, `[bg${L}b]${grey}[by${L}]`);
+            filters.push(`[vy${L}][by${L}]blend=all_expr='255*${pslayer.blendIfFF(bif.this, 'A')}*${pslayer.blendIfFF(bif.under, 'B')}'[bw${L}]`);
+            bgL = `bg${L}a`;
+            vgL = `vg${L}a`;
+          }
+          filters.push(`[${bgL}][${vgL}]blend=${blend ? blendFF(blend) : "all_expr='B'"}[bl${L}]`);
+          if (bif) filters.push(`[va${L}]alphaextract[vx${L}a]`, `[vx${L}a][bw${L}]blend=all_mode=multiply[vx${L}]`);
+          else filters.push(`[va${L}]alphaextract[vx${L}]`);
+          filters.push(`[bl${L}][vx${L}]alphamerge[bm${L}]`);
           filters.push(`[bk${L}][bm${L}]overlay=format=auto:eof_action=pass:enable='between(t,${r6(start - half)},${r6(end - half)})'[${next}]`);
           base = next;
           composed = true;

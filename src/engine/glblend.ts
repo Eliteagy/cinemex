@@ -4,6 +4,7 @@
 // blend -> alphamerge -> overlay.
 
 import { BLENDS } from '../lib/blend.js';
+import { BLENDIF_GLSL, CTA_GLSL, cleanBlendIf, cleanColorToAlpha } from '../lib/pslayer.js';
 
 const VS = `#version 300 es
 in vec2 p;
@@ -14,8 +15,12 @@ const fs = (expr: string) => `#version 300 es
 precision highp float;
 uniform sampler2D base;
 uniform sampler2D top;
+uniform bool bifOn;
+uniform vec4 bifT;
+uniform vec4 bifU;
 in vec2 uv;
 out vec4 o;
+${BLENDIF_GLSL}
 vec3 burn(vec3 a, vec3 b) { return mix(mix(1.0 - min(vec3(1.0), (1.0 - a) / max(b, vec3(1e-6))), vec3(0.0), step(b, vec3(0.0))), vec3(1.0), step(vec3(1.0), a)); }
 vec3 dodge(vec3 a, vec3 b) { return mix(mix(min(vec3(1.0), a / max(1.0 - b, vec3(1e-6))), vec3(1.0), step(vec3(1.0), b)), vec3(0.0), step(a, vec3(0.0))); }
 vec3 softD(vec3 a) { return mix(((16.0 * a - 12.0) * a + 4.0) * a, sqrt(a), step(0.2500001, a)); }
@@ -25,8 +30,10 @@ void main() {
   vec3 a = B4.a > 0.0 ? B4.rgb / B4.a : vec3(0.0);
   vec3 b = T4.a > 0.0 ? T4.rgb / T4.a : vec3(0.0);
   vec3 r = clamp(${expr}, 0.0, 1.0);
-  vec3 c = mix(a, r, T4.a);
-  float al = max(B4.a, T4.a);
+  // Blend If: the layer's alpha × the grey ranges of the layer (this) and the backdrop (under).
+  float ta = T4.a * (bifOn ? bifW(bifT, bifLuma(b)) * bifW(bifU, bifLuma(a)) : 1.0);
+  vec3 c = mix(a, r, ta);
+  float al = max(B4.a, ta);
   o = vec4(c * al, al);
 }`;
 
@@ -64,7 +71,7 @@ class BlendGL {
     const gl = this.gl!;
     const hit = this.progs.get(mode);
     if (hit) return hit;
-    const m = BLENDS[mode as keyof typeof BLENDS];
+    const m = mode === 'normal' ? { glsl: 'b' } : BLENDS[mode as keyof typeof BLENDS];
     if (!m) return null;
     const sh = (type: number, src: string) => {
       const s = gl.createShader(type)!;
@@ -95,7 +102,7 @@ class BlendGL {
   }
 
   /** Blends the layer drawn with target() over `dst` (in place). False when the GPU path is unavailable. */
-  composite(dst: CanvasRenderingContext2D, mode: string): boolean {
+  composite(dst: CanvasRenderingContext2D, mode: string, blendIf?: unknown): boolean {
     if (this.failed || !this.gl) return false;
     const gl = this.gl;
     try {
@@ -118,6 +125,12 @@ class BlendGL {
       });
       gl.uniform1i(gl.getUniformLocation(p, 'base'), 0);
       gl.uniform1i(gl.getUniformLocation(p, 'top'), 1);
+      const bif = cleanBlendIf(blendIf);
+      gl.uniform1i(gl.getUniformLocation(p, 'bifOn'), bif ? 1 : 0);
+      if (bif) {
+        gl.uniform4f(gl.getUniformLocation(p, 'bifT'), ...bif.this);
+        gl.uniform4f(gl.getUniformLocation(p, 'bifU'), ...bif.under);
+      }
       const loc = gl.getAttribLocation(p, 'p');
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -134,6 +147,78 @@ class BlendGL {
       this.failed = true;
       return false;
     }
+  }
+}
+
+const CTA_FS = `#version 300 es
+precision highp float;
+uniform sampler2D src;
+uniform vec3 key;
+uniform float thr;
+in vec2 uv;
+out vec4 o;
+${CTA_GLSL}
+void main() {
+  vec4 s = texture(src, uv);
+  vec3 p = s.a > 0.0 ? clamp(s.rgb / s.a, 0.0, 1.0) : vec3(0.0);
+  vec4 q = colorToAlpha(p, key, thr);
+  float al = s.a * q.a;
+  o = vec4(q.rgb * al, al);
+}`;
+
+/** Color to Alpha on a layer canvas, in place (src/lib/pslayer.js). False when WebGL is unavailable. */
+export function colorToAlphaGL(layer: HTMLCanvasElement, cta: unknown): boolean {
+  const c = cleanColorToAlpha(cta);
+  const g = blendGL();
+  if (!c || g.failed || !g.gl) return false;
+  const gl = g.gl;
+  try {
+    let p = g.progs.get('__cta');
+    if (!p) {
+      const sh = (type: number, src: string) => {
+        const s = gl.createShader(type)!;
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`cta: ${gl.getShaderInfoLog(s)}`);
+        return s;
+      };
+      p = gl.createProgram()!;
+      gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
+      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, CTA_FS));
+      gl.linkProgram(p);
+      g.progs.set('__cta', p);
+    }
+    const W = layer.width;
+    const H = layer.height;
+    if (g.canvas.width !== W || g.canvas.height !== H) {
+      g.canvas.width = W;
+      g.canvas.height = H;
+    }
+    gl.viewport(0, 0, W, H);
+    gl.useProgram(p);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, g.tex[0] ?? null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer);
+    gl.uniform1i(gl.getUniformLocation(p, 'src'), 0);
+    gl.uniform3f(gl.getUniformLocation(p, 'key'), ...c.color);
+    gl.uniform1f(gl.getUniformLocation(p, 'thr'), c.threshold);
+    const loc = gl.getAttribLocation(p, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    const x = layer.getContext('2d')!;
+    x.save();
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.globalCompositeOperation = 'copy';
+    x.drawImage(g.canvas, 0, 0);
+    x.restore();
+    return true;
+  } catch (e) {
+    console.warn('[glblend cta]', e);
+    return false;
   }
 }
 

@@ -7,6 +7,7 @@ export const BLEND_MODES: BlendMode[];
 export const BLEND_LABELS: Record<BlendMode, string>;
 export const BLEND_CANVAS: Partial<Record<BlendMode, GlobalCompositeOperation>>;
 export const MATTE_FONT: string;
+export const STROKE_POSITIONS: ('outside' | 'inside' | 'center')[];
 export function shadowOffset(e: { angle: number; distance: number }, short: number): { dx: number; dy: number };
 export function sweepAt(e: Extract<Effect, { type: 'sweep' }>, t: number, W: number, H: number): { c: number; s: number; w: number; pos: number; dmin: number; dmax: number; active: boolean };
 export function textMatteBox(m: Extract<Matte, { kind: 'text' }>, W: number, H: number): { px: number; cx: number; cy: number };

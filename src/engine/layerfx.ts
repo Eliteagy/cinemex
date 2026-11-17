@@ -3,6 +3,7 @@
 import type { Clip, Effect, Matte } from '../types';
 import { MATTE_FONT, shadowOffset, sweepAt, textMatteBox } from '../lib/layerfx.js';
 import { fontOf, resolveFont } from './caption';
+import { spreadN, strokeMask } from '../lib/pslayer.js';
 
 const rgba = (hex: string, a: number) => {
   const h = (hex || '#000000').replace('#', '');
@@ -16,7 +17,7 @@ function scratch(i: number, w: number, h: number) {
     c.width = w;
     c.height = h;
   }
-  const x = c.getContext('2d', { willReadFrequently: i === 3 })!;
+  const x = c.getContext('2d', { willReadFrequently: i === 3 || i === 6 })!;
   x.setTransform(1, 0, 0, 1, 0, 0);
   x.globalAlpha = 1;
   x.globalCompositeOperation = 'source-over';
@@ -41,9 +42,97 @@ export function applyLayerFx(layer: HTMLCanvasElement, clip: Clip, local: number
   void ch;
 }
 
+/**
+ * Grey mask of the layer's alpha as `color` (inv: 1 − alpha), shifted by (dx, dy) px and blurred with σ px,
+ * on scratch canvas `slot`. Outside the frame counts as transparent (inv: as colour), like the export's pad.
+ */
+function alphaMask(layer: HTMLCanvasElement, slot: number, color: string, o: { inv?: boolean; dx?: number; dy?: number; sigma: number }) {
+  const cw = layer.width;
+  const ch = layer.height;
+  const dx = o.dx ?? 0;
+  const dy = o.dy ?? 0;
+  const M = Math.ceil(3 * o.sigma + Math.abs(dx) + Math.abs(dy)) + 2;
+  const pad = scratch(4, cw + 2 * M, ch + 2 * M);
+  if (o.inv) {
+    pad.x.fillStyle = color;
+    pad.x.fillRect(0, 0, cw + 2 * M, ch + 2 * M);
+    pad.x.globalCompositeOperation = 'destination-out';
+    pad.x.drawImage(layer, M + dx, M + dy);
+  } else {
+    pad.x.drawImage(layer, M + dx, M + dy);
+    pad.x.globalCompositeOperation = 'source-in';
+    pad.x.fillStyle = color;
+    pad.x.fillRect(0, 0, cw + 2 * M, ch + 2 * M);
+  }
+  const out = scratch(slot, cw, ch);
+  if (o.sigma > 0.3) out.x.filter = `blur(${o.sigma}px)`;
+  out.x.drawImage(pad.c, -M, -M);
+  out.x.filter = 'none';
+  return out;
+}
+
+/** Repeats a mask n times (alpha 1 − (1 − g)^n: the glow's spread, same as the export's lut). */
+function spread(m: { c: HTMLCanvasElement; x: CanvasRenderingContext2D }, n: number) {
+  if (n <= 1) return m;
+  const r = scratch(6, m.c.width, m.c.height);
+  for (let i = 0; i < n; i++) r.x.drawImage(m.c, 0, 0);
+  return r;
+}
+
+/** Stroke edge cut of a blurred mask (pslayer.js strokeMask), per pixel. */
+function cut(m: { c: HTMLCanvasElement; x: CanvasRenderingContext2D }) {
+  const d = m.x.getImageData(0, 0, m.c.width, m.c.height);
+  const p = d.data;
+  for (let i = 3; i < p.length; i += 4) p[i] = Math.round(255 * strokeMask(p[i]! / 255));
+  m.x.putImageData(d, 0, 0);
+  return m;
+}
+
+/** Draws `under` below the layer (outer styles). */
+function below(layer: HTMLCanvasElement, lx: CanvasRenderingContext2D, under: HTMLCanvasElement, alpha: number) {
+  const r = scratch(5, layer.width, layer.height);
+  r.x.globalAlpha = alpha;
+  r.x.drawImage(under, 0, 0);
+  r.x.globalAlpha = 1;
+  r.x.drawImage(layer, 0, 0);
+  lx.clearRect(0, 0, layer.width, layer.height);
+  lx.drawImage(r.c, 0, 0);
+}
+
+/** Draws `over` on the layer, inside its own alpha (inner styles). */
+function atop(lx: CanvasRenderingContext2D, over: HTMLCanvasElement, alpha: number) {
+  lx.save();
+  lx.globalCompositeOperation = 'source-atop';
+  lx.globalAlpha = alpha;
+  lx.drawImage(over, 0, 0);
+  lx.restore();
+}
+
 function applyEffect(layer: HTMLCanvasElement, lx: CanvasRenderingContext2D, e: Effect, local: number, W: number, H: number, k: number, short: number) {
   const cw = layer.width;
   const ch = layer.height;
+  const op = 'opacity' in e ? Math.max(0, Math.min(1, e.opacity)) : 1;
+  if (e.type === 'stroke') {
+    const size = Math.max(0, Math.min(0.1, e.size)) * short * k;
+    const part = e.position === 'center' ? size / 2 : size;
+    if (e.position !== 'inside') below(layer, lx, cut(alphaMask(layer, 2, e.color, { sigma: part / 2 })).c, op);
+    if (e.position === 'inside' || e.position === 'center') atop(lx, cut(alphaMask(layer, 2, e.color, { inv: true, sigma: part / 2 })).c, op);
+    return;
+  }
+  if (e.type === 'outerGlow' || e.type === 'innerGlow') {
+    const sigma = (Math.max(0, Math.min(0.2, e.size)) * short * k) / 2;
+    const m = spread(alphaMask(layer, 2, e.color, { inv: e.type === 'innerGlow', sigma }), spreadN(e.spread));
+    if (e.type === 'outerGlow') below(layer, lx, m.c, op);
+    else atop(lx, m.c, op);
+    return;
+  }
+  if (e.type === 'innerShadow') {
+    const { dx, dy } = shadowOffset(e, short);
+    // the export shifts by whole pixels
+    const m = alphaMask(layer, 2, e.color, { inv: true, dx: Math.round(dx) * k, dy: Math.round(dy) * k, sigma: Math.max(0, Math.min(0.1, e.softness)) * short * k });
+    atop(lx, m.c, op);
+    return;
+  }
   if (e.type === 'shadow') {
     // Shadow = the layer's alpha in the shadow colour, blurred, offset; the layer on top.
     const { c, x } = scratch(0, cw, ch);

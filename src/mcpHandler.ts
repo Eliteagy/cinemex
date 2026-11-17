@@ -47,7 +47,8 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return { imported: r.media.map((m) => ({ id: m.id, name: m.name, kind: m.kind, duration: m.duration })), errors: r.errors };
     }
     case 'add_clip': {
-      const track = s(a.track) === 'audio' ? 'a1' : undefined;
+      const tk = s(a.track);
+      const track = tk === 'audio' ? 'a1' : tk && S().project.tracks.some((t) => t.id === tk) ? tk : undefined;
       const id = S().addClip(String(a.media_id), { start: n(a.start), in: n(a.in), out: n(a.out), trackId: track });
       return { clip_id: id };
     }
@@ -228,6 +229,26 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         S().setMatte(String(a.clip_id), { kind: 'media', mediaId: mid, mode: s(a.mode) === 'luma' ? 'luma' : 'alpha', invert: a.invert === true });
       } else throw new Error('kind: text, media ou none');
       return { ok: true };
+    }
+    case 'set_blend_if': {
+      const id = String(a.clip_id);
+      if (a.reset === true) {
+        S().setBlendIf(id, null);
+        return { ok: true, blendIf: null };
+      }
+      const cur = findClip(S().project, id)?.clip.blendIf;
+      const range = (v: unknown) => (Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === 'number') ? (v as [number, number, number, number]) : undefined);
+      if (a.this !== undefined && !range(a.this)) throw new Error('this: [pretos_de, pretos_até, brancos_de, brancos_até] em 0..255');
+      if (a.under !== undefined && !range(a.under)) throw new Error('under: [pretos_de, pretos_até, brancos_de, brancos_até] em 0..255');
+      S().setBlendIf(id, { this: range(a.this) ?? cur?.this, under: range(a.under) ?? cur?.under });
+      return { ok: true, blendIf: findClip(S().project, id)?.clip.blendIf ?? null };
+    }
+    case 'set_color_to_alpha': {
+      const id = String(a.clip_id);
+      const color = s(a.color);
+      if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error('color: #RRGGBB');
+      S().setColorToAlpha(id, color ? { color, threshold: n(a.threshold) } : null);
+      return { ok: true, colorToAlpha: findClip(S().project, id)?.clip.colorToAlpha ?? null };
     }
     case 'add_effect': {
       const type = s(a.type) as Effect['type'];

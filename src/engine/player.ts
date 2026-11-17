@@ -328,7 +328,10 @@ export class Player {
       rememberSource(clip.id, src);
       if (clip.color && needsLut(clip.color)) {
         const sc = Math.min(1, k * z);
-        const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true));
+        // Detail tools size themselves on the canvas's long edge, in this picture's pixels (the export
+        // works on the framed W×H clip, before zoom).
+        const long = (Math.max(cw, ch) / k) * sc;
+        const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true), { long, frame: Math.floor(local * (project.canvas.fps || 30)) });
         if (out) {
           pic = out;
           gpu = true;

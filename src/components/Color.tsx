@@ -9,6 +9,7 @@ import { useEditor } from '../store';
 import { LOOKS as QUICK, activeClip, findClip, gradeMath } from '../lib/project';
 import { BANDS, LOOKS, autoTone, autoWhiteBalance, makePixelFn, type Band, type CurvePoints, type DevSettings, type WheelName } from '../lib/develop.js';
 import { compare, onCompare, setCompare, sourcePixels } from '../engine/glcolor';
+import { GRAIN_DEFAULT, SHARPEN_DEFAULT, estimateAirlight, hasDetail, hasGrain } from '../lib/detail.js';
 import type { Clip, Grade } from '../types';
 import { Icon } from './Icon';
 import { NumField, Row, RowSlider, Section } from './Inspector';
@@ -513,12 +514,54 @@ function Looks({ clip }: { clip: Clip }) {
   );
 }
 
+// ------------------------------------------------------------------ Detalhe (spatial, src/lib/detail.js)
+const DETAIL: { k: 'localHighlights' | 'localShadows' | 'clarity' | 'texture' | 'dehaze'; label: string }[] = [
+  { k: 'localHighlights', label: 'Realces locais' },
+  { k: 'localShadows', label: 'Sombras locais' },
+  { k: 'clarity', label: 'Claridade' },
+  { k: 'texture', label: 'Textura' },
+  { k: 'dehaze', label: 'Remover neblina' },
+];
+
+function Detail({ clip }: { clip: Clip }) {
+  const dev = clip.color?.dev ?? {};
+  const sp = { ...SHARPEN_DEFAULT, ...(dev.sharpen ?? {}) };
+  const gr = { ...GRAIN_DEFAULT, ...(dev.grain ?? {}) };
+  const put = (k: (typeof DETAIL)[number]['k'], v: number | undefined) => {
+    const patch: DevSettings = { [k]: v };
+    // Dehaze: the airlight is measured once from the current frame and kept for the whole clip
+    // (a per-frame value would flicker), so preview and export use the same number.
+    if (k === 'dehaze' && v && dev.dehazeAir === undefined) {
+      const px = sourcePixels(clip.id);
+      if (px) patch.dehazeAir = estimateAirlight(px.data, px.width, px.height);
+    }
+    if (k === 'dehaze' && !v) patch.dehazeAir = undefined;
+    setDev(clip, patch);
+  };
+  return (
+    <div className="cor-grid">
+      {DETAIL.map((d) => (
+        <DevRow key={d.k} label={d.label} value={Number(dev[d.k] ?? 0)} min={-100} max={100} onChange={(v) => put(d.k, v)} />
+      ))}
+      <p className="ri-note cor-note">Nitidez</p>
+      <DevRow label="Quantidade" value={sp.amount} min={0} max={150} onChange={(v) => setDev(clip, { sharpen: { ...sp, amount: v ?? 0 } })} />
+      <DevRow label="Raio" value={sp.radius} min={0.5} max={3} step={0.1} dec={1} onChange={(v) => setDev(clip, { sharpen: { ...sp, radius: v ?? SHARPEN_DEFAULT.radius } })} />
+      <DevRow label="Detalhe" value={sp.detail} min={0} max={100} onChange={(v) => setDev(clip, { sharpen: { ...sp, detail: v ?? SHARPEN_DEFAULT.detail } })} />
+      <DevRow label="Máscara" value={sp.masking} min={0} max={100} onChange={(v) => setDev(clip, { sharpen: { ...sp, masking: v ?? 0 } })} />
+      <p className="ri-note cor-note">Grão de película</p>
+      <DevRow label="Quantidade" value={gr.amount} min={0} max={100} onChange={(v) => setDev(clip, { grain: { ...gr, amount: v ?? 0 } })} />
+      <DevRow label="Tamanho" value={gr.size} min={0} max={100} onChange={(v) => setDev(clip, { grain: { ...gr, size: v ?? GRAIN_DEFAULT.size } })} />
+      <DevRow label="Rugosidade" value={gr.roughness} min={0} max={100} onChange={(v) => setDev(clip, { grain: { ...gr, roughness: v ?? GRAIN_DEFAULT.roughness } })} />
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ panel
 const has = (o: unknown): boolean => Boolean(o && typeof o === 'object' && Object.values(o as object).some((v) => (typeof v === 'number' ? v !== 0 : v && typeof v === 'object' ? has(v) : Boolean(v))));
 
 export function ColorPanel() {
   const clip = useGradeTarget();
-  const [open, setOpen] = useState<Record<string, boolean>>({ basic: true, curve: true, hsl: true, wheels: true, looks: true, lut: false });
+  const [open, setOpen] = useState<Record<string, boolean>>({ basic: true, detail: true, curve: true, hsl: true, wheels: true, looks: true, lut: false });
   const [, tick] = useState(0);
   useEffect(() => onCompare(() => tick((n) => n + 1)), []);
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -550,6 +593,9 @@ export function ColorPanel() {
       <div className="ri-body cor-body">
         <Section id="basic" title="Básico" on={basicOn} open={open.basic!} onToggle={toggle} onReset={() => setDev(clip, Object.fromEntries(BASIC.map((b) => [b.k, undefined])) as DevSettings)}>
           <Basic clip={clip} />
+        </Section>
+        <Section id="detail" title="Detalhe" on={hasDetail(dev) || hasGrain(dev)} open={open.detail!} onToggle={toggle} onReset={() => setDev(clip, { localHighlights: undefined, localShadows: undefined, clarity: undefined, texture: undefined, sharpen: undefined, dehaze: undefined, dehazeAir: undefined, grain: undefined })}>
+          <Detail clip={clip} />
         </Section>
         <div className="cor-two">
           <Section id="curve" title="Curva" on={has(dev.curve)} open={open.curve!} onToggle={toggle} onReset={() => setDev(clip, { curve: undefined })}>

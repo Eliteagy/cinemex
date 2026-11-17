@@ -18,6 +18,7 @@ const { blendFF } = require('../src/lib/blend.js');
 const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const develop = require('../src/lib/develop.js');
+const detail = require('../src/lib/detail.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 const { FFMPEG } = require('./bin.cjs');
 
@@ -929,7 +930,18 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         // Framing only (no grade): person mattes go through the same scale/crop/zoom as the clip.
         const geo = [...chain];
         let zoomF = null;
+        let src = `[${k}:v]`;
+        // Detalhe (src/lib/detail.js): spatial tools on the framed clip before the grade LUT, film
+        // grain after it (LightCraft order). Each one is a small sub-graph, so the chain is flushed.
+        const flush = (tag, build) => {
+          const pre = `${tag}${layer}`;
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
+          src = `[${build(pre)}]`;
+          chain.length = 0;
+        };
+        if (detail.hasDetail(c.color?.dev)) flush('pd', (pre) => detail.detailFilters(filters, c.color, pre, `${layer}`, { W, H }));
         chain.push(...gradeFilters(c.color, gradeLut(c.color, extraFiles, gradeLuts)));
+        if (detail.hasGrain(c.color?.dev)) flush('pg', (pre) => detail.grainFilters(filters, c.color, pre, `${layer}`, { W, H, FPS: FPSc, dur }));
         if (keyed) {
           // Zoom/pan keyframes: crop window that follows the animation, rendered at canvas size.
           const T = `(on/${FPSc})`;
@@ -949,10 +961,9 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           return label;
         };
         const maskCtx = { W, H, FPS, dur, matteInput };
-        let src = `[${k}:v]`;
         if (hasFusion(c.fusion)) {
           const pre = `pf${layer}`;
-          filters.push(`${src}${chain.join(',')}[${pre}]`);
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
           src = `[${fusionChain(filters, c.fusion, pre, `${layer}`, { W, H, FPS, dur, media, addInput })}]`;
           chain.length = 0;
         }
@@ -1016,7 +1027,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           // Position the layer inside its own stream so the movement is blurred too, then average K
           // sub-frames and keep one frame in N.
           const pre = `mb${layer}`;
-          filters.push(`${src}${chain.join(',')}[${pre}]`);
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
           filters.push(`color=c=black@0:s=${W}x${H}:r=${FPSc}:d=${fx(dur + 0.2)},format=rgba[mc${layer}]`);
           const px = moved ? `+(${XL.x})` : '';
           const py = moved ? `+(${XL.y})` : '';

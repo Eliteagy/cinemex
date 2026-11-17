@@ -13,6 +13,7 @@ import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
 import { LOOKS as DEV_LOOKS, autoTone, autoWhiteBalance, type DevSettings } from './lib/develop.js';
 import { sourcePixels } from './engine/glcolor';
+import { estimateAirlight } from './lib/detail.js';
 import { aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from './aiActions';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
 import type { AutoCaptionOptions } from './actions';
@@ -314,6 +315,11 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
             const px = sourcePixels(c.id);
             if (!px) throw new Error('O frame deste clip ainda não foi desenhado: põe a cabeça de leitura sobre ele');
             extra = auto === 'wb' ? autoWhiteBalance(px.data, px.width, px.height) : autoTone(px.data, px.width, px.height, c.color?.dev);
+          }
+          // Dehaze: airlight fixed per clip, measured from its current frame when not given.
+          if (patch.dehaze && patch.dehazeAir === undefined && c.color?.dev?.dehazeAir === undefined) {
+            const px = sourcePixels(c.id);
+            if (px) extra.dehazeAir = estimateAirlight(px.data, px.width, px.height);
           }
           const cur = (c.color?.dev ?? {}) as Record<string, unknown>;
           const next: Record<string, unknown> = { ...cur };

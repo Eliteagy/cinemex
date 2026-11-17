@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('ec', {
   aiAsk: (prompt, opts) => ipcRenderer.invoke('ai:ask', prompt, opts),
   findHotclips: (words, opts) => ipcRenderer.invoke('ai:hotclips', words, opts),
   cancelAi: () => ipcRenderer.invoke('ai:cancel'),
+  dubVoices: () => ipcRenderer.invoke('dub:voices'),
+  dub: (cues, opts) => ipcRenderer.invoke('dub:run', cues, opts),
   onAiProgress: (cb) => {
     const f = (_e, p) => cb(p);
     ipcRenderer.on('ai:progress', f);

@@ -3,7 +3,7 @@
 // caption checks. Same actions as the MCP tools (src/aiActions.ts).
 import { useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../store';
-import { aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from '../aiActions';
+import { addWatermark, dubCaptions, aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from '../aiActions';
 import { fmtShort } from '../lib/project';
 import type { Hotclip } from '../types';
 
@@ -35,6 +35,11 @@ export function ShortsPanel() {
   const [lang, setLang] = useState('inglês');
   const [bilingual, setBilingual] = useState(true);
   const [note, setNote] = useState<string | null>(null);
+  const [voices, setVoices] = useState<{ id: string; name: string }[]>([]);
+  const [voice, setVoice] = useState('');
+  const [replace, setReplace] = useState(false);
+  const [wm, setWm] = useState('');
+  const [corner, setCorner] = useState<'tl' | 'tr' | 'bl' | 'br'>('br');
   const src = mediaId || videos[0]?.id || '';
 
   useEffect(() => window.ec.onAiProgress((p) => setProgress(p.of > 1 ? `Parte ${p.step} de ${p.of}` : null)), []);
@@ -239,6 +244,57 @@ export function ShortsPanel() {
             }
           >
             {busy === 'tr' ? 'A traduzir…' : 'Traduzir legendas'}
+          </button>
+        </div>
+        <div className="sh-tr">
+          <select className="select" value={voice} onFocus={() => !voices.length && void window.ec.dubVoices().then(setVoices).catch((e: Error) => setErr(e.message))} onChange={(e) => setVoice(e.target.value)} aria-label="Voz">
+            <option value="">Voz (por defeito)</option>
+            {voices.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          <label className="sh-check">
+            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Tirar o som original
+          </label>
+          <button
+            className="btn"
+            disabled={Boolean(busy)}
+            onClick={() =>
+              run('dub', async () => {
+                const r = await dubCaptions({ voiceId: voice || undefined, mode: replace ? 'replace' : 'mix' });
+                setNote(`Dobragem na pista "Dobragem": ${r.lines} frases${r.sped ? `, ${r.sped} aceleradas para caber` : ''}${r.overflow ? `, ${r.overflow} passam do tempo` : ''}.`);
+              })
+            }
+          >
+            {busy === 'dub' ? 'A gravar vozes…' : 'Dobrar com voz'}
+          </button>
+        </div>
+        <div className="sh-tr">
+          <input className="input" value={wm} onChange={(e) => setWm(e.target.value)} placeholder="Marca de água (texto)" aria-label="Marca de água" />
+          <select className="select" value={corner} onChange={(e) => setCorner(e.target.value as typeof corner)} aria-label="Canto">
+            <option value="br">Canto inf. direito</option>
+            <option value="bl">Canto inf. esquerdo</option>
+            <option value="tr">Canto sup. direito</option>
+            <option value="tl">Canto sup. esquerdo</option>
+          </select>
+          <button className="btn" disabled={Boolean(busy) || !wm.trim()} onClick={() => run('wm', async () => void (await addWatermark({ text: wm, corner })))}>
+            Pôr texto
+          </button>
+          <button
+            className="btn"
+            disabled={Boolean(busy)}
+            title="Logo em PNG"
+            onClick={() =>
+              run('wm', async () => {
+                const r = await window.ec.importDialog();
+                const img = r.media.find((m) => m.kind === 'image');
+                if (img) await addWatermark({ image: img.path, corner });
+              })
+            }
+          >
+            Pôr logo
           </button>
         </div>
         {note && <pre className="sh-note">{note}</pre>}

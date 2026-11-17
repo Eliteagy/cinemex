@@ -17,6 +17,7 @@ const { USER_FONTS } = require('../src/lib/emphasis.js');
 const { runExport, setFontCache } = require('./render.cjs');
 const { createMcpServer } = require('./mcp.cjs');
 const shorts = require('./shorts.cjs');
+const dubber = require('./dub.cjs');
 const { askJson } = require('./llm.cjs');
 const { createClaudeChat } = require('./claude-chat.cjs');
 const { createGptChat, createGeminiChat } = require('./ai-providers.cjs');
@@ -276,6 +277,28 @@ function handlers() {
     }
   });
   ipcMain.handle('ai:cancel', () => aiAbort?.abort());
+  ipcMain.handle('dub:voices', () => dubber.listVoices());
+  ipcMain.handle('dub:run', async (e, cues, opts = {}) => {
+    const dir = path.join(app.getPath('userData'), 'dubs');
+    fs.mkdirSync(dir, { recursive: true });
+    const out = path.join(dir, `dobragem-${Date.now()}.wav`);
+    aiAbort = new AbortController();
+    try {
+      const plan = await dubber.dub(Array.isArray(cues) ? cues.slice(0, 2000) : [], {
+        outFile: out,
+        total: Math.max(1, Number(opts.total) || 0),
+        voiceId: typeof opts.voiceId === 'string' && opts.voiceId ? opts.voiceId : undefined,
+        maxSpeed: Math.max(1, Math.min(2, Number(opts.maxSpeed) || 1.5)),
+        workDir: os.tmpdir(),
+        signal: aiAbort.signal,
+        onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('ai:progress', p),
+      });
+      allow(out);
+      return { file: out, lines: plan.length, sped: plan.filter((x) => x.speed > 1).length, overflow: plan.filter((x) => x.overflow).length };
+    } finally {
+      aiAbort = null;
+    }
+  });
   ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
     if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
     let outDir = opts.outDir;

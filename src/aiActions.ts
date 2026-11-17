@@ -2,9 +2,9 @@
 // shorts, titles + chapters, caption translation (any language, optional second caption track) and
 // caption checks. Used by the Shorts panel and by the MCP tools, like src/actions.ts.
 import { useEditor } from './store';
-import { ensureTranscript } from './actions';
+import { ensureTranscript, importPaths } from './actions';
 import { checkCaptions, chaptersPrompt, fixCaptions, parseChapters, parseTranslation, transcriptLines, translatePrompt, TRANSLATE_BATCH, youtubeChapters } from './lib/aivideo.js';
-import { end, uid } from './lib/project';
+import { end, projectDuration, uid } from './lib/project';
 import type { CanvasPreset, Clip, Hotclip, Media, Track } from './types';
 
 const S = () => useEditor.getState();
@@ -178,3 +178,90 @@ export function fixCaptionTrack(trackId?: string) {
 }
 
 
+
+// ------------------------------------------------------------------ voice dub (ElevenLabs)
+/**
+ * Speaks the captions with an ElevenLabs voice, each line at its caption time (sped up only when it
+ * does not fit), on a new audio track "Dobragem". mode 'mix' lowers the original sound to 20 %,
+ * 'replace' mutes it.
+ */
+export async function dubCaptions(opts: { voiceId?: string; mode?: 'mix' | 'replace'; trackId?: string; maxSpeed?: number } = {}) {
+  const { clips } = captionClips(opts.trackId);
+  // Captions are short blocks (2-3 words): the voice reads whole sentences, joined back while the
+  // gap is short and the block does not end a sentence (max 15 s), so it does not sound chopped.
+  const cues: { start: number; end: number; text: string }[] = [];
+  for (const c of clips) {
+    const text = String(c.text ?? '').trim();
+    if (!text) continue;
+    const last = cues[cues.length - 1];
+    if (last && c.start - last.end < 0.45 && !/[.!?…]$/.test(last.text) && end(c) - last.start < 15) {
+      last.text += ` ${text}`;
+      last.end = end(c);
+    } else cues.push({ start: c.start, end: end(c), text });
+  }
+  if (!cues.length) throw new Error('Não há legendas com texto para dobrar');
+  S().setStatus(`A gravar ${cues.length} frases com a voz da ElevenLabs…`, true);
+  try {
+    const r = await window.ec.dub(cues, { total: projectDuration(S().project), voiceId: opts.voiceId, maxSpeed: opts.maxSpeed });
+    const imp = await importPaths([r.file]);
+    const m = imp.media[0];
+    if (!m) throw new Error('Não consegui importar o áudio da dobragem');
+    const gain = opts.mode === 'replace' ? 0 : 0.2;
+    S().commit((p) => {
+      const t: Track = { id: uid('a'), kind: 'audio', name: 'Dobragem', clips: [{ id: uid('c'), mediaId: m.id, start: 0, in: 0, out: m.duration, volume: 1 }] };
+      p.tracks.push(t);
+      for (const tr of p.tracks) if (tr.kind === 'video') for (const c of tr.clips) if (c.mediaId) c.volume = gain;
+    });
+    S().setStatus(`Dobragem pronta: ${r.lines} frases${r.sped ? `, ${r.sped} aceleradas` : ''}${r.overflow ? `, ${r.overflow} passam do tempo` : ''}`);
+    return r;
+  } catch (e) {
+    S().setStatus(`Dobragem: ${(e as Error).message}`);
+    throw e;
+  }
+}
+
+// ------------------------------------------------------------------ watermark
+export type Corner = 'tl' | 'tr' | 'bl' | 'br';
+
+/**
+ * Watermark over the whole video: text (a small caption in a corner) or an image (a logo on its own
+ * top video track, scaled and placed in the corner). Made of ordinary clips, so it can be edited.
+ */
+export async function addWatermark(opts: { text?: string; image?: string; corner?: Corner; margin?: number; opacity?: number; size?: number }) {
+  const corner = opts.corner ?? 'br';
+  const margin = Math.max(0, Math.min(0.2, opts.margin ?? 0.04));
+  const opacity = Math.max(0.05, Math.min(1, opts.opacity ?? 0.8));
+  const total = Math.max(1, projectDuration(S().project));
+  const left = corner === 'tl' || corner === 'bl';
+  const top = corner === 'tl' || corner === 'tr';
+  if (opts.image) {
+    const imp = await importPaths([opts.image]);
+    const m = imp.media[0];
+    if (!m || m.kind !== 'image') throw new Error('A marca de água tem de ser uma imagem (PNG com transparência de preferência)');
+    const scale = Math.max(0.03, Math.min(0.6, opts.size ?? 0.14));
+    const id = uid('c');
+    S().commit((p) => {
+      const W = p.canvas.w;
+      const H = p.canvas.h;
+      // The image is framed to fit the canvas, then scaled down and moved to the corner.
+      const k = Math.min(W / (m.width || W), H / (m.height || H));
+      const w = (m.width || W) * k * scale;
+      const h = (m.height || H) * k * scale;
+      const px = ((left ? -1 : 1) * (W / 2 - w / 2 - margin * Math.min(W, H))) / W;
+      const py = ((top ? -1 : 1) * (H / 2 - h / 2 - margin * Math.min(W, H))) / H;
+      const t: Track = { id: uid('v'), kind: 'video', name: 'Marca de água', clips: [{ id, mediaId: m.id, start: 0, in: 0, out: total, fit: 'fit', keyframes: { scale: [{ t: 0, v: scale }], px: [{ t: 0, v: px }], py: [{ t: 0, v: py }], opacity: [{ t: 0, v: opacity }] } }] };
+      p.tracks.push(t);
+    });
+    return { clip_id: id };
+  }
+  const text = String(opts.text ?? '').trim();
+  if (!text) throw new Error('Diz o texto ou a imagem da marca de água');
+  const id = uid('c');
+  S().commit((p) => {
+    const t: Track = { id: uid('t'), kind: 'text', name: 'Marca de água', clips: [] };
+    const size = Math.max(0.015, Math.min(0.08, opts.size ?? 0.026));
+    t.clips.push({ id, start: 0, in: 0, out: total, text, style: 'clean', size, x: left ? margin + 0.12 : 1 - margin - 0.12, y: top ? margin + size : 1 - margin - size / 2, override: { color: '#FFFFFF' } });
+    p.tracks.push(t);
+  });
+  return { clip_id: id };
+}

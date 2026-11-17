@@ -90,3 +90,14 @@ test('short project: 9:16, source window, captions and cards', () => {
   assert.deepEqual(p.tracks[3].clips.map((x) => x.graphic.title), ['Gancho', 'Segue o método']);
   assert.equal(shortProject({ path: 'v.mp4', transcript: words }, c, { cards: false, reframe: 'fit' }).tracks[0].clips[0].fit, 'fit');
 });
+
+test('dub fitting: speed only when a line does not fit before the next caption', () => {
+  const { fitPlan, atempo } = require('../electron/dub.cjs');
+  const cues = [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 10, end: 11 }];
+  const p = fitPlan(cues, [1.5, 3, 1], { maxSpeed: 1.5, total: 12 });
+  assert.deepEqual(p.map((x) => x.speed), [1, 1, 1], 'the 3 s line has until the next caption (8 s)');
+  const q = fitPlan([{ start: 0, end: 1 }, { start: 1, end: 2 }], [3, 1], { maxSpeed: 1.5, total: 3 });
+  assert.equal(q[0].speed, 1.5);
+  assert.equal(q[0].overflow, true);
+  assert.equal(atempo(3), 'atempo=2,atempo=1.5000');
+});

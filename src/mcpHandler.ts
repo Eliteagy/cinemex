@@ -13,7 +13,7 @@ import { EASES } from './lib/anim.js';
 import { BLEND_MODES, EFFECT_TYPES } from './lib/layerfx.js';
 import { LOOKS as DEV_LOOKS, autoTone, autoWhiteBalance, type DevSettings } from './lib/develop.js';
 import { sourcePixels } from './engine/glcolor';
-import { aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from './aiActions';
+import { addWatermark, dubCaptions, type Corner, aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from './aiActions';
 import type { BlendMode, Ease, Effect, KeyProp, Modifier } from './types';
 import type { AutoCaptionOptions } from './actions';
 import type { CanvasPreset, Hotclip } from './types';
@@ -350,6 +350,15 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return translateCaptions(String(a.language), { mode: s(a.mode) === 'bilingual' ? 'bilingual' : 'replace', trackId: s(a.track_id) });
     case 'check_captions':
       return a.fix === true ? fixCaptionTrack(s(a.track_id)) : { issues: checkCaptionTrack(s(a.track_id)) };
+    case 'list_voices':
+      return window.ec.dubVoices();
+    case 'dub_captions':
+      return dubCaptions({ voiceId: s(a.voice_id), mode: s(a.mode) === 'replace' ? 'replace' : 'mix', trackId: s(a.track_id), maxSpeed: n(a.max_speed) });
+    case 'add_watermark': {
+      const corner = s(a.corner);
+      if (corner && !['tl', 'tr', 'bl', 'br'].includes(corner)) throw new Error('corner: tl, tr, bl ou br');
+      return addWatermark({ text: s(a.text), image: s(a.image), corner: corner as Corner | undefined, margin: n(a.margin), opacity: n(a.opacity), size: n(a.size) });
+    }
     case 'list_looks':
       return DEV_LOOKS.map((l) => ({ id: l.id, label: l.label, group: l.group }));
     case 'set_caption_style': {

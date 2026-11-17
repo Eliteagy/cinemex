@@ -446,6 +446,8 @@ export interface EcBridge {
   aiAsk(prompt: string, opts?: { model?: 'opus' | 'sonnet' | 'haiku' }): Promise<unknown>;
   findHotclips(words: Word[], opts?: { count?: number; min?: number; max?: number; chapters?: { start: number }[]; context?: string; model?: string }): Promise<Hotclip[]>;
   cancelAi(): Promise<void>;
+  dubVoices(): Promise<{ id: string; name: string; labels: Record<string, string> }[]>;
+  dub(cues: { start: number; end: number; text: string }[], opts: { total: number; voiceId?: string; maxSpeed?: number }): Promise<{ file: string; lines: number; sped: number; overflow: number }>;
   onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
   buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
   onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string }) => void): () => void;

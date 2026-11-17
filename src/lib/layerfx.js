@@ -7,18 +7,30 @@
 //   glow     Glow: blurred copy screened over the layer (radius, intensity)
 //   sweep    CC Light Sweep: a bright band crossing the layer once (angle, width, intensity, start, duration)
 //   gradient Gradient Ramp: linear gradient c0 -> c1 from (x0, y0) to (x1, y1) (fractions), over the layer at opacity
+//   Photoshop layer styles (PhotoCraft compose/effects, photocraft.md §3.4), Gaussian instead of the tent blur:
+//   stroke      colour, size, position outside/inside/center, opacity (alpha blurred σ = size/2, cut at the edge)
+//   innerShadow colour, opacity, distance, angle, softness (blur of 1 − alpha, shifted, over the layer)
+//   outerGlow   colour, opacity, size, spread (alpha blurred σ = size/2, behind the layer)
+//   innerGlow   colour, opacity, size, spread (from the edges inwards, over the layer)
+// Color to Alpha (src/lib/pslayer.js) runs first, before the effects.
 // Track matte: text (the layer shows inside the letters) or another media's alpha / brightness; invert.
 
 import { BLENDS, BLEND_ORDER } from './blend.js';
+import { STROKE_SOFT, STROKE_T, cleanColorToAlpha, colorToAlphaGeq, spreadN } from './pslayer.js';
 
-export const EFFECT_TYPES = ['shadow', 'glow', 'sweep', 'gradient'];
-export const EFFECT_LABELS = { shadow: 'Sombra (Drop Shadow)', glow: 'Glow', sweep: 'Light Sweep', gradient: 'Gradient Ramp' };
+export const EFFECT_TYPES = ['shadow', 'glow', 'sweep', 'gradient', 'stroke', 'innerShadow', 'outerGlow', 'innerGlow'];
+export const EFFECT_LABELS = { shadow: 'Sombra (Drop Shadow)', glow: 'Glow', sweep: 'Light Sweep', gradient: 'Gradient Ramp', stroke: 'Contorno (Stroke)', innerShadow: 'Sombra interior', outerGlow: 'Brilho exterior', innerGlow: 'Brilho interior' };
 export const EFFECT_DEFAULTS = {
   shadow: { color: '#000000', opacity: 0.6, distance: 0.012, angle: 135, softness: 0.01 },
   glow: { radius: 0.02, intensity: 0.5 },
   sweep: { color: '#FFFFFF', angle: 20, width: 0.12, intensity: 0.55, start: 0, duration: 0.9 },
   gradient: { c0: '#D4AF37', c1: '#83163A', x0: 0.5, y0: 0, x1: 0.5, y1: 1, opacity: 0.35 },
+  stroke: { color: '#FFFFFF', size: 0.006, position: 'outside', opacity: 1 },
+  innerShadow: { color: '#000000', opacity: 0.6, distance: 0.008, angle: 135, softness: 0.01 },
+  outerGlow: { color: '#FFD60A', opacity: 0.8, size: 0.02, spread: 0 },
+  innerGlow: { color: '#FFFFFF', opacity: 0.7, size: 0.015, spread: 0 },
 };
+export const STROKE_POSITIONS = ['outside', 'inside', 'center'];
 // Blend modes: the full Photoshop set lives in src/lib/blend.js (formulas shared by preview and export).
 export const BLEND_MODES = BLEND_ORDER;
 export const BLEND_LABELS = { normal: 'Normal', ...Object.fromEntries(Object.entries(BLENDS).map(([k, v]) => [k, v.label])) };
@@ -65,9 +77,80 @@ export function layerFx(filters, c, input, tag, { W, H, FPS, dur, media, addInpu
   const short = Math.min(W, H);
   let cur = input;
   const canvas = (l) => filters.push(`color=c=black@0:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${l}]`);
+  // Color to Alpha first (FX shot on black or white become a real transparent layer).
+  const cta = cleanColorToAlpha(c.colorToAlpha);
+  if (cta) {
+    const q = colorToAlphaGeq(cta.color, cta.threshold);
+    filters.push(`[${cur}]format=rgba,geq=r='${q.r}':g='${q.g}':b='${q.b}':a='${q.a}'[ca${tag}]`);
+    cur = `ca${tag}`;
+  }
+  /**
+   * Grey mask of the layer's alpha (inv: 1 − alpha), shifted by (dx, dy), blurred with σ, through
+   * `lut` (expression of val 0..255). Outside the frame counts as transparent, as in the preview.
+   */
+  const alphaMask = (src, id, { inv = false, dx = 0, dy = 0, sigma = 0, lut }) => {
+    const M = Math.ceil(3 * sigma + Math.abs(dx) + Math.abs(dy)) + 2;
+    const steps = [`alphaextract`];
+    if (inv) steps.push('negate');
+    steps.push(`pad=w=iw+${2 * M}:h=ih+${2 * M}:x=${M + Math.round(dx)}:y=${M + Math.round(dy)}:color=${inv ? 'white' : 'black'}`);
+    if (sigma > 0.3) steps.push(`gblur=sigma=${fx(sigma)}`);
+    steps.push(`crop=${W}:${H}:${M}:${M}`, `lut=c0='${lut}'`);
+    filters.push(`[${src}]${steps.join(',')}[${id}]`);
+  };
+  /** Colour layer with a grey mask as alpha. */
+  const colourOf = (hex, mask, id) => {
+    filters.push(`color=c=${hex0x(hex)}:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${id}c]`);
+    filters.push(`[${id}c][${mask}]alphamerge[${id}]`);
+  };
   (c.effects || []).forEach((e, i) => {
     const id = `${tag}_${i}`;
-    if (e.type === 'shadow') {
+    if (e.type === 'stroke' || e.type === 'outerGlow' || e.type === 'innerShadow' || e.type === 'innerGlow') {
+      const op = clamp(e.opacity, 0, 1);
+      const outer = [];
+      const inner = [];
+      if (e.type === 'stroke') {
+        const size = clamp(e.size, 0, 0.1) * short;
+        const pos = e.position === 'inside' || e.position === 'center' ? e.position : 'outside';
+        const part = pos === 'center' ? size / 2 : size;
+        const cut = `255*${fx(op)}*clip((val/255-${STROKE_T})/${STROKE_SOFT},0,1)`;
+        if (pos !== 'inside') outer.push({ sigma: part / 2, lut: cut });
+        if (pos !== 'outside') inner.push({ sigma: part / 2, lut: cut });
+      } else if (e.type === 'outerGlow') {
+        outer.push({ sigma: (clamp(e.size, 0, 0.2) * short) / 2, lut: `255*${fx(op)}*(1-pow(1-val/255,${spreadN(e.spread)}))` });
+      } else if (e.type === 'innerGlow') {
+        inner.push({ sigma: (clamp(e.size, 0, 0.2) * short) / 2, lut: `255*${fx(op)}*(1-pow(1-val/255,${spreadN(e.spread)}))` });
+      } else {
+        const { dx, dy } = shadowOffset(e, short);
+        inner.push({ sigma: clamp(e.softness, 0, 0.1) * short, dx, dy, lut: `val*${fx(op)}` });
+      }
+      const n = 1 + outer.length + inner.length;
+      const outs = Array.from({ length: n }, (_, j) => `ls${id}_${j}`);
+      filters.push(`[${cur}]format=rgba,split=${n}${outs.map((o) => `[${o}]`).join('')}`);
+      let j = 1;
+      let layer = outs[0];
+      // Outer parts go under the layer.
+      outer.forEach((o, k) => {
+        alphaMask(outs[j++], `lm${id}o${k}`, o);
+        colourOf(e.color, `lm${id}o${k}`, `lc${id}o${k}`);
+        filters.push(`[lc${id}o${k}][${layer}]overlay=format=rgb[lo${id}o${k}]`);
+        layer = `lo${id}o${k}`;
+      });
+      // Inner parts go over the layer, inside its own alpha.
+      if (inner.length) {
+        filters.push(`[${layer}]split=2[lk${id}a][lk${id}b]`);
+        const keep = `lk${id}b`;
+        let top = `lk${id}a`;
+        inner.forEach((o, k) => {
+          alphaMask(outs[j++], `lm${id}i${k}`, { ...o, inv: true });
+          colourOf(e.color, `lm${id}i${k}`, `lc${id}i${k}`);
+          filters.push(`[${top}][lc${id}i${k}]overlay=format=rgb[li${id}i${k}]`);
+          top = `li${id}i${k}`;
+        });
+        filters.push(`[${keep}]alphaextract[la${id}]`, `[${top}][la${id}]alphamerge[lr${id}]`);
+        layer = `lr${id}`;
+      }
+      cur = layer;
+    } else if (e.type === 'shadow') {
       const [r, g, b] = rgb(e.color);
       const { dx, dy } = shadowOffset(e, short);
       const sigma = clamp(e.softness, 0, 0.1) * short;

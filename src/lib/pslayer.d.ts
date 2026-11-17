@@ -1,0 +1,16 @@
+export type BlendIfRange = [number, number, number, number];
+export const BLENDIF_OFF: Readonly<BlendIfRange>;
+export const LUMA601: number[];
+export function cleanBlendIf(b: unknown): { this: BlendIfRange; under: BlendIfRange } | null;
+export function blendIfActive(b: unknown): boolean;
+export function blendIfWeight(r: BlendIfRange, v: number): number;
+export function blendIfFF(r: BlendIfRange, v: string): string;
+export const BLENDIF_GLSL: string;
+export function cleanColorToAlpha(c: unknown): { color: [number, number, number]; threshold: number } | null;
+export function colorToAlphaJS(p: number[], C: number[], t?: number): [number, number, number, number];
+export function colorToAlphaGeq(C: number[], t?: number): { r: string; g: string; b: string; a: string };
+export const CTA_GLSL: string;
+export const STROKE_T: number;
+export const STROKE_SOFT: number;
+export function strokeMask(g: number): number;
+export function spreadN(s: number): number;

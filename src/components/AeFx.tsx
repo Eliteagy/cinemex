@@ -3,7 +3,8 @@
 import { useEditor } from '../store';
 import { dur } from '../lib/project';
 import { EASES, EASE_LABELS } from '../lib/anim.js';
-import { BLEND_LABELS, BLEND_MODES, EFFECT_LABELS, EFFECT_TYPES } from '../lib/layerfx.js';
+import { BLEND_LABELS, BLEND_MODES, EFFECT_LABELS, EFFECT_TYPES, STROKE_POSITIONS } from '../lib/layerfx.js';
+import { BLENDIF_OFF } from '../lib/pslayer.js';
 import type { Clip, Effect, KeyProp, Matte, Modifier } from '../types';
 import { Icon } from './Icon';
 
@@ -203,6 +204,70 @@ export function CompositeCard({ clip }: { clip: Clip }) {
           <span>Inverter (mostrar fora do matte)</span>
         </label>
       )}
+      <BlendIfFields clip={clip} />
+      <ColorToAlphaFields clip={clip} />
+    </div>
+  );
+}
+
+type Range = [number, number, number, number];
+const BIF_LABELS = ['Pretos de', 'Pretos até', 'Brancos de', 'Brancos até'];
+
+/** Blend If (Photoshop): soft grey ranges of this layer and of what is under it. */
+function BlendIfFields({ clip }: { clip: Clip }) {
+  const b = clip.blendIf;
+  const t: Range = b?.this ?? [...BLENDIF_OFF] as Range;
+  const u: Range = b?.under ?? [...BLENDIF_OFF] as Range;
+  const set = (which: 'this' | 'under', i: number, v: number) => {
+    const next: Range = [...(which === 'this' ? t : u)] as Range;
+    next[i] = v;
+    // keep the pairs in order while dragging
+    if (i === 1 && next[1] < next[0]) next[0] = next[1];
+    if (i === 0 && next[0] > next[1]) next[1] = next[0];
+    if (i === 2 && next[2] > next[3]) next[3] = next[2];
+    if (i === 3 && next[3] < next[2]) next[2] = next[3];
+    st().setBlendIf(clip.id, { this: which === 'this' ? next : t, under: which === 'under' ? next : u });
+  };
+  return (
+    <div className="mask">
+      <div className="row-label">
+        <b>Misturar se (Blend If)</b>
+        {b && (
+          <button className="btn sm" onClick={() => st().setBlendIf(clip.id, null)}>
+            Repor
+          </button>
+        )}
+      </div>
+      <p>Esconde as partes escuras ou claras desta camada ou de baixo, com transição suave (fumo, fogo e luzes em fundo preto; texto atrás do céu).</p>
+      {(['this', 'under'] as const).map((w) => (
+        <div key={w}>
+          <div className="row-label">
+            <span>{w === 'this' ? 'Esta camada' : 'Camada subjacente'}</span>
+          </div>
+          {(w === 'this' ? t : u).map((v, i) => (
+            <Slider key={i} label={BIF_LABELS[i]!} value={v} min={0} max={255} step={1} onChange={(x) => set(w, i, x)} fmt={(x) => String(Math.round(x))} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Color to Alpha (Photoshop): removes a colour, keeping the rest exact. */
+function ColorToAlphaFields({ clip }: { clip: Clip }) {
+  const c = clip.colorToAlpha;
+  return (
+    <div className="mask">
+      <label className="check">
+        <input type="checkbox" checked={Boolean(c)} onChange={(e) => st().setColorToAlpha(clip.id, e.target.checked ? { color: '#000000' } : null)} />
+        <span>Cor para alfa (tirar o fundo preto ou branco de efeitos)</span>
+      </label>
+      {c && (
+        <>
+          <Colour label="Cor a remover" value={c.color} onChange={(v) => st().setColorToAlpha(clip.id, { ...c, color: v })} />
+          <Slider label="Limiar de transparência" value={c.threshold ?? 0} min={0} max={0.9} step={0.01} onChange={(v) => st().setColorToAlpha(clip.id, { ...c, threshold: v })} />
+        </>
+      )}
     </div>
   );
 }
@@ -240,6 +305,37 @@ function EffectRow({ clip, e }: { clip: Clip; e: Effect }) {
           <Slider label="Intensidade" value={e.intensity} min={0} max={1.5} step={0.01} onChange={(v) => up({ intensity: v })} />
           <Slider label="Começa (s)" value={e.start} min={0} max={Math.max(0.1, dur(clip))} step={0.05} onChange={(v) => up({ start: v })} />
           <Slider label="Duração (s)" value={e.duration} min={0.1} max={Math.max(0.2, dur(clip))} step={0.05} onChange={(v) => up({ duration: v })} />
+        </>
+      )}
+      {e.type === 'stroke' && (
+        <>
+          <Colour label="Cor" value={e.color} onChange={(v) => up({ color: v })} />
+          <Slider label="Tamanho" value={e.size} min={0.001} max={0.04} step={0.0005} onChange={(v) => up({ size: v })} />
+          <div className="seg">
+            {STROKE_POSITIONS.map((p) => (
+              <button key={p} className={e.position === p ? 'on' : ''} onClick={() => up({ position: p })}>
+                {{ outside: 'Fora', inside: 'Dentro', center: 'Centro' }[p]}
+              </button>
+            ))}
+          </div>
+          <Slider label="Opacidade" value={e.opacity} min={0} max={1} step={0.01} onChange={(v) => up({ opacity: v })} />
+        </>
+      )}
+      {e.type === 'innerShadow' && (
+        <>
+          <Colour label="Cor" value={e.color} onChange={(v) => up({ color: v })} />
+          <Slider label="Opacidade" value={e.opacity} min={0} max={1} step={0.01} onChange={(v) => up({ opacity: v })} />
+          <Slider label="Distância" value={e.distance} min={0} max={0.05} step={0.001} onChange={(v) => up({ distance: v })} />
+          <Slider label="Direção (°)" value={e.angle} min={0} max={360} step={1} onChange={(v) => up({ angle: v })} fmt={(v) => `${Math.round(v)}°`} />
+          <Slider label="Suavidade" value={e.softness} min={0} max={0.06} step={0.001} onChange={(v) => up({ softness: v })} />
+        </>
+      )}
+      {(e.type === 'outerGlow' || e.type === 'innerGlow') && (
+        <>
+          <Colour label="Cor" value={e.color} onChange={(v) => up({ color: v })} />
+          <Slider label="Opacidade" value={e.opacity} min={0} max={1} step={0.01} onChange={(v) => up({ opacity: v })} />
+          <Slider label="Tamanho" value={e.size} min={0.002} max={0.1} step={0.001} onChange={(v) => up({ size: v })} />
+          <Slider label="Expansão" value={e.spread} min={0} max={1} step={0.25} onChange={(v) => up({ spread: v })} />
         </>
       )}
       {e.type === 'gradient' && (

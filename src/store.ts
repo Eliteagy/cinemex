@@ -12,6 +12,7 @@ import { graphicOf } from './lib/graphics.js';
 import type { Graphic, GraphicKind, Marker } from './types';
 import type { BlendMode, Ease, Effect, Matte, Modifier } from './types';
 import { EFFECT_DEFAULTS } from './lib/layerfx.js';
+import { cleanBlendIf } from './lib/pslayer.js';
 
 const MAX_HISTORY = 150;
 const clone = <T,>(v: T): T => structuredClone(v);
@@ -74,6 +75,10 @@ export interface EditorState {
   setModifier(id: string, prop: KeyProp, mod: Modifier | null): void;
   setBlend(id: string, mode: BlendMode): void;
   setMatte(id: string, matte: Matte | null): void;
+  /** Blend If ranges (null = off). */
+  setBlendIf(id: string, b: Clip['blendIf'] | null): void;
+  /** Color to Alpha (null = off). */
+  setColorToAlpha(id: string, c: Clip['colorToAlpha'] | null): void;
   addEffect(id: string, type: Effect['type'], params?: Record<string, unknown>): string;
   updateEffect(id: string, effectId: string, params: Record<string, unknown>): void;
   removeEffect(id: string, effectId: string): void;
@@ -190,6 +195,7 @@ function cleanFx(v: Record<string, unknown>) {
     if (k === 'id' || k === 'type') continue;
     if (typeof x === 'number' && Number.isFinite(x)) out[k] = r3(x);
     else if (typeof x === 'string' && /^#[0-9a-fA-F]{6}$/.test(x)) out[k] = x.toUpperCase();
+    else if (k === 'position' && (x === 'outside' || x === 'inside' || x === 'center')) out[k] = x;
   }
   return out;
 }
@@ -563,6 +569,23 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (!f || f.track.kind !== 'video') throw new Error('Blend só em clips de vídeo ou imagem');
       if (mode === 'normal') delete f.clip.blend;
       else f.clip.blend = mode;
+    });
+  },
+  setBlendIf(id, b) {
+    get().commit((p) => {
+      const f = findClip(p, id);
+      if (!f || f.track.kind !== 'video') throw new Error('Blend If só em clips de vídeo ou imagem');
+      const c = cleanBlendIf(b);
+      if (c) f.clip.blendIf = c;
+      else delete f.clip.blendIf;
+    });
+  },
+  setColorToAlpha(id, c) {
+    get().commit((p) => {
+      const f = findClip(p, id);
+      if (!f || f.track.kind !== 'video') throw new Error('Cor para alfa só em clips de vídeo ou imagem');
+      if (c && /^#[0-9a-fA-F]{6}$/.test(c.color)) f.clip.colorToAlpha = { color: c.color.toUpperCase(), ...(c.threshold ? { threshold: Math.max(0, Math.min(0.99, r3(c.threshold))) } : {}) };
+      else delete f.clip.colorToAlpha;
     });
   },
   setMatte(id, matte) {

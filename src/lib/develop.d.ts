@@ -1,3 +1,5 @@
+import type { DetailSettings } from './detail.js';
+
 /** Colour-mixer / B&W bands, in LightCraft's order. */
 export type Band = 'red' | 'orange' | 'yellow' | 'green' | 'aqua' | 'blue' | 'purple' | 'magenta';
 export type WheelName = 'shadows' | 'midtones' | 'highlights' | 'global';
@@ -8,7 +10,7 @@ export const WHEELS: WheelName[];
 export type CurvePoints = [number, number][];
 
 /** Develop settings (clip.color.dev), LightCraft UI units. Every field optional. */
-export interface DevSettings {
+export interface DevSettings extends DetailSettings {
   /** Kelvin 2000–50000 (6500 = as shot). Higher = warmer picture. */
   temp?: number;
   /** −150..150, positive = magenta. */

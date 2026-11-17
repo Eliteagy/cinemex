@@ -66,7 +66,12 @@ export type Effect =
   | { id: string; type: 'shadow'; color: string; opacity: number; distance: number; angle: number; softness: number }
   | { id: string; type: 'glow'; radius: number; intensity: number }
   | { id: string; type: 'sweep'; color: string; angle: number; width: number; intensity: number; start: number; duration: number }
-  | { id: string; type: 'gradient'; c0: string; c1: string; x0: number; y0: number; x1: number; y1: number; opacity: number };
+  | { id: string; type: 'gradient'; c0: string; c1: string; x0: number; y0: number; x1: number; y1: number; opacity: number }
+  /** Photoshop layer styles (src/lib/pslayer.js): sizes are fractions of the frame's shorter side. */
+  | { id: string; type: 'stroke'; color: string; size: number; position: 'outside' | 'inside' | 'center'; opacity: number }
+  | { id: string; type: 'innerShadow'; color: string; opacity: number; distance: number; angle: number; softness: number }
+  | { id: string; type: 'outerGlow'; color: string; opacity: number; size: number; spread: number }
+  | { id: string; type: 'innerGlow'; color: string; opacity: number; size: number; spread: number };
 /** rotate in degrees (-180..180), opacity 0..1. */
 export type KeyProp = 'zoom' | 'x' | 'y' | 'rotate' | 'opacity' | 'scale' | 'px' | 'py';
 
@@ -111,7 +116,7 @@ export interface Mask {
 }
 
 /** Fusion (node compositing, like DaVinci's): nodes and the links between them. */
-export type FNodeType = 'mediaIn' | 'mediaOut' | 'media' | 'background' | 'merge' | 'transform' | 'chroma' | 'blur' | 'glow' | 'color' | 'grain' | 'letterbox';
+export type FNodeType = 'mediaIn' | 'mediaOut' | 'media' | 'background' | 'merge' | 'transform' | 'chroma' | 'blur' | 'glow' | 'color' | 'grain' | 'letterbox' | 'tiltshift' | 'irisblur' | 'lensflare' | 'relight';
 export interface FNode {
   id: string;
   type: FNodeType;
@@ -178,6 +183,10 @@ export interface Clip {
   mods?: Partial<Record<KeyProp, Modifier>>;
   /** Blend mode over the tracks underneath (default normal). */
   blend?: BlendMode;
+  /** Blend If (Photoshop): soft grey ranges [blackLo, blackHi, whiteLo, whiteHi] (0..255) of this layer and of what is under it. */
+  blendIf?: { this?: [number, number, number, number]; under?: [number, number, number, number] };
+  /** Color to Alpha (Photoshop): removes this colour (FX on black/white become transparent). threshold 0..1. */
+  colorToAlpha?: { color: string; threshold?: number };
   matte?: Matte;
   effects?: Effect[];
   /** Parent clip or null object (AE parenting): inherits its position, scale and rotation. */

@@ -14,7 +14,8 @@ import { applyLayerFx } from './layerfx';
 import { applyFrame } from './frame';
 import { hasFrame } from '../lib/frame.js';
 import { colorGL, needsLut, rememberSource } from './glcolor';
-import { blendGL } from './glblend';
+import { blendGL, colorToAlphaGL } from './glblend';
+import { blendIfActive } from '../lib/pslayer.js';
 
 type El = HTMLVideoElement | HTMLAudioElement;
 
@@ -308,7 +309,7 @@ export class Player {
       const fused = hasFusion(clip.fusion);
       // Rotation, opacity, transition blur and flash/dip are applied when the clip layer is
       // composited (after masks and Fusion), in the same order as the export.
-      const masked = Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal') || hasFrame(clip.frame);
+      const masked = Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal') || blendIfActive(clip.blendIf) || Boolean(clip.colorToAlpha) || hasFrame(clip.frame);
       const x = masked ? this.layer(cw, ch) : ctx;
       const alpha = masked ? 1 : tr.alpha;
       const slide = masked ? 0 : tr.slide;
@@ -328,7 +329,10 @@ export class Player {
       rememberSource(clip.id, src);
       if (clip.color && needsLut(clip.color)) {
         const sc = Math.min(1, k * z);
-        const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true));
+        // Detail tools size themselves on the canvas's long edge, in this picture's pixels (the export
+        // works on the framed W×H clip, before zoom).
+        const long = (Math.max(cw, ch) / k) * sc;
+        const out = colorGL().apply(src as TexImageSource, Math.max(2, sw * sc), Math.max(2, sh * sc), clip.color, () => (this.dirty = true), { long, frame: Math.floor(local * (project.canvas.fps || 30)) });
         if (out) {
           pic = out;
           gpu = true;
@@ -396,6 +400,8 @@ export class Player {
           const fr = frontLayer(this.layerCanvas!, clip.masks, local, end(clip) - clip.start, mattes);
           if (fr) fronts.push({ canvas: fr, alpha: tr.alpha, slide: tr.slide });
         }
+        // Color to Alpha before the effects (export: first step of layerFx).
+        if (clip.colorToAlpha) colorToAlphaGL(this.layerCanvas!, clip.colorToAlpha);
         if (clip.effects?.length || clip.matte) {
           applyLayerFx(this.layerCanvas!, clip, local, W, H, (mediaId) => {
             const mm = media.get(mediaId);
@@ -417,7 +423,8 @@ export class Player {
         const layer = this.layerCanvas!;
         // Blend modes: the clip is drawn into its own layer, then blended with what is under it on the
         // GPU with the export's formulas (glblend.ts). Without WebGL: the canvas's own operations.
-        const bm = clip.blend && clip.blend !== 'normal' ? clip.blend : null;
+        const bif = blendIfActive(clip.blendIf);
+        const bm = clip.blend && clip.blend !== 'normal' ? clip.blend : bif ? 'normal' : null;
         const gb = bm && !blendGL().failed ? blendGL() : null;
         const d = gb ? gb.target(cw, ch) : ctx;
         d.save();
@@ -445,7 +452,7 @@ export class Player {
         d.globalCompositeOperation = 'source-over';
         if (gb) {
           d.restore();
-          if (!gb.composite(ctx, bm!)) ctx.drawImage(gb.layer, 0, 0);
+          if (!gb.composite(ctx, bm!, clip.blendIf)) ctx.drawImage(gb.layer, 0, 0);
           // The flashes below draw on the result with the clip's own transform.
           ctx.save();
           ctx.globalAlpha = tr.alpha * opacity;

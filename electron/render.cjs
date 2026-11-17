@@ -15,9 +15,12 @@ const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
 const anim = require('../src/lib/anim.js');
 const { layerFx } = require('../src/lib/layerfx.js');
 const { blendFF } = require('../src/lib/blend.js');
+const pslayer = require('../src/lib/pslayer.js');
+const ffx = require('../src/lib/fusionfx.js');
 const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const develop = require('../src/lib/develop.js');
+const detail = require('../src/lib/detail.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 const { FFMPEG } = require('./bin.cjs');
 
@@ -293,6 +296,48 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
         case 'grain': {
           const a = Math.round(Math.max(0, Math.min(1, num(n, 'amount'))) * 40);
           filters.push(`[${inp(0)}]${a > 0 ? `noise=alls=${a}:allf=t` : 'null'}[${l}]`);
+          break;
+        }
+        case 'tiltshift':
+        case 'irisblur': {
+          // Three blur levels mixed by the static weight mask (src/lib/fusionfx.js), drawn once and looped.
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const smax = ffx.galleryMaxSigma(p.blur, short);
+          const w = n.type === 'tiltshift' ? ffx.tiltFF(W, H, p) : ffx.irisFF(W, H, p);
+          const still = (expr, lab) => {
+            filters.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gray,geq=lum='st(8,${w});255*${expr}',loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB),split=4[${lab}0][${lab}1][${lab}2][${lab}3]`);
+            filters.push(`[${lab}0][${lab}1][${lab}2][${lab}3]mergeplanes=0x00102030:gbrap[${lab}]`);
+          };
+          if (smax < 0.3) {
+            filters.push(`[${inp(0)}]null[${l}]`);
+            break;
+          }
+          still('clip(2*ld(8),0,1)', `${l}m1`);
+          still('clip(2*ld(8)-1,0,1)', `${l}m2`);
+          filters.push(`[${inp(0)}]format=gbrap,split=3[${l}a][${l}b][${l}c]`);
+          filters.push(`[${l}b]gblur=sigma=${fx(Math.max(0.3, smax / 2))}[${l}b2]`, `[${l}c]gblur=sigma=${fx(smax)}[${l}c2]`);
+          filters.push(`[${l}a][${l}b2][${l}m1]maskedmerge[${l}t]`, `[${l}t][${l}c2][${l}m2]maskedmerge[${l}]`);
+          break;
+        }
+        case 'lensflare': {
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const q = ffx.flareGeq(W, H, p);
+          filters.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gbrap,geq=r='${q.r}':g='${q.g}':b='${q.b}':a='255',loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB)[${l}f]`);
+          filters.push(`[${inp(0)}]format=gbrap[${l}i]`);
+          filters.push(`[${l}i][${l}f]blend=c0_mode=screen:c1_mode=screen:c2_mode=screen:c3_expr='A':shortest=1[${l}]`);
+          break;
+        }
+        case 'relight': {
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          const q = ffx.relightParams(p, short);
+          const [lr, lg, lb] = ffx.LUMA709;
+          const grey = `colorchannelmixer=rr=${lr}:rg=${lg}:rb=${lb}:gr=${lr}:gg=${lg}:gb=${lb}:br=${lr}:bg=${lg}:bb=${lb}`;
+          filters.push(`[${inp(0)}]format=gbrap16le,split=2[${l}c][${l}y]`);
+          filters.push(`[${l}y]${grey},extractplanes=g,gblur=sigma=${fx(q.sigma)},geq=lum='${ffx.relightGeq(q)}',split=4[${l}f0][${l}f1][${l}f2][${l}f3]`);
+          filters.push(`[${l}f0][${l}f1][${l}f2][${l}f3]mergeplanes=0x00102030:gbrap16le[${l}f]`);
+          // gbrp plane order: c0 = G, c1 = B, c2 = R.
+          const ch = (i) => `st(0,A/65535);65535*clip(ld(0)+(ld(0)*B/65535*${ffx.F_MAX}*${fx(q.warm[i])}-ld(0))*${fx(q.amount)},0,1)`;
+          filters.push(`[${l}c][${l}f]blend=c0_expr='${ch(1)}':c1_expr='${ch(2)}':c2_expr='${ch(0)}':c3_expr='A'[${l}]`);
           break;
         }
         case 'letterbox': {
@@ -929,7 +974,18 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         // Framing only (no grade): person mattes go through the same scale/crop/zoom as the clip.
         const geo = [...chain];
         let zoomF = null;
+        let src = `[${k}:v]`;
+        // Detalhe (src/lib/detail.js): spatial tools on the framed clip before the grade LUT, film
+        // grain after it (LightCraft order). Each one is a small sub-graph, so the chain is flushed.
+        const flush = (tag, build) => {
+          const pre = `${tag}${layer}`;
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
+          src = `[${build(pre)}]`;
+          chain.length = 0;
+        };
+        if (detail.hasDetail(c.color?.dev)) flush('pd', (pre) => detail.detailFilters(filters, c.color, pre, `${layer}`, { W, H }));
         chain.push(...gradeFilters(c.color, gradeLut(c.color, extraFiles, gradeLuts)));
+        if (detail.hasGrain(c.color?.dev)) flush('pg', (pre) => detail.grainFilters(filters, c.color, pre, `${layer}`, { W, H, FPS: FPSc, dur }));
         if (keyed) {
           // Zoom/pan keyframes: crop window that follows the animation, rendered at canvas size.
           const T = `(on/${FPSc})`;
@@ -949,10 +1005,9 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           return label;
         };
         const maskCtx = { W, H, FPS, dur, matteInput };
-        let src = `[${k}:v]`;
         if (hasFusion(c.fusion)) {
           const pre = `pf${layer}`;
-          filters.push(`${src}${chain.join(',')}[${pre}]`);
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
           src = `[${fusionChain(filters, c.fusion, pre, `${layer}`, { W, H, FPS, dur, media, addInput })}]`;
           chain.length = 0;
         }
@@ -966,7 +1021,11 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         // After Effects-style layer: effect stack, track matte and blend mode work on a full-canvas
         // RGBA layer in local time (src/lib/layerfx.js builds the same steps the preview draws).
         const blend = c.blend && c.blend !== 'normal' && blendFF(c.blend) ? c.blend : null;
-        if ((c.effects && c.effects.length) || c.matte || blend) {
+        // Blend If (src/lib/pslayer.js): the layer's alpha × soft grey ranges of the layer and the backdrop,
+        // at composite time (same place as the blend mode, so it needs the same frame-aligned path).
+        const bif = pslayer.cleanBlendIf(c.blendIf);
+        const composite = blend || bif;
+        if ((c.effects && c.effects.length) || c.matte || blend || bif || pslayer.cleanColorToAlpha(c.colorToAlpha)) {
           chain.push('format=rgba');
           if (c.fit === 'fit' && !keyed) chain.push(`pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`);
           const pre = `pl${layer}`;
@@ -1016,7 +1075,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           // Position the layer inside its own stream so the movement is blurred too, then average K
           // sub-frames and keep one frame in N.
           const pre = `mb${layer}`;
-          filters.push(`${src}${chain.join(',')}[${pre}]`);
+          filters.push(`${src}${chain.length ? chain.join(',') : 'null'}[${pre}]`);
           filters.push(`color=c=black@0:s=${W}x${H}:r=${FPSc}:d=${fx(dur + 0.2)},format=rgba[mc${layer}]`);
           const px = moved ? `+(${XL.x})` : '';
           const py = moved ? `+(${XL.y})` : '';
@@ -1026,18 +1085,31 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           chain.push('null');
         }
         // Blend modes need a frame at every moment of the base: pad the start instead of shifting it.
-        chain.push(blend ? `tpad=start_duration=${start}:color=black@0,format=rgba` : `setpts=PTS+${start}/TB`);
+        chain.push(composite ? `tpad=start_duration=${start}:color=black@0,format=rgba` : `setpts=PTS+${start}/TB`);
         const v = `v${layer}`;
         filters.push(`${src}${chain.join(',')}[${v}]`);
         let composed = false;
-        if (blend) {
-          // base (top) <mode> layer, kept only where the layer is opaque, during the clip.
+        if (composite) {
+          // base (top) <mode> layer, kept only where the layer is opaque (× Blend If), during the clip.
           const L = layer;
           const next = `base${++layer}`;
           filters.push(`[${base}]split=2[bb${L}][bk${L}]`, `[${v}]split=2[vl${L}][va${L}]`);
           filters.push(`[bb${L}]format=gbrp[bg${L}]`, `[vl${L}]format=gbrp[vg${L}]`);
-          filters.push(`[bg${L}][vg${L}]blend=${blendFF(blend)}[bl${L}]`);
-          filters.push(`[va${L}]alphaextract[vx${L}]`, `[bl${L}][vx${L}]alphamerge[bm${L}]`);
+          let bgL = `bg${L}`;
+          let vgL = `vg${L}`;
+          if (bif) {
+            // Rec.601 grey of each (exact, on RGB planes), then the weight of both ranges.
+            const grey = `colorchannelmixer=${['r', 'g', 'b'].map((o) => ['r', 'g', 'b'].map((i, n) => `${o}${i}=${pslayer.LUMA601[n]}`).join(':')).join(':')},extractplanes=g`;
+            filters.push(`[bg${L}]split=2[bg${L}a][bg${L}b]`, `[vg${L}]split=2[vg${L}a][vg${L}b]`);
+            filters.push(`[vg${L}b]${grey}[vy${L}]`, `[bg${L}b]${grey}[by${L}]`);
+            filters.push(`[vy${L}][by${L}]blend=all_expr='255*${pslayer.blendIfFF(bif.this, 'A')}*${pslayer.blendIfFF(bif.under, 'B')}'[bw${L}]`);
+            bgL = `bg${L}a`;
+            vgL = `vg${L}a`;
+          }
+          filters.push(`[${bgL}][${vgL}]blend=${blend ? blendFF(blend) : "all_expr='B'"}[bl${L}]`);
+          if (bif) filters.push(`[va${L}]alphaextract[vx${L}a]`, `[vx${L}a][bw${L}]blend=all_mode=multiply[vx${L}]`);
+          else filters.push(`[va${L}]alphaextract[vx${L}]`);
+          filters.push(`[bl${L}][vx${L}]alphamerge[bm${L}]`);
           filters.push(`[bk${L}][bm${L}]overlay=format=auto:eof_action=pass:enable='between(t,${r6(start - half)},${r6(end - half)})'[${next}]`);
           base = next;
           composed = true;

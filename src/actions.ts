@@ -206,6 +206,8 @@ export function describeProject() {
         ...(c.keyframes ? { keyframes: c.keyframes } : {}),
         ...(c.mods ? { modifiers: c.mods } : {}),
         ...(c.blend ? { blend: c.blend } : {}),
+        ...(c.blendIf ? { blend_if: c.blendIf } : {}),
+        ...(c.colorToAlpha ? { color_to_alpha: c.colorToAlpha } : {}),
         ...(c.matte ? { matte: c.matte } : {}),
         ...(c.effects ? { effects: c.effects } : {}),
         ...(c.color ? { color: c.color } : {}),

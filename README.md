@@ -75,6 +75,7 @@ No painel Média, separador **Efeitos**, cartão **Geradores**. Arrastam-se para
 - **Composição Fusion**: uma composição vazia (só a Saída). Botão direito no clip → *Abrir na página Fusion*, e constrói-se com nós. O primeiro nó liga-se sozinho à Saída.
 - **Botão direito num clip**: abrir na página Fusion ou Cor, cortar, desligar imagem do som, apagar.
 - **Shift+Espaço** na página Fusion: procurar um nó pelo nome (Enter junta-o a seguir ao nó escolhido).
+- **Nós do Fusion para compor**: *Fundo* (cor sólida ou gradiente horizontal, vertical, com ângulo ou radial), máscaras *Retângulo* (cantos redondos) e *Elipse* (centro, tamanho, suavidade, inverter) e *Juntar* com entrada de máscara (a frente só aparece onde a máscara é opaca). Fórmulas partilhadas pelo preview e pela exportação em `src/lib/fusionfx.js`.
 - Código: `src/lib/generators.js`. O preview (`Player.adjust`, `genPicture`) e a exportação (`electron/render.cjs`) tratam a cor sólida e a composição como uma imagem do tamanho do quadro, por isso transformar, opacidade, máscaras, efeitos e Fusion funcionam nelas. Testes: `test/generators.test.mjs`.
 
 ## Claude editing

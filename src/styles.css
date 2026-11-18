@@ -542,6 +542,7 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .g-gerar { --g: var(--c-music); }
 .g-compor { --g: var(--c-video); }
 .g-efeitos { --g: var(--c-caption); }
+.g-mascara { --g: #e8c14a; }
 .node-editor { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--glass-sheen), var(--glass-fill); border: 1px solid var(--stroke-2); border-radius: var(--r-xl); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-edge), var(--glass-shadow); }
 .node-editor .ph .panel-sub { font-weight: 400; }
 .empty-ne { display: grid; place-items: center; color: var(--text-3); }

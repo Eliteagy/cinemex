@@ -22,3 +22,14 @@ export function relightFactor(S: number, sxm: number, sxp: number, sym: number, 
 export function relightJS(c: number, F: number, i: number, q: RelightParams): number;
 export const F_MAX: number;
 export function relightGeq(q: RelightParams): string;
+
+export const BG_TYPES: string[];
+export function gradGeo(W: number, H: number, p: Record<string, unknown>): { type: string; dx: number; dy: number; L: number; cx: number; cy: number; R: number; c0: number[]; c1: number[] };
+/** Where a pixel is on a Background gradient, 0 (first colour) .. 1 (second colour). */
+export function gradT(x: number, y: number, W: number, H: number, p: Record<string, unknown>): number;
+export function gradRGB(x: number, y: number, W: number, H: number, p: Record<string, unknown>): number[];
+export function gradGeq(W: number, H: number, p: Record<string, unknown>): string;
+export function shapeGeo(W: number, H: number, p: Record<string, unknown>): { cx: number; cy: number; hw: number; hh: number; soft: number; r: number; invert: boolean };
+/** Opacity 0..1 of a Rectangle or Ellipse mask at a pixel. */
+export function shapeAlpha(x: number, y: number, W: number, H: number, p: Record<string, unknown>, shape: 'rectangle' | 'ellipse'): number;
+export function shapeFF(W: number, H: number, p: Record<string, unknown>, shape: 'rectangle' | 'ellipse'): string;

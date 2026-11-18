@@ -176,3 +176,90 @@ export function relightGeq(q) {
     `65535*clip(ld(3)/max(${S(0, 0)},0.04)/${F_MAX},0,1)`
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Background gradients and shape masks (Resolve's Background, Rectangle and Ellipse tools).
+// One formula per pixel, in a js form (tests; the preview draws the same gradient with the canvas)
+// and an ffmpeg form (geq on a single frame, looped).
+
+const rgb = (hex) => {
+  const h = String(hex || '#000000').replace('#', '').padEnd(6, '0');
+  return [parseInt(h.slice(0, 2), 16) || 0, parseInt(h.slice(2, 4), 16) || 0, parseInt(h.slice(4, 6), 16) || 0];
+};
+export const BG_TYPES = ['solid', 'horizontal', 'vertical', 'linear', 'radial'];
+
+/** Geometry of a Background gradient: the line it runs along (linear) or its radius (radial). */
+export function gradGeo(W, H, p) {
+  const type = BG_TYPES.includes(p.type) ? p.type : 'solid';
+  const deg = type === 'horizontal' ? 0 : type === 'vertical' ? 90 : num(p.angle, 0);
+  const a = (deg * Math.PI) / 180;
+  const dx = Math.cos(a);
+  const dy = Math.sin(a);
+  // The gradient covers the frame from edge to edge along its direction (like CSS gradients).
+  const L = Math.max(1e-6, Math.abs(W * dx) + Math.abs(H * dy));
+  return { type, dx, dy, L, cx: W / 2, cy: H / 2, R: Math.hypot(W, H) / 2, c0: rgb(p.color), c1: rgb(p.color2 ?? '#FFFFFF') };
+}
+/** Where a pixel is on the gradient, 0 (first colour) .. 1 (second colour). */
+export function gradT(x, y, W, H, p) {
+  const g = gradGeo(W, H, p);
+  if (g.type === 'solid') return 0;
+  const t = g.type === 'radial' ? Math.hypot(x - g.cx, y - g.cy) / g.R : ((x - g.cx) * g.dx + (y - g.cy) * g.dy) / g.L + 0.5;
+  return Math.max(0, Math.min(1, t));
+}
+export function gradRGB(x, y, W, H, p) {
+  const g = gradGeo(W, H, p);
+  const t = gradT(x, y, W, H, p);
+  return g.c0.map((c, i) => c + (g.c1[i] - c) * t);
+}
+/** geq r/g/b expressions of the gradient (pixel centres, like the canvas). */
+export function gradGeq(W, H, p) {
+  const g = gradGeo(W, H, p);
+  const t = g.type === 'radial' ? `hypot(X+0.5-${fx(g.cx)},Y+0.5-${fx(g.cy)})/${fx(g.R)}` : `((X+0.5-${fx(g.cx)})*${fx(g.dx)}+(Y+0.5-${fx(g.cy)})*${fx(g.dy)})/${fx(g.L)}+0.5`;
+  const ch = (i) => `'${fx(g.c0[i])}+${fx(g.c1[i] - g.c0[i])}*clip(${t},0,1)'`;
+  return `r=${ch(0)}:g=${ch(1)}:b=${ch(2)}`;
+}
+
+/** Geometry of a shape mask in pixels. x, y, width, height are fractions of the frame; soft and radius of its shorter side. */
+export function shapeGeo(W, H, p) {
+  const short = Math.min(W, H);
+  const hw = Math.max(0.5, (Math.max(0, num(p.width, 0.5)) * W) / 2);
+  const hh = Math.max(0.5, (Math.max(0, num(p.height, 0.5)) * H) / 2);
+  return {
+    cx: num(p.x, 0.5) * W,
+    cy: num(p.y, 0.5) * H,
+    hw,
+    hh,
+    // At least one pixel of soft edge, so the outline is never jagged.
+    soft: Math.max(1, Math.max(0, Math.min(1, num(p.soft, 0))) * 0.25 * short),
+    r: Math.max(0, Math.min(1, num(p.radius, 0))) * Math.min(hw, hh),
+    invert: p.invert === true,
+  };
+}
+/** Opacity 0..1 of a shape mask at pixel (x, y): 1 inside, 0 outside, a ramp of `soft` pixels on the edge. */
+export function shapeAlpha(x, y, W, H, p, shape) {
+  const g = shapeGeo(W, H, p);
+  let d;
+  if (shape === 'ellipse') d = (Math.hypot((x - g.cx) / g.hw, (y - g.cy) / g.hh) - 1) * Math.min(g.hw, g.hh);
+  else {
+    const qx = Math.abs(x - g.cx) - (g.hw - g.r);
+    const qy = Math.abs(y - g.cy) - (g.hh - g.r);
+    d = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - g.r;
+  }
+  const a = Math.max(0, Math.min(1, 0.5 - d / g.soft));
+  return g.invert ? 1 - a : a;
+}
+/** The same opacity as an ffmpeg expression of X, Y (0..1). */
+export function shapeFF(W, H, p, shape) {
+  const g = shapeGeo(W, H, p);
+  const X = `(X+0.5-${fx(g.cx)})`;
+  const Y = `(Y+0.5-${fx(g.cy)})`;
+  let d;
+  if (shape === 'ellipse') d = `(hypot(${X}/${fx(g.hw)},${Y}/${fx(g.hh)})-1)*${fx(Math.min(g.hw, g.hh))}`;
+  else {
+    const qx = `(abs(${X})-${fx(g.hw - g.r)})`;
+    const qy = `(abs(${Y})-${fx(g.hh - g.r)})`;
+    d = `(hypot(max(${qx},0),max(${qy},0))+min(max(${qx},${qy}),0)-${fx(g.r)})`;
+  }
+  const a = `clip(0.5-${d}/${fx(g.soft)},0,1)`;
+  return g.invert ? `(1-${a})` : a;
+}

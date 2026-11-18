@@ -3,7 +3,7 @@
 // shorter side, positions fractions of the frame.
 import nodesJson from '../lib/fusion-nodes.json';
 import { gradeMath } from '../lib/project';
-import { flareRGB, galleryMaxSigma, irisWeight, levelWeights, relightFactor, relightJS, relightParams, tiltWeight, LUMA709 } from '../lib/fusionfx.js';
+import { flareRGB, galleryMaxSigma, gradGeo, irisWeight, levelWeights, relightFactor, relightJS, relightParams, shapeAlpha, tiltWeight, LUMA709 } from '../lib/fusionfx.js';
 import type { FNode, FNodeType, Fusion } from '../types';
 
 export interface ParamSpec {
@@ -14,10 +14,12 @@ export interface ParamSpec {
   step?: number;
   default: number | string | boolean;
   options?: Record<string, string>;
+  /** Shown only while another setting of the node has one of these values. */
+  when?: Record<string, string[]>;
 }
 export interface NodeSpec {
   label: string;
-  group: 'io' | 'gerar' | 'compor' | 'efeitos';
+  group: 'io' | 'gerar' | 'compor' | 'mascara' | 'efeitos';
   inputs: string[];
   params: Record<string, ParamSpec>;
 }
@@ -126,10 +128,39 @@ export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanv
       case 'mediaOut':
         x.drawImage(inp(0), 0, 0);
         break;
-      case 'background':
-        x.fillStyle = String(param(n, 'color'));
+      case 'background': {
+        // Solid colour or a two-colour gradient (same line and radius as the export: src/lib/fusionfx.js gradGeo).
+        const p = Object.fromEntries(Object.keys(NODES[n.type].params).map((k) => [k, param(n, k)]));
+        const g = gradGeo(w, h, p);
+        if (g.type === 'solid') x.fillStyle = String(param(n, 'color'));
+        else {
+          const grad = g.type === 'radial' ? x.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, g.R) : x.createLinearGradient(g.cx - (g.dx * g.L) / 2, g.cy - (g.dy * g.L) / 2, g.cx + (g.dx * g.L) / 2, g.cy + (g.dy * g.L) / 2);
+          grad.addColorStop(0, String(param(n, 'color')));
+          grad.addColorStop(1, String(param(n, 'color2')));
+          x.fillStyle = grad;
+        }
         x.fillRect(0, 0, w, h);
         break;
+      }
+      case 'rectangle':
+      case 'ellipse': {
+        // A mask: white where the shape is, transparent outside, with a soft edge (same formula as the export).
+        const p = Object.fromEntries(Object.keys(NODES[n.type].params).map((k) => [k, param(n, k)]));
+        const shape = n.type;
+        x.drawImage(
+          staticCanvas(`${shape}:${w}x${h}:${JSON.stringify(p)}`, w, h, (img) => {
+            const d = img.data;
+            for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+              const o = (yy * w + xx) * 4;
+              d[o] = d[o + 1] = d[o + 2] = 255;
+              d[o + 3] = Math.round(255 * shapeAlpha(xx + 0.5, yy + 0.5, w, h, p, shape));
+            }
+          }),
+          0,
+          0,
+        );
+        break;
+      }
       case 'media': {
         const id2 = String(param(n, 'mediaId'));
         const src = id2 ? env.media(n, id2) : null;
@@ -145,7 +176,14 @@ export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanv
         const mode = String(param(n, 'mode'));
         x.globalCompositeOperation = mode === 'screen' ? 'screen' : mode === 'multiply' ? 'multiply' : mode === 'add' ? 'lighter' : 'source-over';
         x.globalAlpha = Math.max(0, Math.min(1, num(n, 'opacity')));
-        x.drawImage(inp(1), 0, 0);
+        if (inputOf(f, n.id, 2)) {
+          // Mask input: the foreground only shows where the mask is opaque.
+          const { c: fc, x: fx2 } = surface(`${n.id}:fg`);
+          fx2.drawImage(inp(1), 0, 0);
+          fx2.globalCompositeOperation = 'destination-in';
+          fx2.drawImage(inp(2), 0, 0);
+          x.drawImage(fc, 0, 0);
+        } else x.drawImage(inp(1), 0, 0);
         break;
       }
       case 'transform': {

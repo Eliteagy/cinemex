@@ -22,9 +22,10 @@ const useUi = create<{ node: string | null; pending: string | null; picker: bool
 /** Opens the node search of the Fusion page (Shift+Espaço, as Resolve's Select Tool). */
 export const openNodePicker = () => useUi.getState().set({ picker: true });
 
-const GROUPS: { k: 'gerar' | 'compor' | 'efeitos'; label: string }[] = [
+const GROUPS: { k: 'gerar' | 'compor' | 'mascara' | 'efeitos'; label: string }[] = [
   { k: 'gerar', label: 'Gerar' },
   { k: 'compor', label: 'Compor' },
+  { k: 'mascara', label: 'Máscaras' },
   { k: 'efeitos', label: 'Efeitos' },
 ];
 const W = 150;
@@ -101,6 +102,8 @@ export function FusionInspector() {
           <p className="panel-sub">{n.type === 'mediaIn' ? 'A imagem do clip (com cor, zoom e enquadramento).' : 'O que chega aqui é o que aparece no vídeo.'}</p>
         ) : (
           Object.entries(NODES[n.type].params).map(([k, spec]) => {
+            // Settings that only make sense for some choices (the second colour of a gradient…).
+            if (spec.when && !Object.entries(spec.when).every(([dep, values]) => values.includes(String(param(n, dep))))) return null;
             const v = param(n, k);
             if (spec.type === 'number')
               return (

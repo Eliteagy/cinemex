@@ -124,3 +124,66 @@ test('real export: a Fusion composition draws its nodes; empty it shows what is 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Fusion nodes a composition is built with: Background gradients, Rectangle and Ellipse masks, Merge with a mask.
+const ffxLib = await import('../src/lib/fusionfx.js');
+
+test('Background gradient and shape mask maths', () => {
+  const { gradT, gradRGB, shapeAlpha } = ffxLib;
+  const W = 400, H = 200;
+  assert.equal(gradT(10, 10, W, H, { type: 'solid' }), 0);
+  assert.ok(gradT(0, 100, W, H, { type: 'horizontal' }) < 0.01 && gradT(400, 100, W, H, { type: 'horizontal' }) > 0.99);
+  assert.ok(Math.abs(gradT(200, 50, W, H, { type: 'horizontal' }) - 0.5) < 1e-9);
+  assert.ok(gradT(200, 0, W, H, { type: 'vertical' }) < 0.01 && gradT(200, 200, W, H, { type: 'vertical' }) > 0.99);
+  assert.equal(gradT(200, 100, W, H, { type: 'radial' }), 0);
+  assert.deepEqual(gradRGB(400, 100, W, H, { type: 'horizontal', color: '#000000', color2: '#FF8000' }).map(Math.round), [255, 128, 0]);
+  const box = { x: 0.5, y: 0.5, width: 0.5, height: 0.5 };
+  assert.equal(shapeAlpha(200, 100, W, H, box, 'rectangle'), 1);
+  assert.equal(shapeAlpha(20, 100, W, H, box, 'rectangle'), 0);
+  assert.equal(shapeAlpha(110, 60, W, H, box, 'rectangle'), 1, 'a corner of the rectangle');
+  assert.equal(shapeAlpha(105, 55, W, H, box, 'ellipse'), 0, 'the same corner is outside the ellipse');
+  assert.equal(shapeAlpha(20, 100, W, H, { ...box, invert: true }, 'rectangle'), 1);
+  // A soft edge is a ramp, half way on the outline.
+  assert.ok(Math.abs(shapeAlpha(300, 100, W, H, { ...box, soft: 0.5 }, 'rectangle') - 0.5) < 1e-9);
+});
+
+test('real export: a composition with a gradient background seen through an ellipse mask', { skip: noFfmpeg, timeout: 120000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ec-nodes-'));
+  try {
+    const src = join(dir, 'red.mp4');
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=red:s=320x240:r=30:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', src]).status, 0);
+    // empty <- merge(frente = gradient black -> blue, left to right; máscara = ellipse in the middle) -> out
+    const comp = {
+      nodes: [
+        { id: 'out', type: 'mediaOut', x: 560, y: 90, p: {} },
+        { id: 'bg', type: 'background', x: 100, y: 90, p: { type: 'horizontal', color: '#000000', color2: '#0000FF' } },
+        { id: 'el', type: 'ellipse', x: 100, y: 200, p: { width: 0.5, height: 0.5 } },
+        { id: 'mg', type: 'merge', x: 340, y: 90, p: {} },
+      ],
+      links: [
+        { from: 'bg', to: 'mg', port: 1 },
+        { from: 'el', to: 'mg', port: 2 },
+        { from: 'mg', to: 'out', port: 0 },
+      ],
+    };
+    const p = {
+      name: 'nodes', canvas,
+      media: [{ id: 'v', path: src, kind: 'video', duration: 2, hasAudio: false }],
+      tracks: [
+        { id: 'v1', kind: 'video', name: 'V1', clips: [{ id: 'a', mediaId: 'v', start: 0, in: 0, out: 2, fit: 'fill' }] },
+        { id: 'v2', kind: 'video', name: 'V2', clips: [{ id: 'f1', start: 0, in: 0, out: 2, gen: 'fusion', fusion: comp }] },
+      ],
+    };
+    const out = join(dir, 'out.mp4');
+    await runExport(p, out);
+    const outside = pixel(out, 1, 10, 10);
+    const leftIn = pixel(out, 1, 100, 116);
+    const rightIn = pixel(out, 1, 215, 116);
+    assert.ok(outside[0] > 200 && outside[2] < 60, `outside the ellipse the footage under the composition shows: ${outside}`);
+    assert.ok(leftIn[0] < 60, `inside the ellipse the gradient covers the red: ${leftIn}`);
+    assert.ok(rightIn[2] > leftIn[2] + 60, `the gradient gets bluer to the right: ${leftIn} -> ${rightIn}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

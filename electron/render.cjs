@@ -241,9 +241,20 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
         case 'mediaOut':
           filters.push(`[${inp(0)}]null[${l}]`);
           break;
-        case 'background':
-          filters.push(`color=c=${hexColor(val(n, 'color'))}:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${l}]`);
+        case 'background': {
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          if (ffx.gradGeo(W, H, p).type === 'solid') filters.push(`color=c=${hexColor(val(n, 'color'))}:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${l}]`);
+          // A gradient: one frame drawn with geq (src/lib/fusionfx.js, same line as the preview), looped.
+          else filters.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gbrp,geq=${ffx.gradGeq(W, H, p)},loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB),format=rgba[${l}]`);
           break;
+        }
+        case 'rectangle':
+        case 'ellipse': {
+          // A mask: white, with the shape as its alpha (one frame, looped).
+          const p = Object.fromEntries(Object.keys(FNODES[n.type].params).map((k) => [k, val(n, k)]));
+          filters.push(`color=c=white:s=${W}x${H}:r=${FPS}:d=${fx(1 / FPS)},format=gbrap,geq=r='255':g='255':b='255':a='255*${ffx.shapeFF(W, H, p, n.type)}',loop=loop=-1:size=1,trim=duration=${fx(dur)},setpts=N/(${FPS}*TB),format=rgba[${l}]`);
+          break;
+        }
         case 'media': {
           const m = media.get(String(val(n, 'mediaId')));
           if (!m || m.kind === 'audio') {
@@ -256,14 +267,27 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
         }
         case 'merge': {
           const bg = inp(0);
-          const fg = inp(1);
+          let fg = inp(1);
           const mode = String(val(n, 'mode'));
           const op = Math.max(0, Math.min(1, num(n, 'opacity')));
+          if (from(id, 2)) {
+            // Mask input: the foreground's alpha is multiplied by the mask's.
+            const mk = inp(2);
+            filters.push(`[${fg}]format=rgba,split=2[${l}q0][${l}q1]`, `[${l}q1]alphaextract[${l}qa]`, `[${mk}]format=rgba,alphaextract[${l}qm]`);
+            filters.push(`[${l}qa][${l}qm]blend=all_mode=multiply[${l}qx]`, `[${l}q0][${l}qx]alphamerge[${l}qf]`);
+            fg = `${l}qf`;
+          }
           if (mode === 'normal') {
             filters.push(`[${fg}]format=rgba,colorchannelmixer=aa=${fx(op)}[${l}f]`);
             filters.push(`[${bg}][${l}f]overlay=format=auto:eof_action=pass[${l}]`);
           } else {
             const bm = mode === 'add' ? 'addition' : mode;
+            if (from(id, 2)) {
+              // With a mask the blend only counts where the masked foreground is opaque.
+              filters.push(`[${bg}]format=gbrp,split=2[${l}b][${l}b2]`, `[${fg}]format=rgba,split=2[${l}f0][${l}f1]`, `[${l}f0]format=gbrp[${l}f]`, `[${l}f1]alphaextract,format=gbrp[${l}fa]`);
+              filters.push(`[${l}b][${l}f]blend=all_mode=${bm}:all_opacity=${fx(op)}[${l}x]`, `[${l}b2][${l}x][${l}fa]maskedmerge[${l}]`);
+              break;
+            }
             filters.push(`[${bg}]format=gbrp[${l}b]`, `[${fg}]format=gbrp[${l}f]`);
             filters.push(`[${l}b][${l}f]blend=all_mode=${bm}:all_opacity=${fx(op)}[${l}]`);
           }

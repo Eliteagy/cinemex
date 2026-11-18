@@ -13,6 +13,7 @@ import type { Graphic, GraphicKind, Marker } from './types';
 import type { BlendMode, Ease, Effect, Matte, Modifier } from './types';
 import { EFFECT_DEFAULTS } from './lib/layerfx.js';
 import { cleanBlendIf } from './lib/pslayer.js';
+import { separateAudio, syncLinks, unlink } from './lib/links.js';
 
 const MAX_HISTORY = 150;
 const clone = <T,>(v: T): T => structuredClone(v);
@@ -64,8 +65,18 @@ export interface EditorState {
   toggleTrack(id: string, key: 'muted' | 'hidden'): void;
   /** New empty track: video above the other video tracks, audio and text after their own kind. Returns its id. */
   addTrack(kind: Track['kind'], name?: string): string;
-  /** Removes an empty track (the last track of a kind stays). */
-  removeTrack(id: string): void;
+  /** Removes a track. With clips only when force=true (the clips go too). The last video track stays. */
+  removeTrack(id: string, force?: boolean): void;
+  renameTrack(id: string, name: string): void;
+  /** Moves a track one place up or down among the tracks of its kind (as shown on screen). */
+  moveTrack(id: string, dir: 'up' | 'down'): void;
+  /** Linked selection (like Resolve): picture and sound of a clip move, trim, cut and get deleted together. */
+  linked: boolean;
+  setLinked(v: boolean): void;
+  /** Breaks the link between a clip's picture and its sound. Returns how many clips were linked to it. */
+  unlinkClip(id: string): number;
+  /** Gives a video clip its sound back (after the sound clip was deleted). */
+  restoreSound(id: string): void;
   setSpeed(id: string, speed: number): void;
   setTransition(id: string, side: 'in' | 'out', tr: Transition | null): void;
   dissolveWithPrevious(id: string, d?: number): void;
@@ -211,11 +222,28 @@ function mediaOf(p: Project, id?: string) {
   return p.media.find((m) => m.id === id);
 }
 
+/** Music and sound effects never land on a track that holds the sound of a video track. */
+const ownTracks = (p: Project, kind: Track['kind']) => p.tracks.filter((t) => t.kind === kind && !(kind === 'audio' && t.of));
+
+/** The first track of a kind, made when the project has none (every track can be deleted). */
+function trackOf(p: Project, kind: Track['kind']): Track {
+  const found = ownTracks(p, kind)[0];
+  if (found) return found;
+  const prefix = kind === 'video' ? 'v' : kind === 'audio' ? 'a' : 't';
+  let n = 1;
+  while (p.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
+  const t: Track = { id: `${prefix}${n}`, kind, name: kind === 'video' ? `V${n}` : kind === 'audio' ? 'Música' : 'Legendas', clips: [] };
+  // Text over the video tracks, audio at the end.
+  if (kind === 'audio') p.tracks.push(t);
+  else p.tracks.splice(p.tracks.map((x) => x.kind).lastIndexOf('video') + 1, 0, t);
+  return t;
+}
+
 function pickTrack(p: Project, m: Media, start: number, len: number): Track {
   const kind = m.kind === 'audio' ? 'audio' : 'video';
-  const tracks = p.tracks.filter((t) => t.kind === kind);
+  const tracks = ownTracks(p, kind);
   const free = tracks.find((t) => !t.clips.some((c) => c.start < start + len - 0.001 && end(c) > start + 0.001));
-  return free ?? tracks[0]!;
+  return free ?? trackOf(p, kind);
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -241,6 +269,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const before = get().project;
     const next = clone(before);
     fn(next);
+    syncLinks(before, next, { linked: get().linked });
     // While a slider is dragged only the first change goes into the history.
     if (slide === 'open') set({ project: next, dirty: true });
     else {
@@ -260,8 +289,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     set((s) => ({ past: [...s.past, s.project].slice(-MAX_HISTORY), future: [] }));
   },
   live(fn) {
-    const next = clone(get().project);
+    const before = get().project;
+    const next = clone(before);
     fn(next);
+    syncLinks(before, next, { linked: get().linked });
     set({ project: next, dirty: true });
   },
   undo() {
@@ -279,6 +310,8 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   load(p, path = null) {
     const mine = migrateCaptionStyle(p);
+    // Projects made before sound had its own track: the sound of each video clip goes to an audio track.
+    separateAudio(p);
     if (mine && !get().userStyles[MY_STYLE_ID]) void get().saveUserStyle(MY_STYLE_ID, mine).catch(() => {});
     set({ project: p, filePath: path, dirty: false, past: [], future: [], selected: null, playhead: 0, playing: false });
   },
@@ -314,9 +347,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       const cin = Math.max(0, Math.min(opts.in ?? 0, m.duration - minLen));
       const cout = Math.max(cin + minLen, Math.min(opts.out ?? m.duration, m.duration));
       const len = cout - cin;
-      const track =
-        (opts.trackId && p.tracks.find((t) => t.id === opts.trackId && t.kind === (m.kind === 'audio' ? 'audio' : 'video'))) ||
-        (opts.start === undefined ? p.tracks.find((t) => t.kind === (m.kind === 'audio' ? 'audio' : 'video')) : pickTrack(p, m, opts.start, len))!;
+      const kind = m.kind === 'audio' ? 'audio' : 'video';
+      const track = (opts.trackId && p.tracks.find((t) => t.id === opts.trackId && t.kind === kind)) || (opts.start === undefined ? trackOf(p, kind) : pickTrack(p, m, opts.start, len));
       const start = r3(opts.start ?? trackEnd(track));
       track.clips.push({ id, mediaId, start, in: r3(cin), out: r3(cout), volume: 1, fit: 'fill' });
       track.clips.sort((a, b) => a.start - b.start);
@@ -327,7 +359,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   addText(text, start, duration, style = 'title', y) {
     const id = uid('c');
     get().commit((p) => {
-      const t = p.tracks.find((x) => x.kind === 'text')!;
+      const t = trackOf(p, 'text');
       t.clips.push({ id, start: r3(Math.max(0, start)), in: 0, out: r3(Math.max(minLen, duration)), text, style, ...(y !== undefined ? { y } : {}) });
       t.clips.sort((a, b) => a.start - b.start);
     });
@@ -336,7 +368,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   replaceAutoCaptions(range, clips) {
     get().commit((p) => {
-      const t = p.tracks.find((x) => x.kind === 'text')!;
+      const t = trackOf(p, 'text');
       t.clips = t.clips.filter((c) => !c.auto || (range && (end(c) <= range.start || c.start >= range.end)));
       for (const c of clips) t.clips.push({ ...c, id: uid('c'), auto: true });
       t.clips.sort((a, b) => a.start - b.start);
@@ -780,6 +812,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     return id;
   },
   replaceProject(p) {
+    separateAudio(p);
     set((s) => ({ project: p, past: [...s.past, s.project].slice(-MAX_HISTORY), future: [], dirty: true, selected: null, playhead: 0, playing: false, filePath: null }));
   },
   setGrade(ids, grade, replace = false) {
@@ -1074,7 +1107,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   addCaptions(list, replace, style = 'clean') {
     get().commit((p) => {
-      const t = p.tracks.find((x) => x.kind === 'text')!;
+      const t = trackOf(p, 'text');
       if (replace) t.clips = [];
       for (const s of list) {
         const len = r3(Math.max(minLen, s.end - s.start));
@@ -1087,7 +1120,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   toggleTrack(id, key) {
     get().commit((p) => {
       const t = p.tracks.find((x) => x.id === id);
-      if (t) t[key] = !t[key];
+      if (!t) return;
+      t[key] = !t[key];
+      // The sound of a video track lives on its sound track: silencing the one silences the other.
+      if (key === 'muted' && t.kind === 'video') for (const a of p.tracks) if (a.kind === 'audio' && a.of === t.id) a.muted = t.muted;
     });
   },
   addTrack(kind, name) {
@@ -1098,20 +1134,78 @@ export const useEditor = create<EditorState>((set, get) => ({
       let n = same.length + 1;
       while (p.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
       id = `${prefix}${n}`;
-      const label = name?.trim() || (kind === 'video' ? `V${n}` : kind === 'audio' ? `A${n}` : `Texto ${n}`);
+      const label = name?.trim() || (kind === 'video' ? `V${n}` : kind === 'audio' ? `Áudio ${n}` : same.length ? `Texto ${n}` : 'Legendas');
       const last = p.tracks.map((t) => t.kind).lastIndexOf(kind);
-      const at = last >= 0 ? last + 1 : kind === 'video' ? 0 : p.tracks.length;
+      // The first track of a kind: video at the bottom, text over the video tracks, audio at the end.
+      const at = last >= 0 ? last + 1 : kind === 'video' ? 0 : kind === 'text' ? p.tracks.map((t) => t.kind).lastIndexOf('video') + 1 : p.tracks.length;
       p.tracks.splice(at, 0, { id, kind, name: label, clips: [] });
     });
     return id;
   },
-  removeTrack(id) {
+  removeTrack(id, force = false) {
     get().commit((p) => {
       const t = p.tracks.find((x) => x.id === id);
       if (!t) throw new Error('Pista desconhecida');
-      if (t.clips.length) throw new Error('A pista tem clips: apaga-os ou move-os primeiro');
-      if (p.tracks.filter((x) => x.kind === t.kind).length <= 1) throw new Error('É a única pista deste tipo');
+      if (t.clips.length && !force) throw new Error('A pista tem clips: apaga-os ou move-os primeiro (ou force)');
+      if (t.kind === 'video' && p.tracks.filter((x) => x.kind === 'video').length <= 1) throw new Error('É a única pista de vídeo');
+      // An audio track goes without taking the pictures of its sounds with it.
+      if (t.kind === 'audio') for (const c of t.clips) unlink(p, c.id);
       p.tracks.splice(p.tracks.indexOf(t), 1);
+      // The sound track of a deleted video track goes too, unless something else is on it.
+      if (t.kind === 'video') {
+        const linked = new Set(t.clips.map((c) => c.link).filter(Boolean));
+        for (const a of p.tracks.filter((x) => x.kind === 'audio' && x.of === t.id)) {
+          a.clips = a.clips.filter((c) => !c.link || !linked.has(c.link));
+          if (a.clips.length) delete a.of;
+          else p.tracks.splice(p.tracks.indexOf(a), 1);
+        }
+      }
+    });
+    const sel = get().selected;
+    if (sel && !findClip(get().project, sel)) set({ selected: null });
+  },
+  renameTrack(id, name) {
+    const label = name.trim().slice(0, 40);
+    if (!label) return;
+    get().commit((p) => {
+      const t = p.tracks.find((x) => x.id === id);
+      if (!t) throw new Error('Pista desconhecida');
+      t.name = label;
+    });
+  },
+  moveTrack(id, dir) {
+    get().commit((p) => {
+      const t = p.tracks.find((x) => x.id === id);
+      if (!t) throw new Error('Pista desconhecida');
+      const same = p.tracks.filter((x) => x.kind === t.kind);
+      // On screen video tracks are listed top layer first, the others in their own order.
+      const step = (dir === 'up') === (t.kind === 'video') ? 1 : -1;
+      const other = same[same.indexOf(t) + step];
+      if (!other) return;
+      const i = p.tracks.indexOf(t);
+      const j = p.tracks.indexOf(other);
+      p.tracks[i] = other;
+      p.tracks[j] = t;
+    });
+  },
+  linked: true,
+  setLinked(v) {
+    set({ linked: v });
+  },
+  unlinkClip(id) {
+    let n = 0;
+    get().commit((p) => {
+      if (!findClip(p, id)) throw new Error(`Clip não encontrado: ${id}`);
+      n = unlink(p, id);
+    });
+    return n;
+  },
+  restoreSound(id) {
+    get().commit((p) => {
+      const f = findClip(p, id);
+      if (!f || f.track.kind !== 'video') throw new Error('Escolhe um clip de vídeo');
+      if (f.clip.link) throw new Error('Este clip já tem o som numa pista de áudio');
+      delete f.clip.silent;
     });
   },
 

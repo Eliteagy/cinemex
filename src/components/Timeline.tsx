@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
 import { dur, end, fmtTime, projectDuration, r3, speedOf } from '../lib/project';
 import { Wave } from './Wave';
@@ -17,16 +18,113 @@ function screenOrder(tracks: Track[]) {
     .map((x) => x.t);
 }
 
-/** Colour role of a track: video, captions (text), music or sound effects (any audio track after the
- *  first one, or one named like an effects track). */
+/** Colour role of a track: video, captions (text), the sound of a video track (voice), music or
+ *  sound effects (any other audio track after the first one, or one named like an effects track). */
 function roleOf(t: Track, tracks: Track[]) {
   if (t.kind !== 'audio') return t.kind;
-  if (/efeit|sfx|fx|som/i.test(t.name)) return 'fx';
+  if (t.of) return 'voice';
+  if (/efeit|sfx|\bfx\b|som/i.test(t.name)) return 'fx';
   if (/m[uú]sica|music/i.test(t.name)) return 'music';
-  return tracks.filter((x) => x.kind === 'audio')[0] === t ? 'music' : 'fx';
+  return tracks.filter((x) => x.kind === 'audio' && !x.of)[0] === t ? 'music' : 'fx';
 }
 
+const WAVE: Record<string, string> = { voice: 'rgba(160,222,255,0.92)', fx: 'rgba(255,160,135,0.9)', music: 'rgba(110,231,183,0.9)' };
+
 type Drag = { kind: 'move' | 'left' | 'right'; id: string; x0: number; start: number; in: number; out: number; speed: number; trackKind: string };
+type Menu = { x: number; y: number; trackId: string | null };
+
+/** Right-click menu of a track header: new tracks, rename, order, delete. */
+function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Track[]; onClose: () => void; onRename: (id: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: menu.x, y: menu.y });
+  const st = useEditor.getState;
+  const t = tracks.find((x) => x.id === menu.trackId) ?? null;
+  // Kept inside the window.
+  useLayoutEffect(() => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ x: Math.max(8, Math.min(menu.x, innerWidth - r.width - 8)), y: Math.max(8, Math.min(menu.y, innerHeight - r.height - 8)) });
+  }, [menu.x, menu.y]);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const shut = () => close.current();
+    const down = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) shut();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') shut();
+    };
+    addEventListener('pointerdown', down, true);
+    addEventListener('keydown', key, true);
+    addEventListener('blur', shut);
+    addEventListener('resize', shut);
+    return () => {
+      removeEventListener('pointerdown', down, true);
+      removeEventListener('keydown', key, true);
+      removeEventListener('blur', shut);
+      removeEventListener('resize', shut);
+    };
+  }, []);
+  const run = (fn: () => void) => () => {
+    onClose();
+    try {
+      fn();
+    } catch (e) {
+      st().setStatus((e as Error).message);
+    }
+  };
+  const same = t ? tracks.filter((x) => x.kind === t.kind) : [];
+  const at = t ? same.indexOf(t) : -1;
+  const onlyVideo = t?.kind === 'video' && same.length <= 1;
+  const n = t?.clips.length ?? 0;
+  return createPortal(
+    <div ref={ref} className="tl-menu" role="menu" aria-label={t ? `Pista ${t.name}` : 'Pistas'} style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+      {t && (
+        <>
+          <button role="menuitem" onClick={run(() => onRename(t.id))}>
+            Mudar o nome…
+          </button>
+          <hr />
+        </>
+      )}
+      <button role="menuitem" onClick={run(() => st().addTrack('video'))}>
+        Nova pista de vídeo
+      </button>
+      <button role="menuitem" onClick={run(() => st().addTrack('audio'))}>
+        Nova pista de áudio
+      </button>
+      <button role="menuitem" onClick={run(() => st().addTrack('text'))}>
+        Nova pista de legendas
+      </button>
+      {t && (
+        <>
+          <hr />
+          <button role="menuitem" disabled={at <= 0} onClick={run(() => st().moveTrack(t.id, 'up'))}>
+            Mover para cima
+          </button>
+          <button role="menuitem" disabled={at < 0 || at >= same.length - 1} onClick={run(() => st().moveTrack(t.id, 'down'))}>
+            Mover para baixo
+          </button>
+          <hr />
+          {t.kind !== 'audio' && (
+            <button role="menuitem" onClick={run(() => st().toggleTrack(t.id, 'hidden'))}>
+              {t.hidden ? 'Mostrar pista' : 'Esconder pista'}
+            </button>
+          )}
+          {t.kind === 'audio' && (
+            <button role="menuitem" onClick={run(() => st().toggleTrack(t.id, 'muted'))}>
+              {t.muted ? 'Ligar o som' : 'Silenciar pista'}
+            </button>
+          )}
+          <button role="menuitem" className="danger" disabled={onlyVideo} title={onlyVideo ? 'É a única pista de vídeo' : undefined} onClick={run(() => st().removeTrack(t.id, true))}>
+            {n ? `Apagar pista e ${n} ${n === 1 ? 'clip' : 'clips'}` : 'Apagar pista'}
+          </button>
+        </>
+      )}
+    </div>,
+    document.body,
+  );
+}
 
 export function Timeline() {
   const project = useEditor((s) => s.project);
@@ -49,6 +147,9 @@ export function Timeline() {
   const drag = useRef<Drag | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const linked = useEditor((s) => s.linked);
   const st = useEditor.getState;
 
   const total = projectDuration(project);
@@ -99,15 +200,36 @@ export function Timeline() {
     st().select(c.id);
     st().beginGesture();
     drag.current = { kind, id: c.id, x0: e.clientX, start: c.start, in: c.in, out: c.out, speed: speedOf(c), trackKind };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    // Followed on the window: a clip dragged to another track is drawn again there, in another lane.
+    const move = (ev: PointerEvent) => gesture.current.move(ev);
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      gesture.current.up();
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
   };
-  const onClipMove = (e: React.PointerEvent) => {
+  const onClipMove = (e: PointerEvent) => {
     const d = drag.current;
     if (!d) return;
     const dt = (e.clientX - d.x0) / zoom;
     const len = (d.out - d.in) / d.speed;
     const isMedia = d.trackKind !== 'text';
+    // The lane under the pointer: a clip can go to any other track of its kind.
+    const lane = d.kind === 'move' ? (document.elementsFromPoint(e.clientX, e.clientY).find((el) => el instanceof HTMLElement && el.dataset.lane) as HTMLElement | undefined) : undefined;
+    const toId = lane?.dataset.lane;
     st().live((p) => {
+      if (toId) {
+        const from = p.tracks.find((tr) => tr.clips.some((c) => c.id === d.id));
+        const to = p.tracks.find((tr) => tr.id === toId);
+        if (from && to && from !== to && to.kind === from.kind) {
+          const i = from.clips.findIndex((c) => c.id === d.id);
+          to.clips.push(...from.clips.splice(i, 1));
+        }
+      }
       for (const tr of p.tracks)
         for (const c of tr.clips) {
           if (c.id !== d.id) continue;
@@ -145,6 +267,9 @@ export function Timeline() {
     drag.current = null;
     st().live((p) => p.tracks.forEach((t) => t.clips.sort((a, b) => a.start - b.start)));
   };
+  // The window listeners of a drag always call the handlers of the latest render (zoom, snapping).
+  const gesture = useRef({ move: onClipMove, up: onClipUp });
+  gesture.current = { move: onClipMove, up: onClipUp };
 
   // ---------------------------------------------------------------- scrubbing
   const scrub = (e: React.PointerEvent) => {
@@ -170,6 +295,14 @@ export function Timeline() {
   };
 
   const sel = selected;
+  // The other half of the selected clip (its sound, or its picture) is marked too.
+  const selLink = useMemo(() => (sel ? project.tracks.flatMap((t) => t.clips).find((c) => c.id === sel)?.link : undefined), [project.tracks, sel]);
+  const openMenu = (e: React.MouseEvent, trackId: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, trackId });
+  };
+  const videoTracks = tracks.filter((x) => x.kind === 'video').length;
   return (
     <section className="timeline" aria-label="Timeline">
       <div className="tl-tools">
@@ -185,6 +318,9 @@ export function Timeline() {
         <button className={`btn icon round${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips" aria-pressed={snap} aria-label="Íman">
           <Icon name="magnet" />
         </button>
+        <button className={`btn icon round${linked ? ' on' : ''}`} onClick={() => st().setLinked(!linked)} title={linked ? 'Imagem e som ligados: movem-se, cortam-se e apagam-se juntos (clica para mexer em cada um à parte)' : 'Imagem e som soltos: cada um mexe-se à parte (clica para voltar a ligar)'} aria-pressed={linked} aria-label="Ligar imagem e som">
+          <Icon name="link" />
+        </button>
         <div className="tl-add" role="group" aria-label="Nova pista">
           <button className="btn icon round" onClick={() => setAddOpen((o) => !o)} title="Nova pista" aria-label="Nova pista" aria-expanded={addOpen}>
             <Icon name="plus" />
@@ -195,7 +331,7 @@ export function Timeline() {
                 [
                   ['video', 'Pista de vídeo'],
                   ['audio', 'Pista de áudio'],
-                  ['text', 'Pista de texto'],
+                  ['text', 'Pista de legendas'],
                 ] as const
               ).map(([k, l]) => (
                 <button
@@ -225,24 +361,48 @@ export function Timeline() {
       </div>
 
       <div className="tl-body">
-        <div className="tl-heads" ref={heads}>
+        <div className="tl-heads" ref={heads} onContextMenu={(e) => openMenu(e, null)}>
           {tracks.map((t) => (
-            <div key={t.id} className={`tl-head r-${roleOf(t, tracks)}${t.kind === 'text' ? ' text' : ''}`}>
-              <span className="tname">
+            <div key={t.id} className={`tl-head r-${roleOf(t, tracks)}${t.kind === 'text' ? ' text' : ''}${menu?.trackId === t.id ? ' menu-open' : ''}`} onContextMenu={(e) => openMenu(e, t.id)} title="Botão direito: opções da pista">
+              <span className="tname" onDoubleClick={() => setRenaming(t.id)}>
                 <i />
-                {t.name}
+                {renaming === t.id ? (
+                  <input
+                    className="tl-rename"
+                    autoFocus
+                    defaultValue={t.name}
+                    maxLength={40}
+                    aria-label="Nome da pista"
+                    onFocus={(e) => e.currentTarget.select()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      else if (e.key === 'Escape') {
+                        e.currentTarget.value = t.name;
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const v = e.currentTarget.value.trim();
+                      setRenaming(null);
+                      if (v && v !== t.name) st().renameTrack(t.id, v);
+                    }}
+                  />
+                ) : (
+                  <span className="tlabel">{t.name}</span>
+                )}
               </span>
               {t.kind !== 'audio' && (
                 <button className={t.hidden ? 'off' : ''} onClick={() => st().toggleTrack(t.id, 'hidden')} title={t.hidden ? 'Mostrar pista' : 'Esconder pista'} aria-label="Ver pista">
                   <Icon name={t.hidden ? 'eyeOff' : 'eye'} />
                 </button>
               )}
-              {t.kind !== 'text' && (
+              {t.kind === 'audio' && (
                 <button className={t.muted ? 'off' : ''} onClick={() => st().toggleTrack(t.id, 'muted')} title={t.muted ? 'Ligar som' : 'Silenciar pista'} aria-label="Som da pista">
                   <Icon name={t.muted ? 'mute' : 'sound'} />
                 </button>
               )}
-              {!t.clips.length && tracks.filter((x) => x.kind === t.kind).length > 1 && (
+              {!t.clips.length && (t.kind !== 'video' || videoTracks > 1) && (
                 <button onClick={() => st().removeTrack(t.id)} title="Apagar pista vazia" aria-label="Apagar pista">
                   <Icon name="close" />
                 </button>
@@ -250,6 +410,7 @@ export function Timeline() {
             </div>
           ))}
         </div>
+        {menu && <TrackMenu menu={menu} tracks={tracks} onClose={() => setMenu(null)} onRename={setRenaming} />}
 
         <div className="tl-scroll" ref={scroll} onScroll={(e) => heads.current && (heads.current.scrollTop = e.currentTarget.scrollTop)} onWheel={(e) => (e.ctrlKey ? (e.preventDefault(), st().setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))) : undefined)}>
           <div className="tl-inner" style={{ width }}>
@@ -272,6 +433,7 @@ export function Timeline() {
               <div
                 key={t.id}
                 className={`lane r-${roleOf(t, tracks)}${t.kind === 'text' ? ' text' : ''}${dropLane === t.id ? ' drop' : ''}`}
+                data-lane={t.id}
                 onPointerDown={(e) => {
                   if (e.target === e.currentTarget) {
                     st().select(null);
@@ -293,18 +455,16 @@ export function Timeline() {
                   return (
                     <div
                       key={c.id}
-                      className={`clip ${t.kind}${sel === c.id ? ' sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
-                      style={{ left: c.start * zoom, width: w, opacity: t.hidden ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
+                      className={`clip ${t.kind}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
+                      style={{ left: c.start * zoom, width: w, opacity: t.hidden || (t.kind === 'audio' && t.muted) ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
                       onPointerDown={(e) => onClipDown(e, c, 'move', t.kind)}
-                      onPointerMove={onClipMove}
-                      onPointerUp={onClipUp}
                       onDoubleClick={() => st().seek(c.start)}
                       title={c.text ?? m?.name}
                     >
                       {m?.thumb && t.kind === 'video' && <div className="strip" style={{ backgroundImage: `url(${m.thumb})` }} />}
-                      {m?.peaks && t.kind !== 'text' && (
+                      {m?.peaks && t.kind !== 'text' && !(t.kind === 'video' && c.silent) && (
                         <div className={`wavebox ${t.kind}`}>
-                          <Wave peaks={m.peaks} clip={c} width={w} height={t.kind === 'audio' ? 40 : 18} color={t.kind !== 'audio' ? 'rgba(255,255,255,0.55)' : roleOf(t, tracks) === 'fx' ? 'rgba(255,160,135,0.9)' : 'rgba(110,231,183,0.9)'} />
+                          <Wave peaks={m.peaks} clip={c} width={w} height={t.kind === 'audio' ? 40 : 18} color={t.kind !== 'audio' ? 'rgba(255,255,255,0.55)' : (WAVE[roleOf(t, tracks)] ?? WAVE.music!)} />
                         </div>
                       )}
                       {t.kind === 'audio' && !m?.peaks && <div className="wave" />}
@@ -318,8 +478,8 @@ export function Timeline() {
                         {(c.speed ?? 1) !== 1 && <b className="spd">{c.speed}×</b>}
                         {c.text ?? m?.name ?? 'clip'}
                       </span>
-                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', t.kind)} onPointerMove={onClipMove} onPointerUp={onClipUp} />
-                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', t.kind)} onPointerMove={onClipMove} onPointerUp={onClipUp} />
+                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', t.kind)} />
+                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', t.kind)} />
                     </div>
                   );
                 })}
@@ -341,7 +501,7 @@ export function Timeline() {
 
       <div className="status">
         {busy && <span className="busy" aria-hidden="true" />}
-        <span className="msg">{status ?? 'Espaço reproduz · S corta · Delete apaga · Ctrl+Z desfaz · arrasta media para a timeline'}</span>
+        <span className="msg">{status ?? 'Espaço reproduz · S corta · Delete apaga · Ctrl+Z desfaz · arrasta clips entre pistas · botão direito no nome da pista: opções'}</span>
         <div className="spacer" />
         {progress !== null && (
           <>

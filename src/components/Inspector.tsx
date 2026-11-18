@@ -527,6 +527,19 @@ function AudioTab({ clip, open, toggle }: { clip: Clip; open: (id: string) => bo
   const busy = useEditor((s) => s.busy);
   const vol = clip.volume ?? 1;
   const setVol = (v: number) => st().updateClip(clip.id, { volume: r3(Math.max(0, Math.min(2, v))) });
+  // A video clip whose sound clip was deleted: nothing to turn up, only to bring back.
+  if (clip.silent && !clip.link)
+    return (
+      <Section id="volume" title="Volume" on={false} open={open('volume')} onToggle={toggle}>
+        <div className="card">
+          <h4>Sem som</h4>
+          <p>O som deste clip foi apagado da pista de áudio.</p>
+          <button className="btn" style={{ width: '100%' }} onClick={() => st().restoreSound(clip.id)}>
+            <Icon name="sound" /> Repor o som
+          </button>
+        </div>
+      </Section>
+    );
   return (
     <>
       <Section id="volume" title="Volume" on={Math.abs(vol - 1) > 1e-6} open={open('volume')} onToggle={toggle} onReset={() => setVol(1)}>
@@ -697,7 +710,8 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
   const { clip, track } = f;
   const m = project.media.find((x) => x.id === clip.mediaId);
   const isText = track.kind === 'text';
-  const isAudio = m?.kind === 'audio';
+  // A clip on an audio track is sound only, also when it is the sound of a video (its linked clip).
+  const isAudio = m?.kind === 'audio' || track.kind === 'audio';
   const usable: Record<Tab, boolean> = {
     video: !isAudio,
     audio: Boolean(m?.hasAudio),

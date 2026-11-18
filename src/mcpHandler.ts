@@ -52,16 +52,21 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return { track_id: S().addTrack(kind, s(a.name)) };
     }
     case 'remove_track':
-      S().removeTrack(String(a.track_id));
+      S().removeTrack(String(a.track_id), a.force === true);
       return { ok: true };
+    case 'rename_track':
+      S().renameTrack(String(a.track_id), String(a.name ?? ''));
+      return { ok: true };
+    case 'unlink_clip':
+      return { unlinked: S().unlinkClip(String(a.clip_id)) };
     case 'add_clip': {
       const tk = s(a.track);
-      const track = tk && S().project.tracks.some((t) => t.id === tk) ? tk : tk === 'audio' ? S().project.tracks.find((t) => t.kind === 'audio')?.id : undefined;
+      const track = tk && S().project.tracks.some((t) => t.id === tk) ? tk : tk === 'audio' ? S().project.tracks.find((t) => t.kind === 'audio' && !t.of)?.id : undefined;
       const id = S().addClip(String(a.media_id), { start: n(a.start), in: n(a.in), out: n(a.out), trackId: track });
       return { clip_id: id };
     }
     case 'move_clip':
-      S().moveClip(String(a.clip_id), n(a.start) ?? 0);
+      S().moveClip(String(a.clip_id), n(a.start) ?? findClip(S().project, String(a.clip_id))?.clip.start ?? 0, s(a.track));
       return { ok: true };
     case 'trim_clip':
       S().trimClip(String(a.clip_id), { in: n(a.in), out: n(a.out) });

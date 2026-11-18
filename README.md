@@ -58,13 +58,21 @@ Em todas as páginas os painéis (Média, Visor, Inspetor, Timeline…) mexem-se
 - **Posição:** arrasta o separador com o nome do painel para cima de outro painel: nos lados fica ao lado, em cima ou em baixo; no meio ficam os dois no mesmo sítio, em separadores.
 - Cada página guarda a sua disposição neste computador. **Repor painéis** (canto inferior esquerdo) volta à disposição de origem da página.
 
+## Pistas (como no Resolve)
+
+- **Som à parte**: um vídeo com som fica em dois clips ligados, a imagem na pista de vídeo e o som numa pista de áudio (V1 → A1, V2 → A2). Mover, aparar, cortar ou apagar um mexe no outro. O botão da corrente na timeline desliga isto: com ele desligado cada um mexe-se à parte (apagar só o som, desencontrar som e imagem). Projetos antigos são convertidos ao abrir.
+- **Mudar de pista**: arrasta um clip para cima ou para baixo, para outra pista do mesmo tipo. O som vai atrás da imagem.
+- **Botão direito no nome da pista** (só na coluna da esquerda): mudar o nome, nova pista de vídeo, de áudio ou de legendas, mover para cima ou para baixo, esconder ou silenciar, apagar. Duplo clique no nome também muda o nome.
+- **Legendas**: a pista de legendas apaga-se e cria-se como as outras. Sem nenhuma, é criada sozinha quando se acrescenta um texto ou legendas.
+- Código: `src/lib/links.js` (corre depois de cada alteração, por isso o rato, o Inspetor e o Claude não precisam de saber das ligações), testes em `test/links.test.mjs`.
+
 ## Claude editing
 
 1. Open Cinemex once (it creates the access token).
 2. Run `powershell -File ligar-ao-claude.ps1` (registers the MCP in Claude Code). On macOS: `sh ligar-ao-claude.sh`.
 3. In a new Claude session: "import C:\...\video.mp4, cut the pauses, put Elite Pop captions on it and export it in 9:16".
 
-MCP tools (48): `get_project`, `import_media`, `add_clip`, `move_clip`, `trim_clip`, `split_clip`, `delete_clip`, `add_text`, `update_clip`, `auto_captions`, `cut_silences`, `set_speed`, `set_transition`, `dissolve`, `set_keyframe`, `animate_clip`, `list_capcut`, `import_capcut`, `set_canvas`, `set_color`, `set_caption_style`, `export_srt`, `import_srt`, `set_audio`, `add_mask`, `update_mask`, `remove_mask`, `fusion_add_node`, `fusion_set`, `fusion_link`, `fusion_remove`, `show_page`, `seek`, `export_video`, `save_project`, `open_project`, `list_caption_styles`, `save_caption_style`, `delete_caption_style`, and in v0.10 `add_graphic`, `update_graphic`, `list_sfx`, `add_sfx`, `auto_sfx`, `detect_beats`, `beat_sync`, `add_marker`, `freeze_frame`, and in v0.11 `set_keyframe_ease`, `set_modifier`, `set_blend`, `set_matte`, `add_effect`, `update_effect`, and `set_crop` (Recorte of the Inspector).
+MCP tools (48): `get_project`, `import_media`, `add_clip`, `move_clip`, `trim_clip`, `split_clip`, `delete_clip`, `add_text`, `update_clip`, `auto_captions`, `cut_silences`, `set_speed`, `set_transition`, `dissolve`, `set_keyframe`, `animate_clip`, `list_capcut`, `import_capcut`, `set_canvas`, `set_color`, `set_caption_style`, `export_srt`, `import_srt`, `set_audio`, `add_mask`, `update_mask`, `remove_mask`, `fusion_add_node`, `fusion_set`, `fusion_link`, `fusion_remove`, `show_page`, `seek`, `export_video`, `save_project`, `open_project`, `list_caption_styles`, `save_caption_style`, `delete_caption_style`, and in v0.10 `add_graphic`, `update_graphic`, `list_sfx`, `add_sfx`, `auto_sfx`, `detect_beats`, `beat_sync`, `add_marker`, `freeze_frame`, and in v0.11 `set_keyframe_ease`, `set_modifier`, `set_blend`, `set_matte`, `add_effect`, `update_effect`, `set_crop` (Recorte of the Inspector), and for tracks `add_track`, `remove_track`, `rename_track`, `unlink_clip` (`move_clip` takes a `track`).
 
 Security: the server only listens on 127.0.0.1, requires a bearer token (kept in the app's data folder, not in the discovery file `~/.cinemex/mcp.json`), and refuses any request coming from a web page (Origin header). The interface only plays files that were imported or that are in opened projects.
 

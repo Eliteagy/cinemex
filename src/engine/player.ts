@@ -145,11 +145,12 @@ export class Player {
     this.els.clear();
   }
 
-  private element(clip: Clip | { id: string }, m: Media): El {
+  /** sound=true: only the sound of the media is needed (footage sound on an audio track). */
+  private element(clip: Clip | { id: string }, m: Media, sound = false): El {
     let el = this.els.get(clip.id);
     if (!el || el.dataset.src !== m.path) {
       el?.pause();
-      el = document.createElement(m.kind === 'audio' ? 'audio' : 'video');
+      el = document.createElement(m.kind === 'audio' || sound ? 'audio' : 'video');
       el.preload = 'auto';
       el.crossOrigin = 'anonymous';
       el.dataset.src = m.path;
@@ -244,10 +245,12 @@ export class Player {
       if (audible) {
         const m = media.get(audible.mediaId ?? '');
         if (m && m.kind !== 'image') {
-          const el = this.element(audible, m);
+          const el = this.element(audible, m, track.kind === 'audio');
           used.add(audible.id);
           const fade = audioFade(audible, t - audible.start);
-          this.sync(el, srcTime(audible, t), playing, track.muted ? 0 : (audible.volume ?? 1) * fade, speedOf(audible));
+          // A silent video clip plays no sound: its sound is the linked clip on an audio track.
+          const quiet = track.muted || (track.kind === 'video' && audible.silent);
+          this.sync(el, srcTime(audible, t), playing, quiet ? 0 : (audible.volume ?? 1) * fade, speedOf(audible));
         }
       }
       if (!clip || track.kind !== 'video') continue;

@@ -170,6 +170,10 @@ export interface Clip {
   in: number;
   out: number;
   volume?: number;
+  /** Picture and sound of the same footage: a video clip and its sound clip on an audio track share this id (src/lib/links.js). */
+  link?: string;
+  /** Video clip that plays no sound of its own: the sound is its linked clip on an audio track (or was removed). */
+  silent?: boolean;
   fit?: 'fill' | 'fit';
   /** Source orientation, degrees counter-clockwise like Resolve's rotation (0, 90, 180, 270): footage shot sideways. Applied before framing. */
   orient?: 0 | 90 | 180 | 270;
@@ -277,6 +281,8 @@ export interface Track {
   name: string;
   muted?: boolean;
   hidden?: boolean;
+  /** Audio track that holds the sound of this video track (its id): V1 -> A1 (src/lib/links.js). */
+  of?: string;
   clips: Clip[];
 }
 

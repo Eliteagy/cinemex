@@ -196,11 +196,14 @@ export function describeProject() {
       name: t.name,
       muted: Boolean(t.muted),
       hidden: Boolean(t.hidden),
+      ...(t.of ? { sound_of: t.of } : {}),
       clips: t.clips.map((c: Clip) => ({
         id: c.id,
         start: c.start,
         duration: Math.round(dur(c) * 1000) / 1000,
         ...(c.mediaId ? { media_id: c.mediaId, in: c.in, out: c.out, volume: c.volume ?? 1, fit: c.fit ?? 'fill', speed: c.speed ?? 1 } : {}),
+        ...(c.link ? { link: c.link } : {}),
+        ...(c.silent ? { silent: true } : {}),
         ...(c.transitionIn ? { transition_in: c.transitionIn } : {}),
         ...(c.transitionOut ? { transition_out: c.transitionOut } : {}),
         ...(c.keyframes ? { keyframes: c.keyframes } : {}),
@@ -338,7 +341,7 @@ export async function detectBeats(clipId?: string, sensitivity = 1) {
   const p = S().project;
   let clip: Clip | undefined;
   if (clipId) clip = findClip(p, clipId)?.clip;
-  else clip = p.tracks.filter((t) => t.kind === 'audio' && !/^(sfx|efeitos)/i.test(t.name)).flatMap((t) => t.clips)[0];
+  else clip = p.tracks.filter((t) => t.kind === 'audio' && !t.of && !/^(sfx|efeitos)/i.test(t.name)).flatMap((t) => t.clips)[0];
   if (!clip?.mediaId) throw new Error('Põe uma música na pista de áudio (ou indica o clip)');
   let m = p.media.find((x) => x.id === clip!.mediaId);
   if (!m?.hasAudio) throw new Error('Esse clip não tem som');

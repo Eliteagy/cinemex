@@ -1134,7 +1134,8 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         }
         if (front) fronts.push({ label: front, x: xExpr, start, end });
       }
-      const vol = track.muted || remap ? 0 : (c.volume ?? 1);
+      // A silent video clip has its sound as a linked clip on an audio track (src/lib/links.js).
+      const vol = track.muted || remap || (track.kind === 'video' && c.silent) ? 0 : (c.volume ?? 1);
       if (m.hasAudio && vol > 0) {
         const ms = Math.round(start * 1000);
         const a = `a${audio.length}`;
@@ -1144,7 +1145,8 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
         achain.push(`adelay=${ms}:all=1`);
         filters.push(`[${k}:a]${achain.join(',')}[${a}]`);
         audio.push(a);
-        (track.kind === 'audio' ? music : voice).push(a);
+        // Music is ducked under the voice. The sound of a video clip is voice also on its audio track (linked clip).
+        (track.kind === 'audio' && !c.link && !track.of ? music : voice).push(a);
       }
     }
   }

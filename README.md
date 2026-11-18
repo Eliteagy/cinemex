@@ -78,6 +78,10 @@ No painel Média, separador **Efeitos**, cartão **Geradores**. Arrastam-se para
 - **Nós do Fusion para compor**: *Fundo* (cor sólida ou gradiente horizontal, vertical, com ângulo ou radial), máscaras *Retângulo* (cantos redondos) e *Elipse* (centro, tamanho, suavidade, inverter) e *Juntar* com entrada de máscara (a frente só aparece onde a máscara é opaca). Fórmulas partilhadas pelo preview e pela exportação em `src/lib/fusionfx.js`.
 - Código: `src/lib/generators.js`. O preview (`Player.adjust`, `genPicture`) e a exportação (`electron/render.cjs`) tratam a cor sólida e a composição como uma imagem do tamanho do quadro, por isso transformar, opacidade, máscaras, efeitos e Fusion funcionam nelas. Testes: `test/generators.test.mjs`.
 
+## Atalhos de teclado
+
+Botão **Atalhos** na barra de baixo (ou ⌘/Ctrl+Alt+K): a lista do que cada tecla faz. Clica num atalho e carrega nas teclas novas; se já eram de outra ação, passam para a nova. O ✕ tira o atalho, a seta repõe o original, **Repor todos** repõe tudo. Ficam guardados neste computador (não vão para o outro). Lista de ações e teclas de origem: `src/keys.ts`.
+
 ## Claude editing
 
 1. Open Cinemex once (it creates the access token).

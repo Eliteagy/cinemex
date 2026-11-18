@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { useEditor } from './store';
-import { exportVideo, importDialog, importPaths, openProject, saveProject } from './actions';
+import { importPaths } from './actions';
 import { handleMcp } from './mcpHandler';
 import { useState } from 'react';
 import type { DoneExport } from './components/Deliver';
@@ -11,7 +11,8 @@ import { ClaudePanel } from './components/ClaudePanel';
 import { LigacaoPanel } from './components/Ligacao';
 import { initCollab } from './collab';
 import { useChat } from './chat';
-import { openNodePicker } from './components/Fusion';
+import { handleKey, useKeys } from './keys';
+import { Shortcuts } from './components/Shortcuts';
 
 const PAGES = [
   { id: 'media', label: 'Média', icon: 'import' },
@@ -48,38 +49,12 @@ export function App() {
     return () => removeEventListener('keydown', onKey, true);
   }, []);
 
-  // Keyboard shortcuts (not while typing in a field).
+  // Keyboard shortcuts (not while typing in a field). What each key does: src/keys.ts, changed in "Atalhos".
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest('input, textarea, select')) return;
-      const s = useEditor.getState();
-      const ctrl = e.ctrlKey || e.metaKey;
-      const fps = s.project.canvas.fps;
-      const k = e.key.toLowerCase();
-      if (ctrl && k === 'z') s[e.shiftKey ? 'redo' : 'undo']();
-      else if (ctrl && k === 'y') s.redo();
-      else if (ctrl && k === 's') void saveProject();
-      else if (ctrl && k === 'o') void openProject();
-      else if (ctrl && k === 'i') void importDialog();
-      else if (ctrl && k === 'e') void exportVideo().catch(() => {});
-      else if (ctrl) return;
-      else if (e.key === ' ' && e.shiftKey && s.page === 'fusion') openNodePicker();
-      else if (e.key === ' ') s.setPlaying(!s.playing);
-      else if (k === 's' || k === 'c') s.splitAt(s.playhead, s.selected);
-      else if (e.key === 'Delete' || e.key === 'Backspace') s.selected && s.deleteClip(s.selected, e.shiftKey);
-      else if (k === 't') s.addText('Texto', s.playhead, 3, 'title');
-      else if (k === 'm') s.addMarker(s.playhead);
-      else if (e.key === 'Home') s.seek(0);
-      else if (e.key === 'End') s.seek(1e9);
-      else if (e.key === 'ArrowLeft') s.seek(s.playhead - (e.shiftKey ? 1 : 1 / fps));
-      else if (e.key === 'ArrowRight') s.seek(s.playhead + (e.shiftKey ? 1 : 1 / fps));
-      else if (e.key === '+' || e.key === '=') s.setZoom(s.zoom * 1.4);
-      else if (e.key === '-') s.setZoom(s.zoom / 1.4);
-      else if (e.key === 'Escape') s.select(null);
-      else if (e.shiftKey && /^Digit[1-6]$/.test(e.code)) s.setPage(PAGES[Number(e.code.slice(5)) - 1]!.id);
-      else return;
-      e.preventDefault();
+      if (handleKey(e)) e.preventDefault();
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
@@ -112,6 +87,7 @@ export function App() {
       </DeliverContext.Provider>
       <ClaudePanel />
       <LigacaoPanel />
+      <Shortcuts />
       <nav className="pagebar" aria-label="Páginas">
         <div className="pages">
         {PAGES.map((p) => (
@@ -130,6 +106,9 @@ export function App() {
           }}
         >
           Repor painéis
+        </button>
+        <button className="pill dock-reset keys-open" title="Ver e mudar o que cada tecla faz" onClick={() => useKeys.getState().setOpen(true)}>
+          Atalhos
         </button>
         <span className={`pill mcp${mcp ? ' on' : ''}`} title={mcp ? `Servidor MCP: ${mcp}` : 'Servidor MCP desligado'}>
           <span className="dot" />

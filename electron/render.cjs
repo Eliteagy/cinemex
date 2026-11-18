@@ -751,7 +751,8 @@ function buildAss(project, { files, userFonts = true } = {}) {
   const events = [];
   const gfxStyles = new Set();
   for (const track of project.tracks) {
-    if (track.kind !== 'text' || track.hidden) continue;
+    // Texts are clips on video tracks (older projects: on tracks of kind 'text').
+    if (track.kind === 'audio' || track.hidden) continue;
     for (const c of track.clips) {
       if (c.graphic) {
         graphicAss(c, W, H, events, gfxStyles, files, userFonts);
@@ -930,7 +931,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   };
 
   for (const track of project.tracks) {
-    if (track.kind === 'text' || track.hidden) continue;
+    if (track.hidden) continue;
     for (const c of track.clips) {
       const m = media.get(c.mediaId);
       if (!m) continue;
@@ -1155,7 +1156,8 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   // card's fades, before the captions and graphics are drawn over it (preview: src/engine/graphics.ts).
   let gi = 0;
   for (const track of project.tracks) {
-    if (track.kind !== 'text' || track.hidden) continue;
+    // Texts are clips on video tracks (older projects: on tracks of kind 'text').
+    if (track.kind === 'audio' || track.hidden) continue;
     for (const c of track.clips) {
       if (!c.graphic) continue;
       for (const e of graphicEvents(c.graphic, clipDuration(c), W, H)) {

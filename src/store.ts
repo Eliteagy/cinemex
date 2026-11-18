@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { CanvasPreset, Clip, Media, Project, Track } from './types';
-import { KEY_DEFAULT, PRESETS, STYLES, activeClip, dur, end, findClip, kfValue, newProject, projectDuration, r3, speechSegments, speedOf, trackEnd, uid } from './lib/project';
+import { KEY_DEFAULT, PRESETS, STYLES, activeClip, dur, end, findClip, isText, kfValue, newProject, projectDuration, r3, speechSegments, speedOf, trackEnd, uid } from './lib/project';
 import type { AudioSettings, CaptionStyle, FNode, FNodeType, Fusion, Grade, KeyProp, Mask, MaskMode, Transition } from './types';
 import fusionNodes from './lib/fusion-nodes.json';
 import type { CaptionOverride } from './types';
@@ -13,7 +13,7 @@ import type { Graphic, GraphicKind, Marker } from './types';
 import type { BlendMode, Ease, Effect, Matte, Modifier } from './types';
 import { EFFECT_DEFAULTS } from './lib/layerfx.js';
 import { cleanBlendIf } from './lib/pslayer.js';
-import { separateAudio, syncLinks, unlink } from './lib/links.js';
+import { separateAudio, syncLinks, textToVideo, unlink } from './lib/links.js';
 
 const MAX_HISTORY = 150;
 const clone = <T,>(v: T): T => structuredClone(v);
@@ -63,7 +63,7 @@ export interface EditorState {
   deleteClip(id: string, ripple?: boolean): void;
   cutSilences(id: string, minPause?: number, padding?: number): { removed: number; pieces: number; ids: string[]; range: { start: number; end: number } };
   toggleTrack(id: string, key: 'muted' | 'hidden'): void;
-  /** New empty track: video above the other video tracks, audio and text after their own kind. Returns its id. */
+  /** New empty track: video on top of the other video tracks, audio after the other audio tracks ('text' = a video track named for captions). Returns its id. */
   addTrack(kind: Track['kind'], name?: string): string;
   /** Removes a track. With clips only when force=true (the clips go too). The last video track stays. */
   removeTrack(id: string, force?: boolean): void;
@@ -226,16 +226,32 @@ function mediaOf(p: Project, id?: string) {
 const ownTracks = (p: Project, kind: Track['kind']) => p.tracks.filter((t) => t.kind === kind && !(kind === 'audio' && t.of));
 
 /** The first track of a kind, made when the project has none (every track can be deleted). */
-function trackOf(p: Project, kind: Track['kind']): Track {
+function trackOf(p: Project, kind: 'video' | 'audio'): Track {
   const found = ownTracks(p, kind)[0];
   if (found) return found;
-  const prefix = kind === 'video' ? 'v' : kind === 'audio' ? 'a' : 't';
+  const prefix = kind === 'video' ? 'v' : 'a';
   let n = 1;
   while (p.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
-  const t: Track = { id: `${prefix}${n}`, kind, name: kind === 'video' ? `V${n}` : kind === 'audio' ? 'Música' : 'Legendas', clips: [] };
-  // Text over the video tracks, audio at the end.
+  const t: Track = { id: `${prefix}${n}`, kind, name: kind === 'video' ? `V${n}` : 'Música', clips: [] };
   if (kind === 'audio') p.tracks.push(t);
-  else p.tracks.splice(p.tracks.map((x) => x.kind).lastIndexOf('video') + 1, 0, t);
+  else p.tracks.unshift(t);
+  return t;
+}
+
+/** Texts of a track (titles, captions, graphics): clips on video tracks, like any other. */
+const textsOf = (t: Track) => (t.kind === 'audio' ? [] : t.clips.filter(isText));
+
+/** Where new titles and captions go: the video track that already has them, else a "Legendas" track on top (made when missing). */
+function textTrack(p: Project): Track {
+  const vids = p.tracks.filter((t) => t.kind === 'video');
+  const hasText = (t: Track) => t.clips.some((c) => isText(c) && !c.graphic);
+  // A track with only texts first, then an empty one named for them, then any track that has a text.
+  const found = vids.find((t) => hasText(t) && t.clips.every(isText)) ?? vids.find((t) => !t.clips.length && /legenda|texto|caption|subtitle/i.test(t.name)) ?? vids.find(hasText);
+  if (found) return found;
+  let id = 'tx';
+  for (let n = 2; p.tracks.some((t) => t.id === id); n++) id = `tx${n}`;
+  const t: Track = { id, kind: 'video', name: 'Legendas', clips: [] };
+  p.tracks.splice(p.tracks.map((x) => x.kind).lastIndexOf('video') + 1, 0, t);
   return t;
 }
 
@@ -310,7 +326,8 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   load(p, path = null) {
     const mine = migrateCaptionStyle(p);
-    // Projects made before sound had its own track: the sound of each video clip goes to an audio track.
+    // Older projects: captions tracks become video tracks, and the sound of each video clip goes to an audio track.
+    textToVideo(p);
     separateAudio(p);
     if (mine && !get().userStyles[MY_STYLE_ID]) void get().saveUserStyle(MY_STYLE_ID, mine).catch(() => {});
     set({ project: p, filePath: path, dirty: false, past: [], future: [], selected: null, playhead: 0, playing: false });
@@ -359,7 +376,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   addText(text, start, duration, style = 'title', y) {
     const id = uid('c');
     get().commit((p) => {
-      const t = trackOf(p, 'text');
+      const t = textTrack(p);
       t.clips.push({ id, start: r3(Math.max(0, start)), in: 0, out: r3(Math.max(minLen, duration)), text, style, ...(y !== undefined ? { y } : {}) });
       t.clips.sort((a, b) => a.start - b.start);
     });
@@ -368,7 +385,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   replaceAutoCaptions(range, clips) {
     get().commit((p) => {
-      const t = trackOf(p, 'text');
+      const t = textTrack(p);
       t.clips = t.clips.filter((c) => !c.auto || (range && (end(c) <= range.start || c.start >= range.end)));
       for (const c of clips) t.clips.push({ ...c, id: uid('c'), auto: true });
       t.clips.sort((a, b) => a.start - b.start);
@@ -627,7 +644,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   setMatte(id, matte) {
     get().commit((p) => {
       const f = findClip(p, id);
-      if (!f || f.track.kind !== 'video') throw new Error('Track matte só em clips de vídeo ou imagem');
+      if (!f || f.track.kind !== 'video' || isText(f.clip)) throw new Error('Track matte só em clips de vídeo ou imagem');
       if (matte) f.clip.matte = matte;
       else delete f.clip.matte;
     });
@@ -660,14 +677,14 @@ export const useEditor = create<EditorState>((set, get) => ({
   addGraphic(kind, start, duration, patch = {}) {
     const id = uid('c');
     get().commit((p) => {
-      // Graphics go on their own text tracks ("Grafismos"), a free one or a new one, so they never sit on the captions.
+      // Graphics go on their own tracks ("Grafismos"), a free one or a new one on top, so they never sit on the captions.
       const len = Math.max(minLen, duration);
       const free = (x: Track) => !x.clips.some((c) => c.start < start + len - 0.001 && end(c) > start + 0.001);
-      let t = p.tracks.find((x) => x.kind === 'text' && /^Grafismos/.test(x.name) && free(x));
+      let t = p.tracks.find((x) => x.kind === 'video' && /^Grafismos/.test(x.name) && free(x));
       if (!t) {
-        const n = p.tracks.filter((x) => x.kind === 'text' && /^Grafismos/.test(x.name)).length;
-        t = { id: uid('g'), kind: 'text', name: n ? `Grafismos ${n + 1}` : 'Grafismos', clips: [] };
-        const last = p.tracks.map((x) => x.kind).lastIndexOf('text');
+        const n = p.tracks.filter((x) => x.kind === 'video' && /^Grafismos/.test(x.name)).length;
+        t = { id: uid('g'), kind: 'video', name: n ? `Grafismos ${n + 1}` : 'Grafismos', clips: [] };
+        const last = p.tracks.map((x) => x.kind).lastIndexOf('video');
         p.tracks.splice(last + 1, 0, t);
       }
       const g = graphicOf({ ...patch, kind });
@@ -749,7 +766,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     get().commit((p) => {
       for (const t of p.tracks) {
         if (t.kind !== 'video') continue;
-        const clips = [...t.clips].sort((a, b) => a.start - b.start);
+        const clips = t.clips.filter((c) => !isText(c)).sort((a, b) => a.start - b.start);
         // Walk left to right: each clip's out moves to the nearest beat, the rest of the track follows.
         for (let i = 0; i < clips.length; i++) {
           const c = clips[i]!;
@@ -812,6 +829,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     return id;
   },
   replaceProject(p) {
+    textToVideo(p);
     separateAudio(p);
     set((s) => ({ project: p, past: [...s.past, s.project].slice(-MAX_HISTORY), future: [], dirty: true, selected: null, playhead: 0, playing: false, filePath: null }));
   },
@@ -881,8 +899,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const id = style === 'custom' ? MY_STYLE_ID : style;
     get().commit((p) => {
       for (const t of p.tracks)
-        if (t.kind === 'text')
-          for (const c of t.clips) {
+        for (const c of textsOf(t)) {
             if (ids !== 'all' && !ids.includes(c.id)) continue;
             c.style = id;
             delete c.size;
@@ -904,8 +921,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const isCaption = (c: Clip) => c.id === src.id || c.auto || (c.style ?? 'elite') === style;
     get().commit((p) => {
       for (const t of p.tracks)
-        if (t.kind === 'text')
-          for (const c of t.clips) {
+        for (const c of textsOf(t)) {
             if (!isCaption(c)) continue;
             c.style = style;
             for (const k of ['x', 'y'] as const) {
@@ -927,8 +943,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     let n = 0;
     get().commit((p) => {
       for (const t of p.tracks)
-        if (t.kind === 'text')
-          for (const c of t.clips) {
+        for (const c of textsOf(t)) {
             if (ids !== 'all' && !ids.includes(c.id)) continue;
             if (!patch) {
               delete c.override;
@@ -948,8 +963,8 @@ export const useEditor = create<EditorState>((set, get) => ({
     let ok = false;
     get().commit((p) => {
       const f = findClip(p, id);
-      if (!f || f.track.kind !== 'text') return;
-      const sorted = [...f.track.clips].sort((a, b) => a.start - b.start);
+      if (!f || !isText(f.clip)) return;
+      const sorted = textsOf(f.track).sort((a, b) => a.start - b.start);
       const next = sorted[sorted.indexOf(f.clip) + 1];
       if (!next) return;
       const a = f.clip;
@@ -969,15 +984,14 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   updateCaptions(ids, patch) {
     get().commit((p) => {
-      for (const t of p.tracks) if (t.kind === 'text') for (const c of t.clips) if (ids.includes(c.id)) Object.assign(c, patch);
+      for (const t of p.tracks) for (const c of textsOf(t)) if (ids.includes(c.id)) Object.assign(c, patch);
     });
   },
   setCaptionLines(ids, lines) {
     let n = 0;
     get().commit((p) => {
       for (const t of p.tracks)
-        if (t.kind === 'text')
-          for (const c of t.clips) {
+        for (const c of textsOf(t)) {
             if (ids !== 'all' && !ids.includes(c.id)) continue;
             const l = cleanLines(lines);
             if (l) c.lines = l;
@@ -1107,8 +1121,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   addCaptions(list, replace, style = 'clean') {
     get().commit((p) => {
-      const t = trackOf(p, 'text');
-      if (replace) t.clips = [];
+      const t = textTrack(p);
+      if (replace) t.clips = t.clips.filter((c) => !isText(c));
       for (const s of list) {
         const len = r3(Math.max(minLen, s.end - s.start));
         t.clips.push({ id: uid('c'), start: r3(Math.max(0, s.start)), in: 0, out: len, text: s.text, style });
@@ -1127,18 +1141,25 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
   addTrack(kind, name) {
-    const prefix = kind === 'video' ? 'v' : kind === 'audio' ? 'a' : 't';
+    // 'text' is a video track by another name: texts are clips on video tracks.
+    const real = kind === 'audio' ? 'audio' : 'video';
+    const prefix = kind === 'audio' ? 'a' : kind === 'text' ? 't' : 'v';
     let id = '';
     get().commit((p) => {
-      const same = p.tracks.filter((t) => t.kind === kind);
-      let n = same.length + 1;
+      const taken = (label: string) => p.tracks.some((t) => t.name.trim().toLowerCase() === label.toLowerCase());
+      let n = 1;
       while (p.tracks.some((t) => t.id === `${prefix}${n}`)) n++;
       id = `${prefix}${n}`;
-      const label = name?.trim() || (kind === 'video' ? `V${n}` : kind === 'audio' ? `Áudio ${n}` : same.length ? `Texto ${n}` : 'Legendas');
-      const last = p.tracks.map((t) => t.kind).lastIndexOf(kind);
-      // The first track of a kind: video at the bottom, text over the video tracks, audio at the end.
-      const at = last >= 0 ? last + 1 : kind === 'video' ? 0 : kind === 'text' ? p.tracks.map((t) => t.kind).lastIndexOf('video') + 1 : p.tracks.length;
-      p.tracks.splice(at, 0, { id, kind, name: label, clips: [] });
+      let label = name?.trim() ?? '';
+      if (!label && kind === 'text' && !taken('Legendas')) label = 'Legendas';
+      for (let k = 1; !label; k++) {
+        const next = kind === 'video' ? `V${k}` : kind === 'audio' ? `Áudio ${k}` : `Texto ${k}`;
+        if (!taken(next)) label = next;
+      }
+      // Video on top of the other video tracks, audio after the other audio tracks.
+      const last = p.tracks.map((t) => t.kind).lastIndexOf(real);
+      const at = last >= 0 ? last + 1 : real === 'video' ? 0 : p.tracks.length;
+      p.tracks.splice(at, 0, { id, kind: real, name: label, clips: [] });
     });
     return id;
   },

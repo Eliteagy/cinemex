@@ -7,7 +7,7 @@
 // says "this section has changes" (there is no bypass yet).
 import { useRef, useState, type ReactNode } from 'react';
 import { useEditor } from '../store';
-import { KEY_DEFAULT, baseStyle, dur, findClip, fmtShort, kfValue, projectDuration, r3, speedOf } from '../lib/project';
+import { KEY_DEFAULT, baseStyle, dur, findClip, fmtShort, isText as isTextClip, kfValue, projectDuration, r3, speedOf } from '../lib/project';
 import { autoCaptions, cutSilences } from '../actions';
 import { BLEND_LABELS, BLEND_MODES } from '../lib/layerfx.js';
 import { CROP_ID, cropOf, setCrop } from '../lib/crop.js';
@@ -709,7 +709,7 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
 
   const { clip, track } = f;
   const m = project.media.find((x) => x.id === clip.mediaId);
-  const isText = track.kind === 'text';
+  const isText = isTextClip(clip);
   // A clip on an audio track is sound only, also when it is the sound of a video (its linked clip).
   const isAudio = m?.kind === 'audio' || track.kind === 'audio';
   const usable: Record<Tab, boolean> = {

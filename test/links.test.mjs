@@ -6,10 +6,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { audioTrackFor, partnersOf, separateAudio, syncLinks, unlink } from '../src/lib/links.js';
+import { audioTrackFor, partnersOf, separateAudio, syncLinks, textToVideo, unlink } from '../src/lib/links.js';
 
 const require = createRequire(import.meta.url);
-const { runExport } = require('../electron/render.cjs');
+const { runExport, buildExport } = require('../electron/render.cjs');
 
 const project = () => ({
   media: [
@@ -188,4 +188,41 @@ test('real export: the sound of a video is heard from its audio track, once', { 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('texts are clips on video tracks: old captions tracks become video tracks, on top, in the same order', () => {
+  const p = project();
+  p.tracks.splice(3, 0, { id: 'gx', kind: 'text', name: 'Grafismos', clips: [] });
+  track(p, 'tx').clips.push({ id: 't1', start: 0, in: 0, out: 2, text: 'Olá' });
+  assert.equal(textToVideo(p), 2);
+  assert.deepEqual(p.tracks.map((t) => `${t.kind}:${t.name}`), ['video:V1', 'video:V2', 'video:Grafismos', 'video:Legendas', 'audio:Música']);
+  // On screen video tracks are listed last first: Legendas stays above Grafismos, both above V2.
+  assert.equal(track(p, 'tx').clips[0].text, 'Olá');
+  assert.equal(textToVideo(p), 0);
+  // Any edit that still makes a track of kind 'text' ends with a video track.
+  const q = edit(p, (n) => void n.tracks.push({ id: 'wm', kind: 'text', name: 'Marca de água', clips: [] }));
+  assert.equal(q.tracks.some((t) => t.kind === 'text'), false);
+  assert.equal(q.tracks.findLast((t) => t.kind === 'video').id, 'wm');
+});
+
+test('export: a text on a video track, next to a picture clip, is written like one on an old captions track', () => {
+  const base = (kind) => ({
+    name: 't', canvas: { w: 320, h: 240, fps: 30, preset: '16:9' },
+    media: [{ id: 'm', path: 'x.mp4', kind: 'video', duration: 4, hasAudio: false }],
+    tracks: [
+      { id: 'v1', kind: 'video', name: 'V1', clips: [{ id: 'c1', mediaId: 'm', start: 0, in: 0, out: 4, fit: 'fill' }] },
+      { id: 'tx', kind, name: 'Legendas', clips: [{ id: 't1', start: 1, in: 0, out: 2, text: 'Olá mundo', style: 'clean' }] },
+    ],
+  });
+  const old = buildExport(base('text'), 'o.mp4');
+  const now = buildExport(base('video'), 'o.mp4');
+  assert.match(now.ass, /Olá mundo/);
+  assert.equal(now.ass, old.ass);
+  assert.deepEqual(now.args, old.args);
+  // Same track as the picture: still one picture input, and the text is there.
+  const mixed = base('video');
+  mixed.tracks[0].clips.push(mixed.tracks[1].clips.pop());
+  const one = buildExport(mixed, 'o.mp4');
+  assert.match(one.ass, /Olá mundo/);
+  assert.equal(one.args.filter((a) => a === '-i').length, now.args.filter((a) => a === '-i').length);
 });

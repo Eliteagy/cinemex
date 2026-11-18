@@ -3,7 +3,7 @@
 import { useEditor } from './store';
 import type { CaptionOptions, CaptionOverride, Clip, Media, Project, TranscribeOptions } from './types';
 import { cleanOverride } from './lib/capstyle.js';
-import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime } from './lib/project';
+import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips } from './lib/project';
 import { detectBeats as findBeats } from './lib/fx.js';
 
 /** The project with every saved caption style its captions use embedded (renders the same on another PC). */
@@ -97,9 +97,9 @@ export async function cutSilences(clipId: string, minPause = 0.5, padding = 0.12
   const m = f && S().project.media.find((x) => x.id === f.clip.mediaId);
   if (!f || !m) throw new Error('Escolhe um clip de vídeo');
   await ensureTranscript(m);
-  const text = S().project.tracks.find((t) => t.kind === 'text');
-  const hadCaptions = Boolean(text?.clips.some((c) => c.auto && c.start < end(f.clip) && end(c) > f.clip.start));
-  const style = text?.clips.find((c) => c.auto)?.style ?? 'elite';
+  const texts = textClips(S().project);
+  const hadCaptions = texts.some((c) => c.auto && c.start < end(f.clip) && end(c) > f.clip.start);
+  const style = texts.find((c) => c.auto)?.style ?? 'elite';
   const r = S().cutSilences(clipId, minPause, padding);
   // Captions made before the cut no longer line up: remake them for the new pieces.
   if (hadCaptions) {
@@ -316,9 +316,9 @@ export async function autoSfx(modes: ('transitions' | 'cuts' | 'graphics')[] = [
       else if (modes.includes('transitions') && tr === 'bflash') want.push({ id: 'flash', at: c.start });
     }
   if (modes.includes('cuts') && video[0])
-    for (const c of video[0].clips) if (c.start > 0.05 && !c.transitionIn) want.push({ id: 'swoosh', at: c.start });
+    for (const c of video[0].clips) if (c.mediaId && c.start > 0.05 && !c.transitionIn) want.push({ id: 'swoosh', at: c.start });
   if (modes.includes('graphics'))
-    for (const t of p.tracks) if (t.kind === 'text') for (const c of t.clips) if (c.graphic && c.graphic.kind !== 'progress') want.push({ id: 'pop', at: c.start + 0.05 });
+    for (const c of textClips(p)) if (c.graphic && c.graphic.kind !== 'progress') want.push({ id: 'pop', at: c.start + 0.05 });
   // Skip places that already have an effect close by.
   const sfxTrack = p.tracks.find((t) => t.kind === 'audio' && /^(sfx|efeitos)/i.test(t.name));
   const taken = (sfxTrack?.clips ?? []).map((c) => c.start);

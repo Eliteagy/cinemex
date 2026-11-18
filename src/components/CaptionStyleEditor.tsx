@@ -2,7 +2,7 @@
 // installed fonts, each shown in its own face), the per-caption look card and the style editor.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../store';
-import { STYLES, baseStyle, findClip, styleOf } from '../lib/project';
+import { STYLES, baseStyle, findClip, isText, styleOf } from '../lib/project';
 import { applyOverride } from '../lib/capstyle.js';
 import { USER_FONTS, lineOffset } from '../lib/emphasis.js';
 import { getDragScope, setDragScope, targetIds, type DragScope } from './CaptionOverlay';
@@ -439,7 +439,7 @@ export function StyleEditor({ id, from, onClose }: { id: string | null; from: Ca
 export function useSelectedCaption(): Clip | null {
   return useEditor((s) => {
     const f = s.selected ? findClip(s.project, s.selected) : null;
-    return f && f.track.kind === 'text' ? f.clip : null;
+    return f && isText(f.clip) ? f.clip : null;
   });
 }
 

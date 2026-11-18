@@ -2,7 +2,7 @@
 // the caption style on the right. SRT import/export for YouTube, Instagram and translators.
 import { useMemo, useState } from 'react';
 import { useEditor } from '../store';
-import { STYLES, baseStyle, end, fmtTime, parseSrt, r3, styleOf, toSrt } from '../lib/project';
+import { STYLES, baseStyle, end, fmtTime, isText, parseSrt, r3, styleOf, textClips, toSrt } from '../lib/project';
 import type { CaptionStyle } from '../types';
 import { MY_STYLE_ID } from '../lib/capstyle.js';
 import { CaptionLook, StyleEditor, useSelectedCaption } from './CaptionStyleEditor';
@@ -14,7 +14,7 @@ import { Icon } from './Icon';
 
 export function CaptionList() {
   const tracks = useEditor((s) => s.project.tracks);
-  const clips = useMemo(() => tracks.filter((t) => t.kind === 'text').flatMap((t) => t.clips).sort((a, b) => a.start - b.start), [tracks]);
+  const clips = useMemo(() => tracks.flatMap((t) => (t.kind === 'audio' ? [] : t.clips.filter(isText))).sort((a, b) => a.start - b.start), [tracks]);
   const selected = useEditor((s) => s.selected);
   const playhead = useEditor((s) => s.playhead);
   const project = useEditor((s) => s.project);
@@ -130,7 +130,7 @@ export function CaptionStylePanel() {
   const project = useEditor((s) => s.project);
   const userStyles = useEditor((s) => s.userStyles);
   const sel = useSelectedCaption();
-  const first = useEditor((s) => s.project.tracks.find((t) => t.kind === 'text')?.clips[0]?.style ?? 'elite');
+  const first = useEditor((s) => textClips(s.project)[0]?.style ?? 'elite');
   const [editing, setEditing] = useState<{ id: string | null; from: CaptionStyle; n: number } | null>(null);
   const s = () => useEditor.getState();
   const raw = sel?.style ?? first;

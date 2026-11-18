@@ -238,7 +238,6 @@ export class Player {
     const nowShown = new Set<string>();
 
     for (const track of project.tracks) {
-      if (track.kind === 'text') continue;
       const clip = track.hidden && track.kind === 'video' ? null : activeClip(track, t);
       // Audio of every active media clip, also on hidden video tracks.
       const audible = track.kind === 'audio' || track.kind === 'video' ? activeClip(track, t) : null;
@@ -518,7 +517,8 @@ export class Player {
       last.getContext('2d')!.drawImage(this.canvas, 0, 0);
     }
 
-    for (const track of project.tracks) if (track.kind === 'text' && !track.hidden) this.drawText(track, t, cw, ch, project);
+    // Texts (titles, captions, graphics) are clips on the video tracks, drawn over the picture.
+    for (const track of project.tracks) if (track.kind !== 'audio' && !track.hidden) this.drawText(track, t, cw, ch, project);
     for (const f of fronts) {
       ctx.save();
       ctx.globalAlpha = f.alpha;

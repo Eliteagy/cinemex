@@ -4,7 +4,7 @@
 import { useEditor } from './store';
 import { ensureTranscript, importPaths } from './actions';
 import { checkCaptions, chaptersPrompt, fixCaptions, parseChapters, parseTranslation, transcriptLines, translatePrompt, TRANSLATE_BATCH, youtubeChapters } from './lib/aivideo.js';
-import { end, projectDuration, uid } from './lib/project';
+import { end, isText, projectDuration, uid } from './lib/project';
 import type { CanvasPreset, Clip, Hotclip, Media, Track } from './types';
 
 const S = () => useEditor.getState();
@@ -86,9 +86,10 @@ export async function aiChapters(opts: { mediaId?: string; markers?: boolean } =
 /** The caption clips (text track 'Legendas' or every auto caption), sorted. */
 function captionClips(trackId?: string): { track: Track; clips: Clip[] } {
   const p = S().project;
-  const track = (trackId ? p.tracks.find((t) => t.id === trackId) : p.tracks.find((t) => t.kind === 'text' && t.clips.some((c) => c.words?.length || c.auto))) ?? p.tracks.find((t) => t.kind === 'text');
-  if (!track) throw new Error('Não há faixa de legendas');
-  return { track, clips: track.clips.filter((c) => !c.graphic).sort((a, b) => a.start - b.start) };
+  const vids = p.tracks.filter((t) => t.kind !== 'audio');
+  const track = (trackId ? p.tracks.find((t) => t.id === trackId) : vids.find((t) => t.clips.some((c) => isText(c) && (c.words?.length || c.auto)))) ?? vids.find((t) => t.clips.some((c) => isText(c) && !c.graphic));
+  if (!track) throw new Error('Não há legendas na timeline');
+  return { track, clips: track.clips.filter((c) => isText(c) && !c.graphic).sort((a, b) => a.start - b.start) };
 }
 
 /**
@@ -115,7 +116,7 @@ export async function translateCaptions(language: string, opts: { mode?: 'replac
   S().commit((p) => {
     const t = p.tracks.find((x) => x.id === track.id)!;
     if (opts.mode === 'bilingual') {
-      const nt: Track = { id: uid('t'), kind: 'text', name: `Legendas ${lang}`, clips: [] };
+      const nt: Track = { id: uid('t'), kind: 'video', name: `Legendas ${lang}`, clips: [] };
       clips.forEach((c, i) => {
         const text = out[i];
         if (!text) return;
@@ -258,7 +259,7 @@ export async function addWatermark(opts: { text?: string; image?: string; corner
   if (!text) throw new Error('Diz o texto ou a imagem da marca de água');
   const id = uid('c');
   S().commit((p) => {
-    const t: Track = { id: uid('t'), kind: 'text', name: 'Marca de água', clips: [] };
+    const t: Track = { id: uid('t'), kind: 'video', name: 'Marca de água', clips: [] };
     const size = Math.max(0.015, Math.min(0.08, opts.size ?? 0.026));
     t.clips.push({ id, start: 0, in: 0, out: total, text, style: 'clean', size, x: left ? margin + 0.12 : 1 - margin - 0.12, y: top ? margin + size : 1 - margin - size / 2, override: { color: '#FFFFFF' } });
     p.tracks.push(t);

@@ -7,7 +7,7 @@ import { useEditor } from '../store';
 import { autoCaptions, type AutoCaptionOptions } from '../actions';
 import { Icon } from './Icon';
 import { ColorField, FontPicker, LayoutFields, useStyleOptions } from './CaptionStyleEditor';
-import { baseStyle } from '../lib/project';
+import { baseStyle, textClips } from '../lib/project';
 import type { CaptionOverride, CaptionStyle } from '../types';
 
 type Opts = Required<Pick<AutoCaptionOptions, 'style' | 'model' | 'language' | 'translate' | 'density' | 'maxChars' | 'maxLines' | 'maxWords' | 'textCase' | 'stripPunct' | 'prompt'>> & { censor: string; onlySelected: boolean; look: CaptionOverride; size: number | null };
@@ -60,7 +60,7 @@ export function AutoSubsPanel() {
   const busy = useEditor((s) => s.busy);
   const project = useEditor((s) => s.project);
   const userStyles = useEditor((s) => s.userStyles);
-  const hasCaptions = useEditor((s) => s.project.tracks.some((t) => t.kind === 'text' && t.clips.length > 0));
+  const hasCaptions = useEditor((s) => textClips(s.project).length > 0);
   const selected = useEditor((s) => s.selected);
   const [o, setO] = useState<Opts>(load);
   const set = (patch: Partial<Opts>) =>
@@ -74,7 +74,7 @@ export function AutoSubsPanel() {
       return next;
     });
   const run = () => {
-    const sel = selected ? useEditor.getState().project.tracks.flatMap((t) => (t.kind === 'text' ? [] : t.clips)).find((c) => c.id === selected && c.mediaId) : null;
+    const sel = selected ? useEditor.getState().project.tracks.flatMap((t) => t.clips).find((c) => c.id === selected && c.mediaId) : null;
     void autoCaptions({
       clipId: o.onlySelected && sel ? sel.id : undefined,
       style: o.style,

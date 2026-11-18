@@ -43,7 +43,7 @@ const srtTime = (t: number) => {
   return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`;
 };
 export function toSrt(p: Project) {
-  const clips = p.tracks.filter((t) => t.kind === 'text' && !t.hidden).flatMap((t) => t.clips).filter((c) => c.text).sort((a, b) => a.start - b.start);
+  const clips = p.tracks.filter((t) => t.kind !== 'audio' && !t.hidden).flatMap((t) => t.clips).filter((c) => isText(c) && c.text).sort((a, b) => a.start - b.start);
   return clips.map((c, i) => `${i + 1}\n${srtTime(c.start)} --> ${srtTime(end(c))}\n${c.text}\n`).join('\n');
 }
 export function parseSrt(text: string) {
@@ -86,7 +86,7 @@ export function newProject(name = 'Projeto sem título', preset: CanvasPreset = 
     tracks: [
       { id: 'v1', kind: 'video', name: 'V1', clips: [] },
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
-      { id: 'tx', kind: 'text', name: 'Legendas', clips: [] },
+      { id: 'tx', kind: 'video', name: 'Legendas', clips: [] },
       { id: 'a1', kind: 'audio', name: 'Música', clips: [] },
     ],
   };
@@ -107,9 +107,15 @@ export function findClip(p: Project, id: string): { track: Track; clip: Clip; in
 }
 
 /** The clip shown on a track at time t (the last one wins when clips overlap). */
+/** A text clip: a title, a caption or a graphic. It has no media file and sits on a video track like any other clip. */
+export const isText = (c: Clip) => !c.mediaId && (c.text !== undefined || Boolean(c.graphic));
+/** Every text clip of the project (titles, captions, graphics), track by track. */
+export const textClips = (p: Project) => p.tracks.flatMap((t) => (t.kind === 'audio' ? [] : t.clips.filter(isText)));
+
+/** The picture or sound clip of a track at time t (texts share the track and are drawn over it). */
 export function activeClip(track: Track, t: number): Clip | null {
   let found: Clip | null = null;
-  for (const c of track.clips) if (t >= c.start && t < end(c)) found = c;
+  for (const c of track.clips) if (t >= c.start && t < end(c) && !isText(c)) found = c;
   return found;
 }
 

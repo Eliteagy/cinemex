@@ -144,6 +144,7 @@ export interface AudioSettings {
 }
 export type Keyframes = Partial<Record<KeyProp, Keyframe[]>>;
 
+/** 'text' is the old captions track: such tracks become video tracks when a project is opened (texts are clips on video tracks). */
 export type TrackKind = 'video' | 'text' | 'audio';
 
 /** Background behind a framed clip: nothing (the tracks below show), one colour, or a two-colour gradient. */

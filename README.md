@@ -63,7 +63,7 @@ Em todas as páginas os painéis (Média, Visor, Inspetor, Timeline…) mexem-se
 - **Som à parte**: um vídeo com som fica em dois clips ligados, a imagem na pista de vídeo e o som numa pista de áudio (V1 → A1, V2 → A2). Mover, aparar, cortar ou apagar um mexe no outro. O botão da corrente na timeline desliga isto: com ele desligado cada um mexe-se à parte (apagar só o som, desencontrar som e imagem). Projetos antigos são convertidos ao abrir.
 - **Mudar de pista**: arrasta um clip para cima ou para baixo, para outra pista do mesmo tipo. O som vai atrás da imagem.
 - **Botão direito no nome da pista** (só na coluna da esquerda): mudar o nome, nova pista de vídeo, de áudio ou de legendas, mover para cima ou para baixo, esconder ou silenciar, apagar. Duplo clique no nome também muda o nome.
-- **Legendas**: a pista de legendas apaga-se e cria-se como as outras. Sem nenhuma, é criada sozinha quando se acrescenta um texto ou legendas.
+- **Texto é um clip**: títulos, legendas e grafismos são clips em pistas de vídeo, como qualquer outro (podem partilhar a pista com vídeo). Já não há tipo de pista "texto": a pista "Legendas" é uma pista de vídeo normal, e os projetos antigos são convertidos ao abrir (`textToVideo` em `src/lib/links.js`; `isText` em `src/lib/project.ts`). O texto é sempre desenhado por cima da imagem, esteja em que pista estiver.
 - Código: `src/lib/links.js` (corre depois de cada alteração, por isso o rato, o Inspetor e o Claude não precisam de saber das ligações), testes em `test/links.test.mjs`.
 
 ## Claude editing

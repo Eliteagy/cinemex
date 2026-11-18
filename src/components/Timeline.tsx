@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor } from '../store';
-import { dur, end, fmtTime, projectDuration, r3, speedOf } from '../lib/project';
+import { dur, end, fmtTime, isText, projectDuration, r3, speedOf } from '../lib/project';
 import { Wave } from './Wave';
 import type { Clip, Track } from '../types';
 import { Icon } from './Icon';
@@ -21,7 +21,8 @@ function screenOrder(tracks: Track[]) {
 /** Colour role of a track: video, captions (text), the sound of a video track (voice), music or
  *  sound effects (any other audio track after the first one, or one named like an effects track). */
 function roleOf(t: Track, tracks: Track[]) {
-  if (t.kind !== 'audio') return t.kind;
+  // A video track with nothing but texts (captions, titles, graphics) gets the captions colour.
+  if (t.kind !== 'audio') return t.clips.length && t.clips.every(isText) ? 'text' : 'video';
   if (t.of) return 'voice';
   if (/efeit|sfx|\bfx\b|som/i.test(t.name)) return 'fx';
   if (/m[uú]sica|music/i.test(t.name)) return 'music';
@@ -92,9 +93,6 @@ function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Tr
       </button>
       <button role="menuitem" onClick={run(() => st().addTrack('audio'))}>
         Nova pista de áudio
-      </button>
-      <button role="menuitem" onClick={run(() => st().addTrack('text'))}>
-        Nova pista de legendas
       </button>
       {t && (
         <>
@@ -331,7 +329,6 @@ export function Timeline() {
                 [
                   ['video', 'Pista de vídeo'],
                   ['audio', 'Pista de áudio'],
-                  ['text', 'Pista de legendas'],
                 ] as const
               ).map(([k, l]) => (
                 <button
@@ -363,7 +360,7 @@ export function Timeline() {
       <div className="tl-body">
         <div className="tl-heads" ref={heads} onContextMenu={(e) => openMenu(e, null)}>
           {tracks.map((t) => (
-            <div key={t.id} className={`tl-head r-${roleOf(t, tracks)}${t.kind === 'text' ? ' text' : ''}${menu?.trackId === t.id ? ' menu-open' : ''}`} onContextMenu={(e) => openMenu(e, t.id)} title="Botão direito: opções da pista">
+            <div key={t.id} className={`tl-head r-${roleOf(t, tracks)}${menu?.trackId === t.id ? ' menu-open' : ''}`} onContextMenu={(e) => openMenu(e, t.id)} title="Botão direito: opções da pista">
               <span className="tname" onDoubleClick={() => setRenaming(t.id)}>
                 <i />
                 {renaming === t.id ? (
@@ -432,7 +429,7 @@ export function Timeline() {
             {tracks.map((t) => (
               <div
                 key={t.id}
-                className={`lane r-${roleOf(t, tracks)}${t.kind === 'text' ? ' text' : ''}${dropLane === t.id ? ' drop' : ''}`}
+                className={`lane r-${roleOf(t, tracks)}${dropLane === t.id ? ' drop' : ''}`}
                 data-lane={t.id}
                 onPointerDown={(e) => {
                   if (e.target === e.currentTarget) {
@@ -452,17 +449,19 @@ export function Timeline() {
                 {t.clips.map((c) => {
                   const m = c.mediaId ? media.get(c.mediaId) : undefined;
                   const w = Math.max(6, dur(c) * zoom);
+                  // A text is a clip like any other on a video track; it keeps its own colour.
+                  const kind = isText(c) ? 'text' : t.kind;
                   return (
                     <div
                       key={c.id}
-                      className={`clip ${t.kind}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
+                      className={`clip ${kind}${kind === 'text' ? ' r-text' : ''}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
                       style={{ left: c.start * zoom, width: w, opacity: t.hidden || (t.kind === 'audio' && t.muted) ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
-                      onPointerDown={(e) => onClipDown(e, c, 'move', t.kind)}
+                      onPointerDown={(e) => onClipDown(e, c, 'move', kind)}
                       onDoubleClick={() => st().seek(c.start)}
                       title={c.text ?? m?.name}
                     >
-                      {m?.thumb && t.kind === 'video' && <div className="strip" style={{ backgroundImage: `url(${m.thumb})` }} />}
-                      {m?.peaks && t.kind !== 'text' && !(t.kind === 'video' && c.silent) && (
+                      {m?.thumb && kind === 'video' && <div className="strip" style={{ backgroundImage: `url(${m.thumb})` }} />}
+                      {m?.peaks && kind !== 'text' && !(kind === 'video' && c.silent) && (
                         <div className={`wavebox ${t.kind}`}>
                           <Wave peaks={m.peaks} clip={c} width={w} height={t.kind === 'audio' ? 40 : 18} color={t.kind !== 'audio' ? 'rgba(255,255,255,0.55)' : (WAVE[roleOf(t, tracks)] ?? WAVE.music!)} />
                         </div>
@@ -478,8 +477,8 @@ export function Timeline() {
                         {(c.speed ?? 1) !== 1 && <b className="spd">{c.speed}×</b>}
                         {c.text ?? m?.name ?? 'clip'}
                       </span>
-                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', t.kind)} />
-                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', t.kind)} />
+                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', kind)} />
+                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', kind)} />
                     </div>
                   );
                 })}

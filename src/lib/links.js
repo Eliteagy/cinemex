@@ -61,6 +61,21 @@ export function audioTrackFor(p, videoTrack) {
   return t;
 }
 
+/**
+ * Texts (titles, captions, graphics) are clips on video tracks, like in Resolve. Projects made when
+ * they had a track type of their own: those tracks become video tracks, on top, in the same order.
+ */
+export function textToVideo(p) {
+  const texts = p.tracks.filter((t) => t.kind === 'text');
+  if (!texts.length) return 0;
+  const rest = p.tracks.filter((t) => t.kind !== 'text');
+  for (const t of texts) t.kind = 'video';
+  // Video tracks are listed top layer first: the first text track stays on top.
+  rest.splice(rest.map((t) => t.kind).lastIndexOf('video') + 1, 0, ...texts.reverse());
+  p.tracks = rest;
+  return texts.length;
+}
+
 /** The sound follows the picture's transitions with a fade of the same length. */
 function fades(a, v) {
   for (const k of ['transitionIn', 'transitionOut']) {
@@ -231,6 +246,7 @@ function follow(before, after) {
  * linked=false is "linked selection off": the two halves are edited on their own.
  */
 export function syncLinks(before, after, opts = {}) {
+  textToVideo(after);
   if (before && opts.linked !== false) follow(before, after);
   separateAudio(after);
   tidy(after);

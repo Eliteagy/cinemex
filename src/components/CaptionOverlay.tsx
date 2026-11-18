@@ -4,7 +4,7 @@
 // caption of the same style, so the look stays consistent through the video.
 import { useState } from 'react';
 import { useEditor } from '../store';
-import { end, findClip, styleOf } from '../lib/project';
+import { end, findClip, isText, styleOf, textClips } from '../lib/project';
 import { captionBoxes, type CaptionBox } from '../engine/caption';
 import { cleanLines, lineOffset } from '../lib/emphasis.js';
 import type { Clip, Project } from '../types';
@@ -40,14 +40,14 @@ export function targets(p: Project, clip: Clip, scope: DragScope): Clip[] {
   const self = findClip(p, clip.id)?.clip;
   if (scope === 'one') return self ? [self] : [];
   const style = clip.style ?? 'elite';
-  return p.tracks.filter((t) => t.kind === 'text').flatMap((t) => t.clips.filter((c) => c.id === clip.id || c.auto || (c.style ?? 'elite') === style));
+  return textClips(p).filter((c) => c.id === clip.id || c.auto || (c.style ?? 'elite') === style);
 }
 export const targetIds = (p: Project, clip: Clip, scope: DragScope) => targets(p, clip, scope).map((c) => c.id);
 
 export function CaptionOverlay({ width, height }: { width: number; height: number }) {
   const clip = useEditor((s) => {
     const f = s.selected ? findClip(s.project, s.selected) : null;
-    return f && f.track.kind === 'text' ? f.clip : null;
+    return f && isText(f.clip) ? f.clip : null;
   });
   const playhead = useEditor((s) => s.playhead);
   const playing = useEditor((s) => s.playing);

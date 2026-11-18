@@ -202,6 +202,7 @@ export function describeProject() {
         start: c.start,
         duration: Math.round(dur(c) * 1000) / 1000,
         ...(c.mediaId ? { media_id: c.mediaId, in: c.in, out: c.out, volume: c.volume ?? 1, fit: c.fit ?? 'fill', speed: c.speed ?? 1 } : {}),
+        ...(c.gen ? { generator: c.gen, ...(c.gen === 'solid' ? { solid_color: c.genColor ?? '#000000' } : {}) } : {}),
         ...(c.link ? { link: c.link } : {}),
         ...(c.silent ? { silent: true } : {}),
         ...(c.transitionIn ? { transition_in: c.transitionIn } : {}),

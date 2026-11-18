@@ -14,6 +14,8 @@ import type { BlendMode, Ease, Effect, Matte, Modifier } from './types';
 import { EFFECT_DEFAULTS } from './lib/layerfx.js';
 import { cleanBlendIf } from './lib/pslayer.js';
 import { separateAudio, syncLinks, textToVideo, unlink } from './lib/links.js';
+import { GENERATORS, GEN_DURATION, genColor, hasPicture, isGen, newComp } from './lib/generators.js';
+import type { GenKind } from './types';
 
 const MAX_HISTORY = 150;
 const clone = <T,>(v: T): T => structuredClone(v);
@@ -55,6 +57,8 @@ export interface EditorState {
   setTranscript(mediaId: string, words: Media['transcript'], key?: string): void;
   addClip(mediaId: string, opts?: { trackId?: string; start?: number; in?: number; out?: number }): string;
   addText(text: string, start: number, duration: number, style?: string, y?: number): string;
+  /** Generator clip (adjustment layer, solid colour, Fusion composition) on a video track; by default at the playhead, on a free track. */
+  addGenerator(kind: GenKind, opts?: { start?: number; duration?: number; trackId?: string; color?: string }): string;
   replaceAutoCaptions(range: { start: number; end: number } | null, clips: Omit<Clip, 'id'>[]): number;
   updateClip(id: string, patch: Partial<Clip>): void;
   moveClip(id: string, start: number, trackId?: string): void;
@@ -171,7 +175,9 @@ const NODE_INPUTS = Object.fromEntries(Object.entries(fusionNodes as Record<stri
 
 function fusionOf(p: Project, clipId: string): Fusion {
   const f = findClip(p, clipId);
-  if (!f || !f.clip.mediaId || f.track.kind !== 'video') throw new Error('O Fusion funciona em clips de vídeo ou imagem');
+  if (!f || f.track.kind !== 'video' || !(f.clip.mediaId || hasPicture(f.clip))) throw new Error('O Fusion funciona em clips de vídeo, imagem, cor sólida ou composições Fusion');
+  // A Fusion composition starts with its output only; any other clip with In -> Out.
+  if (f.clip.gen === 'fusion') return (f.clip.fusion ??= newComp());
   return (f.clip.fusion ??= {
     nodes: [
       { id: 'in', type: 'mediaIn', x: 30, y: 90, p: {} },
@@ -383,6 +389,37 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ selected: id });
     return id;
   },
+  addGenerator(kind, opts = {}) {
+    if (!GENERATORS[kind]) throw new Error('Gerador desconhecido: adjustment, solid ou fusion');
+    const id = uid('c');
+    get().commit((p) => {
+      const start = r3(Math.max(0, opts.start ?? get().playhead));
+      const len = r3(Math.max(minLen, opts.duration ?? GEN_DURATION));
+      const vids = p.tracks.filter((t) => t.kind === 'video');
+      const free = (t: Track) => !t.clips.some((c) => c.start < start + len - 0.001 && end(c) > start + 0.001);
+      let track = opts.trackId ? vids.find((t) => t.id === opts.trackId) : undefined;
+      if (!track) {
+        // Over what is already there at that time: the first free track above the pictures, or a new one on top.
+        const top = Math.max(-1, ...vids.map((t, i) => (t.clips.some((c) => !isText(c) && c.start < start + len - 0.001 && end(c) > start + 0.001) ? i : -1)));
+        track = vids.find((t, i) => i > top && free(t) && !t.clips.some(isText));
+        if (!track) {
+          let n = 1;
+          while (p.tracks.some((t) => t.id === `v${n}`)) n++;
+          let k = 1;
+          while (p.tracks.some((t) => t.name.trim().toLowerCase() === `v${k}`)) k++;
+          track = { id: `v${n}`, kind: 'video', name: `V${k}`, clips: [] };
+          p.tracks.splice(p.tracks.map((t) => t.kind).lastIndexOf('video') + 1, 0, track);
+        }
+      }
+      const clip: Clip = { id, start, in: 0, out: len, gen: kind };
+      if (kind === 'solid') clip.genColor = genColor({ ...clip, genColor: opts.color });
+      if (kind === 'fusion') clip.fusion = newComp();
+      track.clips.push(clip);
+      track.clips.sort((a, b) => a.start - b.start);
+    });
+    set({ selected: id });
+    return id;
+  },
   replaceAutoCaptions(range, clips) {
     get().commit((p) => {
       const t = textTrack(p);
@@ -464,7 +501,7 @@ export const useEditor = create<EditorState>((set, get) => ({
             right.words = c.words.filter((w) => w.s >= off).map((w) => ({ ...w, s: r3(w.s - off), e: r3(w.e - off) }));
             c.words = c.words.filter((w) => w.s < off);
           }
-          if (c.text !== undefined && !c.mediaId) {
+          if ((c.text !== undefined || isGen(c)) && !c.mediaId) {
             right.in = 0;
             right.out = r3(end(c) - time);
             c.out = r3(time - c.start);
@@ -839,7 +876,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       for (const t of p.tracks) {
         if (t.kind !== 'video') continue;
         for (const c of t.clips) {
-          if (!c.mediaId || (ids !== 'all' && !ids.includes(c.id))) continue;
+          // Every clip with a picture, or the clips named: those can be generators (an adjustment layer is graded like a clip).
+          if (ids === 'all' ? !c.mediaId : !ids.includes(c.id) || !(c.mediaId || isGen(c))) continue;
           if (!grade) delete c.color;
           else {
             const next: Grade = { ...(replace ? {} : c.color), ...grade };
@@ -1059,8 +1097,11 @@ export const useEditor = create<EditorState>((set, get) => ({
       const out = f.nodes.find((n) => n.type === 'mediaOut')!;
       const prev = after ? f.nodes.find((n) => n.id === after) : f.nodes.find((n) => n.id === f.links.find((l) => l.to === out.id && l.port === 0)?.from);
       const base = prev ?? out;
-      const node: FNode = { id, type, x: at?.x ?? base.x + 200, y: at?.y ?? (NODE_INPUTS[type] ? base.y : base.y + 120), p: {} };
+      // Nothing feeds the output yet (a new Fusion composition): the node goes to its left and is connected to it.
+      const first = !prev && !f.links.some((l) => l.to === out.id && l.port === 0);
+      const node: FNode = first ? { id, type, x: at?.x ?? Math.max(20, out.x - 220), y: at?.y ?? out.y, p: {} } : { id, type, x: at?.x ?? base.x + 200, y: at?.y ?? (NODE_INPUTS[type] ? base.y : base.y + 120), p: {} };
       f.nodes.push(node);
+      if (first) f.links.push({ from: id, to: out.id, port: 0 });
       if (NODE_INPUTS[type] && prev && prev.type !== 'mediaOut') {
         // Insert into the chain: prev -> node -> (everything prev fed).
         for (const l of f.links) if (l.from === prev.id) l.from = id;

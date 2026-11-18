@@ -5,6 +5,7 @@ import { addSfx, autoSfx, detectBeats, sfxLibrary } from '../actions';
 import { GRAPHICS, GRAPHIC_KINDS } from '../lib/graphics.js';
 import { mediaUrl, projectDuration } from '../lib/project';
 import { Icon } from './Icon';
+import { GENERATORS, GEN_KINDS } from '../lib/generators.js';
 
 const st = useEditor.getState;
 const fail = (e: unknown) => st().setStatus((e as Error).message);
@@ -117,9 +118,44 @@ function Beats() {
   );
 }
 
+/** Generators, as in Resolve's Effects: dragged to the timeline (or double-clicked to land on the playhead). */
+function Generators() {
+  return (
+    <div className="card">
+      <h4>Geradores</h4>
+      <p>Arrasta para a timeline. Duplo clique põe na cabeça de leitura.</p>
+      <div className="gen-list">
+        {GEN_KINDS.map((k) => (
+          <div
+            key={k}
+            className={`gen-tile gk-${k}`}
+            role="button"
+            tabIndex={0}
+            draggable
+            title={GENERATORS[k].hint}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('application/x-ec-gen', k);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            onDoubleClick={() => st().addGenerator(k)}
+            onKeyDown={(e) => e.key === 'Enter' && st().addGenerator(k)}
+          >
+            <i />
+            <span>
+              <b>{GENERATORS[k].label}</b>
+              <small>{GENERATORS[k].hint}</small>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function FxLibrary() {
   return (
     <>
+      <Generators />
       <Graphics />
       <Sounds />
       <Beats />

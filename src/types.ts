@@ -142,6 +142,8 @@ export interface AudioSettings {
   /** Lower the music while someone speaks (sidechain). */
   duck?: boolean;
 }
+/** Adjustment layer (its grade applies to what is under it), solid colour, Fusion composition. */
+export type GenKind = 'adjustment' | 'solid' | 'fusion';
 export type Keyframes = Partial<Record<KeyProp, Keyframe[]>>;
 
 /** 'text' is the old captions track: such tracks become video tracks when a project is opened (texts are clips on video tracks). */
@@ -173,6 +175,10 @@ export interface Clip {
   volume?: number;
   /** Picture and sound of the same footage: a video clip and its sound clip on an audio track share this id (src/lib/links.js). */
   link?: string;
+  /** Generator (Efeitos > Geradores, as in Resolve): a clip made by the app instead of a file (src/lib/generators.js). */
+  gen?: GenKind;
+  /** Colour of a solid colour generator, #RRGGBB. */
+  genColor?: string;
   /** Video clip that plays no sound of its own: the sound is its linked clip on an audio track (or was removed). */
   silent?: boolean;
   fit?: 'fill' | 'fit';

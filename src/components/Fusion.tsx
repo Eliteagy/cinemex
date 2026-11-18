@@ -1,7 +1,8 @@
 // "Fusion" page (node compositing, like DaVinci's): node library on the left, the viewer in the
 // middle, the selected node's settings on the right and the node editor at the bottom.
 // The graph belongs to the clip being edited (selected video clip, or the one under the playhead).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { useEditor } from '../store';
 import { findClip } from '../lib/project';
@@ -9,12 +10,17 @@ import { NODES, inputOf, param } from '../engine/fusion';
 import type { Clip, FNode, FNodeType } from '../types';
 import { useGradeTarget } from './Color';
 import { Icon } from './Icon';
+import { genLabel } from '../lib/generators.js';
 
-const useUi = create<{ node: string | null; pending: string | null; set(p: Partial<{ node: string | null; pending: string | null }>): void }>((set) => ({
+const useUi = create<{ node: string | null; pending: string | null; picker: boolean; set(p: Partial<{ node: string | null; pending: string | null; picker: boolean }>): void }>((set) => ({
   node: null,
   pending: null,
+  picker: false,
   set: (p) => set(p),
 }));
+
+/** Opens the node search of the Fusion page (Shift+Espaço, as Resolve's Select Tool). */
+export const openNodePicker = () => useUi.getState().set({ picker: true });
 
 const GROUPS: { k: 'gerar' | 'compor' | 'efeitos'; label: string }[] = [
   { k: 'gerar', label: 'Gerar' },
@@ -34,7 +40,7 @@ const safe = (fn: () => void) => {
 };
 
 export function FusionLibrary() {
-  const clip = useGradeTarget();
+  const clip = useGradeTarget('fusion');
   const node = useUi((s) => s.node);
   const add = (type: FNodeType) =>
     safe(() => {
@@ -47,11 +53,11 @@ export function FusionLibrary() {
       <div className="ph">Nós</div>
       <div className="panel-body">
         {!clip ? (
-          <p className="panel-sub">Escolhe um clip de vídeo na timeline (página Editar) ou põe a cabeça de leitura sobre ele.</p>
+          <p className="panel-sub">Escolhe um clip de vídeo ou uma Composição Fusion na timeline (página Editar) ou põe a cabeça de leitura sobre ele.</p>
         ) : (
           <>
             <p className="panel-sub">
-              Um clique junta o nó a seguir ao nó escolhido. Liga saídas (à direita) a entradas (à esquerda) no editor em baixo. Delete apaga o nó.
+              Um clique junta o nó a seguir ao nó escolhido. Shift+Espaço procura um nó pelo nome. Liga saídas (à direita) a entradas (à esquerda) no editor em baixo. Delete apaga o nó.
             </p>
             {GROUPS.map((g) => (
               <div className="field" key={g.k}>
@@ -80,7 +86,7 @@ export function FusionLibrary() {
 }
 
 export function FusionInspector() {
-  const clip = useGradeTarget();
+  const clip = useGradeTarget('fusion');
   const nodeId = useUi((s) => s.node);
   const media = useEditor((s) => s.project.media);
   const n = clip?.fusion?.nodes.find((x) => x.id === nodeId);
@@ -168,7 +174,7 @@ const portOut = (n: FNode) => ({ x: n.x + W, y: n.y + HEAD / 2 });
 const nodeH = (n: FNode) => HEAD + Math.max(1, NODES[n.type].inputs.length) * ROW + 4;
 
 export function NodeEditor() {
-  const clip = useGradeTarget();
+  const clip = useGradeTarget('fusion');
   const sel = useUi((s) => s.node);
   const pending = useUi((s) => s.pending);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
@@ -190,7 +196,7 @@ export function NodeEditor() {
     return () => removeEventListener('keydown', onKey, true);
   }, [clip]);
 
-  if (!clip) return <section className="node-editor empty-ne">Sem clip de vídeo para compor.</section>;
+  if (!clip) return <section className="node-editor empty-ne">Sem clip para compor: escolhe um clip de vídeo ou arrasta uma Composição Fusion dos Efeitos para a timeline.</section>;
   const f = clip.fusion ?? {
     nodes: [
       { id: 'in', type: 'mediaIn' as const, x: 30, y: 90, p: {} },
@@ -249,8 +255,9 @@ export function NodeEditor() {
       <div className="ph">
         Nós de {clipName(clip)}
         <span className="spacer" />
-        <span className="panel-sub">{pending ? 'Clica numa entrada (à esquerda de um nó) para ligar. Esc cancela.' : 'Liga uma saída (●) a uma entrada. Clicar numa entrada ligada desliga.'}</span>
+        <span className="panel-sub">{pending ? 'Clica numa entrada (à esquerda de um nó) para ligar. Esc cancela.' : 'Shift+Espaço: procurar nó · liga uma saída (●) a uma entrada · clicar numa entrada ligada desliga.'}</span>
       </div>
+      <NodePicker clip={clip} />
       <div className="ne-area" ref={area} onPointerMove={(e) => pending && setMouse(local(e))} onPointerDown={() => useUi.getState().set({ node: null, pending: null })}>
         <svg className="ne-links" width={2400} height={900}>
           {f.links.map((l) => {
@@ -285,5 +292,69 @@ export function NodeEditor() {
 
 function clipName(c: Clip) {
   const m = useEditor.getState().project.media.find((x) => x.id === c.mediaId);
-  return m?.name ?? c.id;
+  return m?.name ?? (genLabel(c) || c.id);
+}
+
+const plain = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Node search (Shift+Espaço): type a name, Enter adds the node after the selected one. */
+function NodePicker({ clip }: { clip: Clip }) {
+  const open = useUi((s) => s.picker);
+  const [q, setQ] = useState('');
+  const [at, setAt] = useState(0);
+  const all = useMemo(() => (Object.entries(NODES) as [FNodeType, (typeof NODES)[FNodeType]][]).filter(([, n]) => n.group !== 'io'), []);
+  const list = useMemo(() => {
+    const k = plain(q.trim());
+    return k ? all.filter(([id, n]) => plain(n.label).includes(k) || plain(id).includes(k)) : all;
+  }, [all, q]);
+  useEffect(() => {
+    if (open) {
+      setQ('');
+      setAt(0);
+    }
+  }, [open]);
+  if (!open) return null;
+  const close = () => useUi.getState().set({ picker: false });
+  const add = (type: FNodeType | undefined) => {
+    close();
+    if (!type) return;
+    safe(() => {
+      const id = useEditor.getState().addNode(clip.id, type, useUi.getState().node);
+      useUi.getState().set({ node: id });
+    });
+  };
+  const sel = Math.min(at, Math.max(0, list.length - 1));
+  return createPortal(
+    <div className="np-back" onPointerDown={close}>
+      <div className="np" role="dialog" aria-label="Procurar nó" onPointerDown={(e) => e.stopPropagation()}>
+        <input
+          className="np-input"
+          autoFocus
+          placeholder="Procurar nó…"
+          value={q}
+          aria-label="Nome do nó"
+          onChange={(e) => (setQ(e.target.value), setAt(0))}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') close();
+            else if (e.key === 'Enter') add(list[sel]?.[0]);
+            else if (e.key === 'ArrowDown') (e.preventDefault(), setAt(Math.min(list.length - 1, sel + 1)));
+            else if (e.key === 'ArrowUp') (e.preventDefault(), setAt(Math.max(0, sel - 1)));
+            e.stopPropagation();
+          }}
+        />
+        <div className="np-list" role="listbox">
+          {list.map(([id, n], i) => (
+            <button key={id} role="option" aria-selected={i === sel} className={`np-item g-${n.group}${i === sel ? ' on' : ''}`} onPointerEnter={() => setAt(i)} onClick={() => add(id)}>
+              <i />
+              <span>{n.label}</span>
+              <small>{GROUPS.find((g) => g.k === n.group)?.label}</small>
+            </button>
+          ))}
+          {!list.length && <p className="panel-sub">Nenhum nó com esse nome.</p>}
+        </div>
+        <p className="np-foot">Enter junta · ↑↓ escolhe · Esc fecha</p>
+      </div>
+    </div>,
+    document.body,
+  );
 }

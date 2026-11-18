@@ -21,6 +21,7 @@ const xform = require('../src/lib/xform.js');
 const { frameFilters, hasFrame } = require('../src/lib/frame.js');
 const develop = require('../src/lib/develop.js');
 const detail = require('../src/lib/detail.js');
+const gens = require('../src/lib/generators.js');
 const STYLES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'styles.json'), 'utf8'));
 const { FFMPEG } = require('./bin.cjs');
 
@@ -358,7 +359,11 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
     const free = made.get(id);
     return free.length ? free.shift() : blank();
   };
-  return take(out.id);
+  const result = take(out.id);
+  // A graph without a MediaIn (a Fusion composition): the clip's own picture is not used, and ffmpeg
+  // wants every stream read.
+  if (!inputUsed) filters.push(`[${input}]nullsink`);
+  return result;
 }
 
 const hasKeys = (c) => Boolean(c.keyframes && Object.values(c.keyframes).some((l) => l && l.length));
@@ -912,6 +917,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   };
   let base = 'base0';
   let layer = 0;
+  let adjustments = 0;
   // Parts of clips drawn again over the captions ("front" masks): { label, x, start, end }.
   const fronts = [];
   /** Every clip by id (parents and null objects). */
@@ -933,14 +939,42 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   for (const track of project.tracks) {
     if (track.hidden) continue;
     for (const c of track.clips) {
-      const m = media.get(c.mediaId);
+      // Adjustment layer: its grade is applied to everything composed so far (the tracks under it),
+      // for as long as the clip lasts, mixed by its opacity and fades (preview: Player.adjust).
+      if (c.gen === 'adjustment' && !c.mediaId && track.kind === 'video') {
+        const adur = clipDuration(c);
+        const grade = adur > 0 ? gradeFilters(c.color, gradeLut(c.color, extraFiles, gradeLuts)) : [];
+        if (grade.length) {
+          const r6a = (x) => Math.round(x * 1e6) / 1e6;
+          const a0 = r6a(Math.round(c.start * FPS) / FPS);
+          const a1 = r6a(Math.round((c.start + adur) * FPS) / FPS);
+          const ahalf = r6a(0.5 / FPS);
+          const L = `adj${adjustments++}`;
+          const op = Math.max(0, Math.min(1, Number(c.keyframes?.opacity?.[0]?.v ?? 1)));
+          const tail = ['format=yuva420p'];
+          if (op < 0.999) tail.push(`colorchannelmixer=aa=${fx(op)}`);
+          const fin = c.transitionIn && c.transitionIn.d > 0 ? Math.min(c.transitionIn.d, adur) : 0;
+          const fout = c.transitionOut && c.transitionOut.d > 0 ? Math.min(c.transitionOut.d, adur) : 0;
+          if (fin) tail.push(`fade=t=in:st=${fx(a0)}:d=${fx(fin)}:alpha=1`);
+          if (fout) tail.push(`fade=t=out:st=${fx(a1 - fout)}:d=${fx(fout)}:alpha=1`);
+          filters.push(`[${base}]split=2[${L}a][${L}b]`);
+          filters.push(`[${L}b]${[...grade, ...tail].join(',')}[${L}g]`);
+          filters.push(`[${L}a][${L}g]overlay=format=auto:eof_action=pass:enable='between(t,${r6a(a0 - ahalf)},${r6a(a1 - ahalf)})'[${L}o]`);
+          base = `${L}o`;
+        }
+        continue;
+      }
+      // A solid colour or a Fusion composition is a picture the size of the canvas (src/lib/generators.js).
+      const gen = c.mediaId || track.kind !== 'video' ? null : gens.genMedia(c, project.canvas);
+      const m = media.get(c.mediaId) || gen;
       if (!m) continue;
       const dur = clipDuration(c);
       if (dur <= 0) continue;
       const speed = speedOf(c);
       const srcLen = c.out - c.in;
       const remap = m.kind !== 'image' ? xform.remapRange(c) : null;
-      if (m.kind === 'image') args.push('-loop', '1', '-t', String(r3(dur)), '-i', m.path);
+      if (gen) args.push('-f', 'lavfi', '-t', String(r3(dur)), '-i', gens.genSource(c, W, H, FPS));
+      else if (m.kind === 'image') args.push('-loop', '1', '-t', String(r3(dur)), '-i', m.path);
       else if (remap) args.push('-ss', String(r3(remap.lo)), '-t', String(r3(remap.hi - remap.lo + 0.1)), '-i', m.path);
       else args.push('-ss', String(r3(c.in)), '-t', String(r3(srcLen)), '-i', m.path);
       const k = input++;

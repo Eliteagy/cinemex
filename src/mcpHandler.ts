@@ -78,8 +78,17 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return { ok: true };
     case 'add_text':
       return { clip_id: S().addText(String(a.text ?? ''), n(a.start) ?? S().playhead, n(a.duration) ?? 3, s(a.style) ?? 'title', n(a.y)) };
+    case 'add_generator': {
+      const kind = s(a.kind);
+      if (kind !== 'adjustment' && kind !== 'solid' && kind !== 'fusion') throw new Error('kind: adjustment, solid ou fusion');
+      return { clip_id: S().addGenerator(kind, { start: n(a.start), duration: n(a.duration), trackId: s(a.track), color: s(a.color) }) };
+    }
     case 'update_clip': {
       const patch: Record<string, unknown> = {};
+      if (s(a.solid_color) !== undefined) {
+        if (!/^#[0-9a-fA-F]{6}$/.test(s(a.solid_color)!)) throw new Error('solid_color: #RRGGBB');
+        patch.genColor = s(a.solid_color)!.toUpperCase();
+      }
       for (const k of ['volume', 'y', 'size'] as const) if (n(a[k]) !== undefined) patch[k] = n(a[k]);
       if (n(a.orient) !== undefined) {
         const o = (((Math.round(n(a.orient)! / 90) * 90) % 360) + 360) % 360;

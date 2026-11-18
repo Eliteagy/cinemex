@@ -16,6 +16,7 @@ import { hasFrame } from '../lib/frame.js';
 import { colorGL, needsLut, rememberSource } from './glcolor';
 import { blendGL, colorToAlphaGL } from './glblend';
 import { blendIfActive } from '../lib/pslayer.js';
+import { genMedia } from '../lib/generators.js';
 
 type El = HTMLVideoElement | HTMLAudioElement;
 
@@ -54,6 +55,73 @@ export class Player {
   }
 
   /** Transparent canvas-sized layer for masked clips. */
+  /** Picture of a generator clip: one colour, or nothing (a Fusion composition starts transparent). */
+  private gens = new Map<string, HTMLCanvasElement>();
+  private genPicture(clip: Clip, color: string | null, w: number, h: number) {
+    let c = this.gens.get(clip.id);
+    if (!c) {
+      if (this.gens.size > 64) this.gens.clear();
+      this.gens.set(clip.id, (c = document.createElement('canvas')));
+    }
+    const key = `${color}:${w}x${h}`;
+    if (c.dataset.key !== key) {
+      c.width = Math.max(2, w);
+      c.height = Math.max(2, h);
+      const x = c.getContext('2d')!;
+      x.clearRect(0, 0, c.width, c.height);
+      if (color) {
+        x.fillStyle = color;
+        x.fillRect(0, 0, c.width, c.height);
+      }
+      c.dataset.key = key;
+    }
+    return c;
+  }
+
+  /**
+   * Adjustment layer: grades everything drawn so far (the tracks under it) with the layer's colour,
+   * mixed by its opacity and its fade transitions. Same LUT as a graded clip, same order as the export.
+   */
+  private adjustCopy: HTMLCanvasElement | null = null;
+  private adjust(clip: Clip, t: number, cw: number, ch: number, project: Project) {
+    const local = t - clip.start;
+    const tr = fxState(clip, local, end(clip) - clip.start);
+    const mix = Math.max(0, Math.min(1, propAt(clip, 'opacity', local, 1))) * tr.alpha;
+    // What is under the layer is what the Cor page measures for it (histogram, pickers).
+    rememberSource(clip.id, this.canvas);
+    if (mix < 0.004 || !isGraded(clip.color)) return;
+    const ctx = this.ctx;
+    const copy = (this.adjustCopy ??= document.createElement('canvas'));
+    if (copy.width !== cw || copy.height !== ch) {
+      copy.width = cw;
+      copy.height = ch;
+    }
+    const cx = copy.getContext('2d')!;
+    cx.globalCompositeOperation = 'copy';
+    cx.drawImage(this.canvas, 0, 0);
+    let pic: CanvasImageSource | null = null;
+    if (clip.color && needsLut(clip.color)) pic = colorGL().apply(copy, cw, ch, clip.color, () => (this.dirty = true), { long: Math.max(cw, ch), frame: Math.floor(local * (project.canvas.fps || 30)) });
+    const g = gradeMath(clip.color);
+    ctx.save();
+    ctx.globalAlpha = mix;
+    if (pic) ctx.drawImage(pic, 0, 0, cw, ch);
+    else {
+      // Without WebGL: the canvas filters of the old grade.
+      ctx.filter = `brightness(${g.bright}) contrast(${g.contrast}) saturate(${g.saturation})`;
+      ctx.drawImage(copy, 0, 0);
+      ctx.filter = 'none';
+    }
+    if (g.vignette > 0) {
+      const r = Math.hypot(cw, ch) / 2;
+      const grad = ctx.createRadialGradient(cw / 2, ch / 2, r * (0.75 - g.vignette * 0.35), cw / 2, ch / 2, r);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, `rgba(0,0,0,${0.35 + g.vignette * 0.5})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cw, ch);
+    }
+    ctx.restore();
+  }
+
   private layer(w: number, h: number) {
     const c = (this.layerCanvas ??= document.createElement('canvas'));
     if (c.width !== w || c.height !== h) {
@@ -253,17 +321,24 @@ export class Player {
         }
       }
       if (!clip || track.kind !== 'video') continue;
-      const m = media.get(clip.mediaId ?? '');
+      // Adjustment layer: no picture of its own, its grade changes what is already drawn under it.
+      if (clip.gen === 'adjustment' && !clip.mediaId) {
+        this.adjust(clip, t, cw, ch, project);
+        continue;
+      }
+      // A solid colour or a Fusion composition is a picture the size of the canvas (src/lib/generators.js).
+      const gen = clip.mediaId ? null : genMedia(clip, project.canvas);
+      const m = media.get(clip.mediaId ?? '') ?? gen;
       if (!m) continue;
-      const src: CanvasImageSource | null = m.kind === 'image' ? this.image(m) : (this.els.get(clip.id) as HTMLVideoElement | undefined) ?? null;
+      const src: CanvasImageSource | null = gen ? this.genPicture(clip, gen.gen === 'solid' ? gen.color : null, cw, ch) : m.kind === 'image' ? this.image(m) : (this.els.get(clip.id) as HTMLVideoElement | undefined) ?? null;
       // An image that has not finished decoding would draw nothing (black): treat it as still loading.
       if (src instanceof HTMLImageElement && !src.complete) {
         missing = true;
         this.dirty = true;
         continue;
       }
-      const sw = src instanceof HTMLVideoElement ? src.videoWidth : src instanceof HTMLImageElement ? src.naturalWidth : 0;
-      const sh = src instanceof HTMLVideoElement ? src.videoHeight : src instanceof HTMLImageElement ? src.naturalHeight : 0;
+      const sw = src instanceof HTMLVideoElement ? src.videoWidth : src instanceof HTMLImageElement ? src.naturalWidth : src instanceof HTMLCanvasElement ? src.width : 0;
+      const sh = src instanceof HTMLVideoElement ? src.videoHeight : src instanceof HTMLImageElement ? src.naturalHeight : src instanceof HTMLCanvasElement ? src.height : 0;
       // A clip that just became visible waits for its first presented frame (requestVideoFrameCallback),
       // at most 250 ms, so the cut never shows an empty frame.
       if (src instanceof HTMLVideoElement && this.shown !== null && !this.shown.has(clip.id)) {

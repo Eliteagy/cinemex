@@ -13,17 +13,23 @@ import { GRAIN_DEFAULT, SHARPEN_DEFAULT, estimateAirlight, hasDetail, hasGrain }
 import type { Clip, Grade } from '../types';
 import { Icon } from './Icon';
 import { NumField, Row, RowSlider, Section } from './Inspector';
+import { hasPicture, isGen } from '../lib/generators.js';
 
 const st = useEditor.getState;
 
-/** The clip being graded: the selected video clip, or the one under the playhead. */
-export function useGradeTarget(): Clip | null {
+/**
+ * The clip being worked on: the selected one, or the top one under the playhead. On the Cor page any
+ * clip with a picture or an adjustment layer (its grade goes to what is under it); on the Fusion page
+ * clips with a picture of their own (footage, solid colours, Fusion compositions).
+ */
+export function useGradeTarget(page: 'color' | 'fusion' = 'color'): Clip | null {
   return useEditor((s) => {
+    const ok = (c: Clip | null | undefined): c is Clip => Boolean(c && (c.mediaId || (page === 'fusion' ? hasPicture(c) : isGen(c))));
     const sel = s.selected ? findClip(s.project, s.selected) : null;
-    if (sel && sel.track.kind === 'video' && sel.clip.mediaId) return sel.clip;
+    if (sel && sel.track.kind === 'video' && ok(sel.clip)) return sel.clip;
     for (const t of [...s.project.tracks].reverse()) if (t.kind === 'video' && !t.hidden) {
       const c = activeClip(t, s.playhead);
-      if (c?.mediaId) return c;
+      if (ok(c)) return c;
     }
     return null;
   });

@@ -4,7 +4,7 @@
 // as tabs) or out of the grid as a floating window. Each page keeps its own arrangement, saved
 // on this computer; "Repor painéis" puts the page back as it came.
 // The docking itself is dockview (MIT); the look is Cinemex's (see .dock in styles.css).
-import { createContext, useContext, useMemo, useRef, type FunctionComponent, type ReactNode } from 'react';
+import { Component, createContext, useContext, useMemo, useRef, type FunctionComponent, type ReactNode } from 'react';
 import { DockviewReact, themeAbyssSpaced, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelHeaderProps, type IDockviewPanelProps } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import type { Page } from '../store';
@@ -97,10 +97,35 @@ function restore(api: DockviewApi, page: Page): boolean {
     const want = panelsOf(page).sort();
     if (ids.length !== want.length || ids.some((id, i) => id !== want[i])) return false;
     api.fromJSON(saved);
+    // A layout saved while the page was broken can come back with groups and no panels: start again.
+    if (api.panels.length !== want.length) {
+      api.clear();
+      return false;
+    }
     return true;
   } catch {
     api.clear();
     return false;
+  }
+}
+
+/** One panel failing must not take the others (or the saved arrangement) with it. */
+class PanelGuard extends Component<{ name: string; children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="panel dock-error" role="alert">
+        <strong>O painel {this.props.name} teve um erro.</strong>
+        <span>{this.state.error.message}</span>
+        <button className="btn sm" onClick={() => this.setState({ error: null })}>
+          Tentar outra vez
+        </button>
+      </div>
+    );
   }
 }
 
@@ -116,7 +141,7 @@ export function Dock({ page }: { page: Page }) {
     for (const id of Object.keys(PANELS) as PanelId[]) {
       const Panel = () => (
         <div className="dock-fill" data-panel={id}>
-          {PANELS[id].render()}
+          <PanelGuard name={PANELS[id].title}>{PANELS[id].render()}</PanelGuard>
         </div>
       );
       Panel.displayName = `Dock(${id})`;
@@ -131,6 +156,8 @@ export function Dock({ page }: { page: Page }) {
     api.onDidLayoutChange(() => {
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => {
+        // Never keep an arrangement that lost panels.
+        if (api.panels.length !== panelsOf(page).length) return;
         try {
           localStorage.setItem(storeKey(page), JSON.stringify(api.toJSON()));
         } catch {

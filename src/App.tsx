@@ -11,6 +11,7 @@ import { ClaudePanel } from './components/ClaudePanel';
 import { LigacaoPanel } from './components/Ligacao';
 import { initCollab } from './collab';
 import { useChat } from './chat';
+import { openNodePicker } from './components/Fusion';
 
 const PAGES = [
   { id: 'media', label: 'Média', icon: 'import' },
@@ -63,6 +64,7 @@ export function App() {
       else if (ctrl && k === 'i') void importDialog();
       else if (ctrl && k === 'e') void exportVideo().catch(() => {});
       else if (ctrl) return;
+      else if (e.key === ' ' && e.shiftKey && s.page === 'fusion') openNodePicker();
       else if (e.key === ' ') s.setPlaying(!s.playing);
       else if (k === 's' || k === 'c') s.splitAt(s.playhead, s.selected);
       else if (e.key === 'Delete' || e.key === 'Backspace') s.selected && s.deleteClip(s.selected, e.shiftKey);

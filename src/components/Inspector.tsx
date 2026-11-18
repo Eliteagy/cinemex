@@ -15,6 +15,7 @@ import type { Crop } from '../lib/crop.js';
 import { FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from '../lib/frame.js';
 import type { Frame, FrameBg } from '../types';
 import type { BlendMode, Clip, KeyProp, Media } from '../types';
+import { genColor, genLabel, genMedia, isGen } from '../lib/generators.js';
 import type { MotionPreset } from '../lib/fx.js';
 import { Icon } from './Icon';
 import { Freeze, Masks, Transitions } from './ClipFx';
@@ -565,6 +566,54 @@ function AudioTab({ clip, open, toggle }: { clip: Clip; open: (id: string) => bo
   );
 }
 
+// ------------------------------------------------------------------ Geradores
+/** What only a generator has: the colour of a solid, the way to the Cor or Fusion page. */
+function GeneratorSection({ clip, open, toggle }: { clip: Clip; open: (id: string) => boolean; toggle: (id: string) => void }) {
+  const op = useProp(clip, 'opacity');
+  const go = (page: 'color' | 'fusion') => {
+    const s = st();
+    s.select(clip.id);
+    if (s.playhead < clip.start || s.playhead >= clip.start + dur(clip)) s.seek(clip.start);
+    s.setPage(page);
+  };
+  return (
+    <Section id="generator" title={genLabel(clip)} on open={open('generator')} onToggle={toggle}>
+      {clip.gen === 'solid' && (
+        <Row label="Cor">
+          <label className="swatch">
+            <input type="color" value={genColor(clip)} onPointerDown={() => st().startSlide()} onChange={(e) => st().updateClip(clip.id, { genColor: e.target.value.toUpperCase() })} />
+            <span>{genColor(clip)}</span>
+          </label>
+        </Row>
+      )}
+      {clip.gen === 'adjustment' && (
+        <>
+          <Row label="Opacidade" keyBtn={<KeyBtn on={op.here} armed={op.armed} onClick={op.toggleKey} />} onReset={op.reset}>
+            <RowSlider label="Opacidade" value={op.value * 100} min={0} max={100} step={0.5} onChange={(v) => op.set(v / 100)} />
+            <NumField label="Opacidade" value={op.value * 100} min={0} max={100} step={0.5} dec={2} onChange={(v) => op.set(v / 100)} />
+          </Row>
+          <p className="ri-note">A cor desta camada aplica-se a tudo o que está por baixo, enquanto ela durar. A opacidade mistura-a com a imagem original.</p>
+          <div className="ri-pad">
+            <button className="btn" style={{ width: '100%' }} onClick={() => go('color')}>
+              <Icon name="color" /> Abrir na página Cor
+            </button>
+          </div>
+        </>
+      )}
+      {clip.gen === 'fusion' && (
+        <>
+          <p className="ri-note">Uma composição vazia. Os nós constroem-se na página Fusion (Shift+Espaço procura um nó).</p>
+          <div className="ri-pad">
+            <button className="btn" style={{ width: '100%' }} onClick={() => go('fusion')}>
+              <Icon name="nodes" /> Abrir na página Fusion
+            </button>
+          </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
 // ------------------------------------------------------------------ Ficheiro
 function FileTab({ clip, media, open, toggle }: { clip: Clip; media?: Media; open: (id: string) => boolean; toggle: (id: string) => void }) {
   return (
@@ -639,7 +688,7 @@ const TABS: { id: Tab; label: string; d: string }[] = [
   { id: 'file', label: 'Ficheiro', d: G.file },
 ];
 /** Sections open the first time, like a fresh Resolve project (the rest open with a click). */
-const OPEN_DEFAULT = new Set(['transform', 'crop', 'dynzoom', 'composite', 'speed', 'scaling', 'volume', 'timing', 'fileinfo', 'title', 'graphic', 'project', 'captions0', 'text0', 'transitions', 'effects', 'masks']);
+const OPEN_DEFAULT = new Set(['generator', 'transform', 'crop', 'dynzoom', 'composite', 'speed', 'scaling', 'volume', 'timing', 'fileinfo', 'title', 'graphic', 'project', 'captions0', 'text0', 'transitions', 'effects', 'masks']);
 
 export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
   const styleOptions = useStyleOptions();
@@ -708,7 +757,9 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
   }
 
   const { clip, track } = f;
-  const m = project.media.find((x) => x.id === clip.mediaId);
+  const gen = isGen(clip);
+  // A solid colour or a Fusion composition is a picture the size of the canvas: the same tools as an image.
+  const m: Media | undefined = project.media.find((x) => x.id === clip.mediaId) ?? genMedia(clip, project.canvas) ?? undefined;
   const isText = isTextClip(clip);
   // A clip on an audio track is sound only, also when it is the sound of a video (its linked clip).
   const isAudio = m?.kind === 'audio' || track.kind === 'audio';
@@ -716,12 +767,12 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
     video: !isAudio,
     audio: Boolean(m?.hasAudio),
     effects: Boolean(m) && !isAudio && !isText,
-    transition: Boolean(m) && !isText,
+    transition: (Boolean(m) || gen) && !isText,
     image: false,
     file: true,
   };
   const current: Tab = usable[tab] ? tab : usable.video ? 'video' : usable.audio ? 'audio' : 'file';
-  const name = clip.graphic ? 'Grafismo' : isText ? clip.text || 'Texto' : (m?.name ?? 'Clip');
+  const name = clip.graphic ? 'Grafismo' : isText ? clip.text || 'Texto' : gen ? genLabel(clip) : (m?.name ?? 'Clip');
 
   return (
     <aside className="panel rinsp" aria-label="Inspetor">
@@ -774,7 +825,10 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
               </div>
             </Section>
           ) : (
-            m && <VideoTab clip={clip} media={m} open={open} toggle={toggle} />
+            <>
+              {gen && <GeneratorSection clip={clip} open={open} toggle={toggle} />}
+              {m && <VideoTab clip={clip} media={m} open={open} toggle={toggle} />}
+            </>
           ))}
         {current === 'audio' && <AudioTab clip={clip} open={open} toggle={toggle} />}
         {current === 'effects' && (
@@ -795,7 +849,7 @@ export function Inspector({ initialTab = 'video' }: { initialTab?: Tab } = {}) {
             <Transitions clip={clip} />
           </Section>
         )}
-        {current === 'file' && <FileTab clip={clip} media={m} open={open} toggle={toggle} />}
+        {current === 'file' && <FileTab clip={clip} media={gen ? undefined : m} open={open} toggle={toggle} />}
       </div>
     </aside>
   );

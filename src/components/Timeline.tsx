@@ -6,6 +6,8 @@ import { Wave } from './Wave';
 import type { Clip, Track } from '../types';
 import { Icon } from './Icon';
 import { peerColor, useCollab } from '../collab';
+import { GENERATORS, hasPicture, isGen } from '../lib/generators.js';
+import type { GenKind } from '../types';
 
 const RANK: Record<string, number> = { text: 0, video: 1, audio: 2 };
 const SNAP_PX = 8;
@@ -34,17 +36,14 @@ const WAVE: Record<string, string> = { voice: 'rgba(160,222,255,0.92)', fx: 'rgb
 type Drag = { kind: 'move' | 'left' | 'right'; id: string; x0: number; start: number; in: number; out: number; speed: number; trackKind: string };
 type Menu = { x: number; y: number; trackId: string | null };
 
-/** Right-click menu of a track header: new tracks, rename, order, delete. */
-function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Track[]; onClose: () => void; onRename: (id: string) => void }) {
+/** A small menu at the pointer (right-click): kept inside the window, closed by a click outside, Esc or a resize. */
+function FloatMenu({ x, y, label, onClose, children }: { x: number; y: number; label: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x: menu.x, y: menu.y });
-  const st = useEditor.getState;
-  const t = tracks.find((x) => x.id === menu.trackId) ?? null;
-  // Kept inside the window.
+  const [pos, setPos] = useState({ x, y });
   useLayoutEffect(() => {
     const r = ref.current?.getBoundingClientRect();
-    if (r) setPos({ x: Math.max(8, Math.min(menu.x, innerWidth - r.width - 8)), y: Math.max(8, Math.min(menu.y, innerHeight - r.height - 8)) });
-  }, [menu.x, menu.y]);
+    if (r) setPos({ x: Math.max(8, Math.min(x, innerWidth - r.width - 8)), y: Math.max(8, Math.min(y, innerHeight - r.height - 8)) });
+  }, [x, y]);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -66,6 +65,76 @@ function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Tr
       removeEventListener('resize', shut);
     };
   }, []);
+  return createPortal(
+    <div ref={ref} className="tl-menu" role="menu" aria-label={label} style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+/** Right-click menu of a clip: open it on the Fusion or Cor page, cut, unlink, delete. */
+function ClipMenu({ menu, onClose }: { menu: { x: number; y: number; clipId: string }; onClose: () => void }) {
+  const st = useEditor.getState;
+  const f = st().project.tracks.flatMap((t) => t.clips.map((c) => ({ c, t }))).find((x) => x.c.id === menu.clipId);
+  if (!f) return null;
+  const { c, t } = f;
+  const m = st().project.media.find((x) => x.id === c.mediaId);
+  const picture = t.kind === 'video' && ((m && m.kind !== 'audio') || hasPicture(c));
+  const gradable = picture || (t.kind === 'video' && isGen(c));
+  const playhead = st().playhead;
+  const under = playhead > c.start + 0.05 && playhead < end(c) - 0.05;
+  const run = (fn: () => void) => () => {
+    onClose();
+    try {
+      fn();
+    } catch (e) {
+      st().setStatus((e as Error).message);
+    }
+  };
+  const open = (page: 'fusion' | 'color') =>
+    run(() => {
+      st().select(c.id);
+      // The page shows the clip under the playhead: bring it onto the clip.
+      if (playhead < c.start || playhead >= end(c)) st().seek(c.start);
+      st().setPage(page);
+    });
+  return (
+    <FloatMenu x={menu.x} y={menu.y} label="Clip" onClose={onClose}>
+      {picture && (
+        <button role="menuitem" onClick={open('fusion')}>
+          Abrir na página Fusion
+        </button>
+      )}
+      {gradable && (
+        <button role="menuitem" onClick={open('color')}>
+          Abrir na página Cor
+        </button>
+      )}
+      {(picture || gradable) && <hr />}
+      <button role="menuitem" disabled={!under} onClick={run(() => st().splitAt(playhead, c.id))}>
+        Cortar na cabeça de leitura
+      </button>
+      {c.link && (
+        <button role="menuitem" onClick={run(() => st().unlinkClip(c.id))}>
+          Desligar imagem do som
+        </button>
+      )}
+      <hr />
+      <button role="menuitem" className="danger" onClick={run(() => st().deleteClip(c.id))}>
+        Apagar
+      </button>
+      <button role="menuitem" className="danger" onClick={run(() => st().deleteClip(c.id, true))}>
+        Apagar e fechar o espaço
+      </button>
+    </FloatMenu>
+  );
+}
+
+/** Right-click menu of a track header: new tracks, rename, order, delete. */
+function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Track[]; onClose: () => void; onRename: (id: string) => void }) {
+  const st = useEditor.getState;
+  const t = tracks.find((x) => x.id === menu.trackId) ?? null;
   const run = (fn: () => void) => () => {
     onClose();
     try {
@@ -78,8 +147,8 @@ function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Tr
   const at = t ? same.indexOf(t) : -1;
   const onlyVideo = t?.kind === 'video' && same.length <= 1;
   const n = t?.clips.length ?? 0;
-  return createPortal(
-    <div ref={ref} className="tl-menu" role="menu" aria-label={t ? `Pista ${t.name}` : 'Pistas'} style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+  return (
+    <FloatMenu x={menu.x} y={menu.y} label={t ? `Pista ${t.name}` : 'Pistas'} onClose={onClose}>
       {t && (
         <>
           <button role="menuitem" onClick={run(() => onRename(t.id))}>
@@ -119,8 +188,7 @@ function TrackMenu({ menu, tracks, onClose, onRename }: { menu: Menu; tracks: Tr
           </button>
         </>
       )}
-    </div>,
-    document.body,
+    </FloatMenu>
   );
 }
 
@@ -147,6 +215,7 @@ export function Timeline() {
   const [addOpen, setAddOpen] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [clipMenu, setClipMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
   const linked = useEditor((s) => s.linked);
   const st = useEditor.getState;
 
@@ -285,6 +354,12 @@ export function Timeline() {
   const onDrop = (e: React.DragEvent, track: Track) => {
     e.preventDefault();
     setDropLane(null);
+    // A generator from the Efeitos tab lands on the track it is dropped on (any video track).
+    const gen = e.dataTransfer.getData('application/x-ec-gen') as GenKind | '';
+    if (gen && GENERATORS[gen]) {
+      st().addGenerator(gen, { start: snapTime(timeAt(e.clientX), ''), trackId: track.kind === 'video' ? track.id : undefined });
+      return;
+    }
     const id = e.dataTransfer.getData('application/x-ec-media');
     const m = id && media.get(id);
     if (!m) return;
@@ -408,6 +483,7 @@ export function Timeline() {
           ))}
         </div>
         {menu && <TrackMenu menu={menu} tracks={tracks} onClose={() => setMenu(null)} onRename={setRenaming} />}
+        {clipMenu && <ClipMenu menu={clipMenu} onClose={() => setClipMenu(null)} />}
 
         <div className="tl-scroll" ref={scroll} onScroll={(e) => heads.current && (heads.current.scrollTop = e.currentTarget.scrollTop)} onWheel={(e) => (e.ctrlKey ? (e.preventDefault(), st().setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))) : undefined)}>
           <div className="tl-inner" style={{ width }}>
@@ -438,7 +514,7 @@ export function Timeline() {
                   }
                 }}
                 onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes('application/x-ec-media')) {
+                  if (e.dataTransfer.types.includes('application/x-ec-media') || (e.dataTransfer.types.includes('application/x-ec-gen') && t.kind === 'video')) {
                     e.preventDefault();
                     setDropLane(t.id);
                   }
@@ -450,15 +526,24 @@ export function Timeline() {
                   const m = c.mediaId ? media.get(c.mediaId) : undefined;
                   const w = Math.max(6, dur(c) * zoom);
                   // A text is a clip like any other on a video track; it keeps its own colour.
-                  const kind = isText(c) ? 'text' : t.kind;
+                  const gen = isGen(c) ? c.gen! : null;
+                  const kind = isText(c) ? 'text' : gen ? 'gen' : t.kind;
+                  // Texts and generators have no source: their ends are dragged freely.
+                  const grip = kind === 'text' || kind === 'gen' ? 'text' : t.kind;
                   return (
                     <div
                       key={c.id}
-                      className={`clip ${kind}${kind === 'text' ? ' r-text' : ''}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
+                      className={`clip ${kind}${kind === 'text' ? ' r-text' : ''}${gen ? ` gk-${gen}` : ''}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
                       style={{ left: c.start * zoom, width: w, opacity: t.hidden || (t.kind === 'audio' && t.muted) ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
-                      onPointerDown={(e) => onClipDown(e, c, 'move', kind)}
+                      onPointerDown={(e) => onClipDown(e, c, 'move', grip)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        st().select(c.id);
+                        setClipMenu({ x: e.clientX, y: e.clientY, clipId: c.id });
+                      }}
                       onDoubleClick={() => st().seek(c.start)}
-                      title={c.text ?? m?.name}
+                      title={c.text ?? m?.name ?? (gen ? GENERATORS[gen].hint : undefined)}
                     >
                       {m?.thumb && kind === 'video' && <div className="strip" style={{ backgroundImage: `url(${m.thumb})` }} />}
                       {m?.peaks && kind !== 'text' && !(kind === 'video' && c.silent) && (
@@ -475,10 +560,11 @@ export function Timeline() {
                         ))}
                       <span className="label">
                         {(c.speed ?? 1) !== 1 && <b className="spd">{c.speed}×</b>}
-                        {c.text ?? m?.name ?? 'clip'}
+                        {gen === 'solid' && <i className="gen-chip" style={{ background: c.genColor ?? '#000' }} />}
+                        {c.text ?? m?.name ?? (gen ? GENERATORS[gen].label : 'clip')}
                       </span>
-                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', kind)} />
-                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', kind)} />
+                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', grip)} />
+                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', grip)} />
                     </div>
                   );
                 })}
@@ -500,7 +586,7 @@ export function Timeline() {
 
       <div className="status">
         {busy && <span className="busy" aria-hidden="true" />}
-        <span className="msg">{status ?? 'Espaço reproduz · S corta · Delete apaga · Ctrl+Z desfaz · arrasta clips entre pistas · botão direito no nome da pista: opções'}</span>
+        <span className="msg">{status ?? 'Espaço reproduz · S corta · Delete apaga · Ctrl+Z desfaz · arrasta clips entre pistas · botão direito num clip ou no nome da pista: opções'}</span>
         <div className="spacer" />
         {progress !== null && (
           <>

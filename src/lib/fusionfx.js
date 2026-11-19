@@ -14,6 +14,8 @@
 // Each has a js form (preview and tests) and an ffmpeg form (geq on a single frame for the static masks
 // and the flare, looped; geq per frame for relight).
 
+import { kfAt, kfExpr } from './anim.js';
+
 const fx = (n) => String(Math.round(n * 1e6) / 1e6);
 const smooth = (e0, e1, x) => {
   const t = Math.max(0, Math.min(1, (x - e0) / Math.max(1e-6, e1 - e0)));
@@ -262,4 +264,28 @@ export function shapeFF(W, H, p, shape) {
   }
   const a = `clip(0.5-${d}/${fx(g.soft)},0,1)`;
   return g.invert ? `(1-${a})` : a;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Animated node settings: a setting with keyframes (node.k[name], t = seconds from the clip start)
+// follows them; with one keyframe or none it is a fixed value. Same easing as the clips' keyframes
+// (src/lib/anim.js), so the preview (nodeNum) and the export (nodeExpr) move alike.
+
+const keysOf = (n, k) => (Array.isArray(n?.k?.[k]) ? n.k[k].filter((x) => Number.isFinite(x?.t) && Number.isFinite(x?.v)) : []);
+/** True when the setting changes over time (two keyframes or more, not all the same value). */
+export function nodeAnimated(n, k) {
+  const list = keysOf(n, k);
+  return list.length >= 2 && list.some((x) => x.v !== list[0].v);
+}
+/** Value of a numeric setting at local time t. def = the setting's default. */
+export function nodeNum(n, k, def, t) {
+  const list = keysOf(n, k);
+  if (list.length) return kfAt(list, t, def);
+  return num(n?.p?.[k], def);
+}
+/** The same value as an ffmpeg expression of the time expression T (a plain number when it is not animated). */
+export function nodeExpr(n, k, def, T = 't') {
+  const list = keysOf(n, k);
+  if (nodeAnimated(n, k)) return kfExpr(list, def, T);
+  return fx(list.length ? list[0].v : num(n?.p?.[k], def));
 }

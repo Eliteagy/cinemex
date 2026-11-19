@@ -124,6 +124,8 @@ export interface FNode {
   x: number;
   y: number;
   p: Record<string, number | string | boolean>;
+  /** Keyframes of the node's numeric settings (t = seconds from the clip start): the setting is animated, like in Resolve's Fusion. */
+  k?: Record<string, Keyframe[]>;
 }
 /** Output of `from` goes into input number `port` of `to`. */
 export interface FLink {

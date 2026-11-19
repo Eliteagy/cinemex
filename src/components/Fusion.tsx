@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { useEditor } from '../store';
-import { findClip } from '../lib/project';
-import { NODES, inputOf, param } from '../engine/fusion';
+import { dur, findClip } from '../lib/project';
+import { NODES, inputOf, param, paramAt } from '../engine/fusion';
+import { EASES, EASE_LABELS } from '../lib/anim.js';
+import type { Ease } from '../types';
 import type { Clip, FNode, FNodeType } from '../types';
 import { useGradeTarget } from './Color';
 import { Icon } from './Icon';
@@ -92,6 +94,9 @@ export function FusionInspector() {
   const media = useEditor((s) => s.project.media);
   const n = clip?.fusion?.nodes.find((x) => x.id === nodeId);
   const set = (k: string, v: number | string | boolean) => clip && n && safe(() => useEditor.getState().setNodeParams(clip.id, n.id, { [k]: v }));
+  // Keyframes are placed at the playhead, in seconds from the start of the clip.
+  const playhead = useEditor((s) => s.playhead);
+  const local = clip ? Math.max(0, Math.min(dur(clip), playhead - clip.start)) : 0;
   return (
     <aside className="panel" aria-label="Definições do nó">
       <div className="ph">{n ? NODES[n.type].label : 'Nó'}</div>
@@ -105,16 +110,57 @@ export function FusionInspector() {
             // Settings that only make sense for some choices (the second colour of a gradient…).
             if (spec.when && !Object.entries(spec.when).every(([dep, values]) => values.includes(String(param(n, dep))))) return null;
             const v = param(n, k);
-            if (spec.type === 'number')
+            if (spec.type === 'number') {
+              // A setting with keyframes shows its value at the playhead, and a change there is a keyframe.
+              const keys = (spec.key && clip && n.k?.[k]) || [];
+              const animated = keys.length > 0;
+              const here = keys.some((x) => Math.abs(x.t - local) < 0.02);
+              const shown = animated ? Number(paramAt(n, k, local)) : Number(v);
+              const st = useEditor.getState;
+              const change = (val: number) => (animated && clip ? safe(() => st().setNodeKey(clip.id, n.id, k, clip.start + local, val)) : set(k, val));
               return (
                 <div className="field" key={k}>
                   <label className="row-label">
                     <span>{spec.label}</span>
-                    <b className="val">{Math.round(Number(v) * 100) / 100}</b>
+                    <b className="val">{Math.round(shown * 100) / 100}</b>
+                    {spec.key && clip && (
+                      <button
+                        className={`kf-btn${here ? ' on' : animated ? ' armed' : ''}`}
+                        title={here ? 'Tirar o keyframe deste momento' : animated ? 'Pôr um keyframe neste momento' : 'Animar: pôr o primeiro keyframe neste momento'}
+                        aria-label={`Keyframe de ${spec.label}`}
+                        aria-pressed={here}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          safe(() => (here ? st().removeNodeKey(clip.id, n.id, k, clip.start + local) : st().setNodeKey(clip.id, n.id, k, clip.start + local, shown)));
+                        }}
+                      >
+                        ◆
+                      </button>
+                    )}
                   </label>
-                  <input className="range" type="range" min={spec.min} max={spec.max} step={spec.step} value={Number(v)} onPointerDown={() => useEditor.getState().startSlide()} onDoubleClick={() => set(k, spec.default)} onChange={(e) => set(k, Number(e.target.value))} />
+                  <input className="range" type="range" min={spec.min} max={spec.max} step={spec.step} value={shown} onPointerDown={() => st().startSlide()} onDoubleClick={() => change(Number(spec.default))} onChange={(e) => change(Number(e.target.value))} />
+                  {animated && clip && (
+                    <div className="kf-row">
+                      <span>
+                        {keys.length} {keys.length === 1 ? 'keyframe' : 'keyframes'}
+                      </span>
+                      <select className="select" value={keys[0]!.ease ?? 'smooth'} aria-label={`Curva de ${spec.label}`} onChange={(e) => safe(() => st().setNodeKeyEase(clip.id, n.id, k, e.target.value as Ease))}>
+                        {(EASES as Ease[])
+                          .filter((x) => x !== 'bezier')
+                          .map((x) => (
+                            <option key={x} value={x}>
+                              {(EASE_LABELS as Record<string, string>)[x] ?? x}
+                            </option>
+                          ))}
+                      </select>
+                      <button className="btn sm ghost" title="Tirar todos os keyframes: a definição fica fixa" onClick={() => safe(() => st().removeNodeKey(clip.id, n.id, k))}>
+                        Tirar animação
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
+            }
             if (spec.type === 'color')
               return (
                 <div className="field" key={k}>

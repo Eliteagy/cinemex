@@ -554,8 +554,9 @@ export function Timeline() {
                       {t.kind === 'audio' && !m?.peaks && <div className="wave" />}
                       {c.transitionIn && <div className={`trans in ${c.transitionIn.type}`} style={{ width: Math.min(w, c.transitionIn.d * zoom) }} title={`Entrada: ${c.transitionIn.type} ${c.transitionIn.d}s`} />}
                       {c.transitionOut && <div className={`trans out ${c.transitionOut.type}`} style={{ width: Math.min(w, c.transitionOut.d * zoom) }} title={`Saída: ${c.transitionOut.type} ${c.transitionOut.d}s`} />}
-                      {c.keyframes &&
-                        [...new Set(Object.values(c.keyframes).flatMap((l) => (l ?? []).map((k) => k.t)))].map((kt) => (
+                      {(c.keyframes || c.fusion) &&
+                        // Keyframes of the clip and of its Fusion nodes.
+                        [...new Set([...Object.values(c.keyframes ?? {}), ...(c.fusion?.nodes ?? []).flatMap((fn) => Object.values(fn.k ?? {}))].flatMap((l) => (l ?? []).map((k) => k.t)))].map((kt) => (
                           <i key={kt} className="kf" style={{ left: kt * zoom }} title={`Keyframe ${kt.toFixed(2)} s`} />
                         ))}
                       <span className="label">

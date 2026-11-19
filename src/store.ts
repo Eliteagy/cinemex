@@ -152,6 +152,12 @@ export interface EditorState {
   /** Fusion: node graph of a clip (created with In -> Out on first use). */
   addNode(clipId: string, type: FNodeType, after?: string | null, at?: { x: number; y: number }): string;
   setNodeParams(clipId: string, nodeId: string, p: FNode['p']): void;
+  /** Keyframe of a node setting at timeline time `time` (animates the setting). */
+  setNodeKey(clipId: string, nodeId: string, param: string, time: number, value: number, ease?: Ease): void;
+  /** Removes the keyframe at timeline time `time`, or every keyframe of the setting (time undefined). */
+  removeNodeKey(clipId: string, nodeId: string, param: string, time?: number): void;
+  /** The curve of every keyframe of a node setting. */
+  setNodeKeyEase(clipId: string, nodeId: string, param: string, ease: Ease): void;
   removeNode(clipId: string, nodeId: string): void;
   linkNodes(clipId: string, from: string, to: string, port: number): void;
   unlinkPort(clipId: string, to: string, port: number): void;
@@ -170,6 +176,20 @@ export interface EditorState {
 }
 
 const minLen = 0.1;
+
+/** Which settings of each node can have keyframes, with their limits (src/lib/fusion-nodes.json "key"). */
+const NODE_KEYS = Object.fromEntries(
+  Object.entries(fusionNodes as unknown as Record<string, { params?: Record<string, { key?: boolean; min?: number; max?: number; default?: unknown }> }>).map(([k, v]) => [k, Object.fromEntries(Object.entries(v.params ?? {}).filter(([, s]) => s.key))]),
+) as Record<string, Record<string, { min?: number; max?: number; default?: unknown }>>;
+/** A node of a clip's graph and the limits of one of its animated settings. */
+function keyable(p: Project, clipId: string, nodeId: string, param: string) {
+  const f = findClip(p, clipId);
+  const n = f ? fusionOf(p, clipId).nodes.find((x) => x.id === nodeId) : undefined;
+  if (!f || !n) throw new Error('Nó não encontrado');
+  const spec = NODE_KEYS[n.type]?.[param];
+  if (!spec) throw new Error(`Esta definição não se anima: ${param}`);
+  return { clip: f.clip, node: n, spec };
+}
 
 const NODE_INPUTS = Object.fromEntries(Object.entries(fusionNodes as Record<string, { inputs?: string[] }>).map(([k, v]) => [k, v.inputs?.length ?? 0])) as Record<string, number>;
 
@@ -492,6 +512,21 @@ export const useEditor = create<EditorState>((set, get) => ({
             }
             c.keyframes = left;
             right.keyframes = rightK;
+          }
+          // Fusion node keyframes: each half keeps its part of the animation, with a keyframe at the cut.
+          if (c.fusion && right.fusion) {
+            const off = time - c.start;
+            c.fusion.nodes.forEach((n, i) => {
+              const rn = right.fusion!.nodes[i]!;
+              for (const [param, list] of Object.entries(n.k ?? {})) {
+                if (!list?.length) continue;
+                const v = r3(kfValue(list, off, Number(NODE_KEYS[n.type]?.[param]?.default ?? 0)));
+                const ease = list[0]!.ease;
+                const cut = { v, ...(ease ? { ease } : {}) };
+                n.k![param] = [...list.filter((k) => k.t < off - 0.001), { t: r3(off), ...cut }];
+                rn.k![param] = [{ t: 0, ...cut }, ...list.filter((k) => k.t > off + 0.001).map((k) => ({ ...k, t: r3(k.t - off) }))];
+              }
+            });
           }
           if (c.transitionOut) right.transitionOut = c.transitionOut;
           c.transitionOut = null;
@@ -1111,6 +1146,45 @@ export const useEditor = create<EditorState>((set, get) => ({
       }
     });
     return id;
+  },
+  setNodeKey(clipId, nodeId, param, time, value, ease) {
+    get().commit((p) => {
+      const { clip, node, spec } = keyable(p, clipId, nodeId, param);
+      const t = r3(Math.max(0, Math.min(dur(clip), time - clip.start)));
+      const v = r3(Math.max(spec.min ?? -Infinity, Math.min(spec.max ?? Infinity, value)));
+      const list = ((node.k ??= {})[param] ??= []);
+      const at = list.find((x) => Math.abs(x.t - t) < 0.02);
+      // New keyframes take the curve of the others of this setting.
+      const curve = ease ?? at?.ease ?? list[0]?.ease;
+      if (at) Object.assign(at, { v, ...(curve ? { ease: curve } : {}) });
+      else list.push({ t, v, ...(curve ? { ease: curve } : {}) });
+      list.sort((a, b) => a.t - b.t);
+      // The fixed value follows, so taking the animation away leaves what is on screen.
+      node.p = { ...node.p, [param]: v };
+    });
+  },
+  removeNodeKey(clipId, nodeId, param, time) {
+    get().commit((p) => {
+      const { clip, node } = keyable(p, clipId, nodeId, param);
+      const list = node.k?.[param];
+      if (!list) return;
+      const t = time === undefined ? null : time - clip.start;
+      const left = t === null ? [] : list.filter((x) => Math.abs(x.t - t) >= 0.02);
+      if (left.length) node.k![param] = left;
+      else {
+        delete node.k![param];
+        if (!Object.keys(node.k!).length) delete node.k;
+      }
+    });
+  },
+  setNodeKeyEase(clipId, nodeId, param, ease) {
+    get().commit((p) => {
+      const { node } = keyable(p, clipId, nodeId, param);
+      for (const x of node.k?.[param] ?? []) {
+        x.ease = ease;
+        delete x.bz;
+      }
+    });
   },
   setNodeParams(clipId, nodeId, patch) {
     get().commit((p) => {

@@ -269,12 +269,24 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
           const bg = inp(0);
           let fg = inp(1);
           const mode = String(val(n, 'mode'));
-          const op = Math.max(0, Math.min(1, num(n, 'opacity')));
+          const moving = ffx.nodeAnimated(n, 'opacity');
+          const op = moving ? 1 : Math.max(0, Math.min(1, Number(ffx.nodeExpr(n, 'opacity', 1))));
+          // Grey planes multiplied into the foreground's alpha: the mask input, and an animated opacity.
+          const cut = [];
           if (from(id, 2)) {
-            // Mask input: the foreground's alpha is multiplied by the mask's.
-            const mk = inp(2);
-            filters.push(`[${fg}]format=rgba,split=2[${l}q0][${l}q1]`, `[${l}q1]alphaextract[${l}qa]`, `[${mk}]format=rgba,alphaextract[${l}qm]`);
-            filters.push(`[${l}qa][${l}qm]blend=all_mode=multiply[${l}qx]`, `[${l}q0][${l}qx]alphamerge[${l}qf]`);
+            // Mask input: the foreground only shows where the mask is opaque.
+            filters.push(`[${inp(2)}]format=rgba,alphaextract[${l}qm]`);
+            cut.push(`${l}qm`);
+          }
+          if (moving) {
+            // Opacity keyframes: a tiny grey frame per moment (geq on 16 x 16 pixels), stretched to the frame.
+            filters.push(`color=c=black:s=16x16:r=${FPS}:d=${fx(dur)},format=gray,geq=lum='255*clip(${ffx.nodeExpr(n, 'opacity', 1, 'T')},0,1)',scale=${W}:${H}:flags=neighbor[${l}qo]`);
+            cut.push(`${l}qo`);
+          }
+          if (cut.length) {
+            filters.push(`[${fg}]format=rgba,split=2[${l}q0][${l}q1]`, `[${l}q1]alphaextract[${l}qa0]`);
+            cut.forEach((m, i) => filters.push(`[${l}qa${i}][${m}]blend=all_mode=multiply[${l}qa${i + 1}]`));
+            filters.push(`[${l}q0][${l}qa${cut.length}]alphamerge[${l}qf]`);
             fg = `${l}qf`;
           }
           if (mode === 'normal') {
@@ -282,8 +294,8 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
             filters.push(`[${bg}][${l}f]overlay=format=auto:eof_action=pass[${l}]`);
           } else {
             const bm = mode === 'add' ? 'addition' : mode;
-            if (from(id, 2)) {
-              // With a mask the blend only counts where the masked foreground is opaque.
+            if (cut.length) {
+              // With a mask or a moving opacity the blend only counts where the foreground is opaque.
               filters.push(`[${bg}]format=gbrp,split=2[${l}b][${l}b2]`, `[${fg}]format=rgba,split=2[${l}f0][${l}f1]`, `[${l}f0]format=gbrp[${l}f]`, `[${l}f1]alphaextract,format=gbrp[${l}fa]`);
               filters.push(`[${l}b][${l}f]blend=all_mode=${bm}:all_opacity=${fx(op)}[${l}x]`, `[${l}b2][${l}x][${l}fa]maskedmerge[${l}]`);
               break;
@@ -294,12 +306,20 @@ function fusionChain(filters, fusion, input, tag, { W, H, FPS, dur, media, addIn
           break;
         }
         case 'transform': {
-          const s = Math.max(0.01, num(n, 'scale'));
-          const a = fx((num(n, 'rotate') * Math.PI) / 180);
           const flip = val(n, 'flip') === true ? ',hflip' : '';
+          if (['x', 'y', 'scale', 'rotate'].some((k) => ffx.nodeAnimated(n, k))) {
+            // Keyframes: turned on a square that fits any angle, then scaled and placed frame by frame.
+            const S = `max(0.01,${ffx.nodeExpr(n, 'scale', 1)})`;
+            filters.push(`[${inp(0)}]format=rgba${flip},rotate=a='(${ffx.nodeExpr(n, 'rotate', 0)})*PI/180':c=black@0:ow='hypot(iw,ih)':oh=ow,scale=w='max(2,trunc(iw*(${S})/2)*2)':h='max(2,trunc(ih*(${S})/2)*2)':eval=frame[${l}t]`);
+            filters.push(`color=c=black@0:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${l}c]`);
+            filters.push(`[${l}c][${l}t]overlay=x='(main_w-overlay_w)/2+(${ffx.nodeExpr(n, 'x', 0)})*main_w':y='(main_h-overlay_h)/2+(${ffx.nodeExpr(n, 'y', 0)})*main_h':format=auto:eof_action=pass[${l}]`);
+            break;
+          }
+          const s = Math.max(0.01, Number(ffx.nodeExpr(n, 'scale', 1)));
+          const a = fx((Number(ffx.nodeExpr(n, 'rotate', 0)) * Math.PI) / 180);
           filters.push(`[${inp(0)}]format=rgba,scale=w=trunc(iw*${fx(s)}):h=trunc(ih*${fx(s)})${flip},rotate=a=${a}:c=black@0:ow=rotw(${a}):oh=roth(${a})[${l}t]`);
           filters.push(`color=c=black@0:s=${W}x${H}:r=${FPS}:d=${fx(dur)},format=rgba[${l}c]`);
-          filters.push(`[${l}c][${l}t]overlay=x=(main_w-overlay_w)/2+${fx(num(n, 'x'))}*main_w:y=(main_h-overlay_h)/2+${fx(num(n, 'y'))}*main_h:format=auto:eof_action=pass[${l}]`);
+          filters.push(`[${l}c][${l}t]overlay=x=(main_w-overlay_w)/2+${fx(Number(ffx.nodeExpr(n, 'x', 0)))}*main_w:y=(main_h-overlay_h)/2+${fx(Number(ffx.nodeExpr(n, 'y', 0)))}*main_h:format=auto:eof_action=pass[${l}]`);
           break;
         }
         case 'chroma':

@@ -529,6 +529,15 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     case 'fusion_set':
       S().setNodeParams(String(a.clip_id), String(a.node_id), cleanParams(a.params));
       return { ok: true };
+    case 'fusion_set_keyframe': {
+      const ease = s(a.ease) as Ease | undefined;
+      if (ease && !EASES.includes(ease)) throw new Error(`ease: ${EASES.join(', ')}`);
+      S().setNodeKey(String(a.clip_id), String(a.node_id), String(a.param), n(a.time) ?? S().playhead, n(a.value) ?? 0, ease);
+      return { fusion: findClipFusion(String(a.clip_id)) };
+    }
+    case 'fusion_remove_keyframes':
+      S().removeNodeKey(String(a.clip_id), String(a.node_id), String(a.param), n(a.time));
+      return { fusion: findClipFusion(String(a.clip_id)) };
     case 'fusion_link':
       if (s(a.from)) S().linkNodes(String(a.clip_id), String(a.from), String(a.to), n(a.port) ?? 0);
       else S().unlinkPort(String(a.clip_id), String(a.to), n(a.port) ?? 0);

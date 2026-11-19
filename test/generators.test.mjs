@@ -187,3 +187,75 @@ test('real export: a composition with a gradient background seen through an elli
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Keyframes on node settings: the composition moves.
+test('animated node settings: value over time, and what counts as animated', () => {
+  const { nodeNum, nodeAnimated, nodeExpr } = ffxLib;
+  const n = { id: 't', type: 'transform', p: { x: 0.2 }, k: { x: [{ t: 0, v: -0.5, ease: 'linear' }, { t: 2, v: 0.5, ease: 'linear' }], scale: [{ t: 1, v: 2 }] } };
+  assert.equal(nodeAnimated(n, 'x'), true);
+  assert.equal(nodeAnimated(n, 'scale'), false, 'one keyframe is a fixed value');
+  assert.equal(nodeAnimated(n, 'rotate'), false);
+  assert.equal(nodeNum(n, 'x', 0, 0), -0.5);
+  assert.ok(Math.abs(nodeNum(n, 'x', 0, 1)) < 1e-9, 'half way');
+  assert.equal(nodeNum(n, 'x', 0, 5), 0.5, 'held after the last keyframe');
+  assert.equal(nodeNum(n, 'scale', 1, 0), 2);
+  assert.equal(nodeNum(n, 'rotate', 0, 1), 0, 'no keyframes, no fixed value: the default');
+  assert.equal(nodeNum({ p: { rotate: 30 } }, 'rotate', 0, 1), 30);
+  assert.equal(nodeExpr(n, 'scale', 1), '2');
+  assert.match(nodeExpr(n, 'x', 0), /^\(st\(0,t\)/);
+});
+
+test('real export: a Transform node with keyframes moves the picture, an animated Merge opacity fades it', { skip: noFfmpeg, timeout: 120000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ec-anim-'));
+  try {
+    const src = join(dir, 'red.mp4');
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=red:s=320x240:r=30:d=4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', src]).status, 0);
+    const lin = (a, b) => [{ t: 0, v: a, ease: 'linear' }, { t: 2, v: b, ease: 'linear' }];
+    // 0-2 s: a green frame slides from the left half to the right half.
+    const slide = {
+      nodes: [
+        { id: 'out', type: 'mediaOut', x: 560, y: 90, p: {} },
+        { id: 'bg', type: 'background', x: 60, y: 90, p: { color: '#00FF00' } },
+        { id: 'tf', type: 'transform', x: 300, y: 90, p: {}, k: { x: lin(-0.5, 0.5) } },
+      ],
+      links: [{ from: 'bg', to: 'tf', port: 0 }, { from: 'tf', to: 'out', port: 0 }],
+    };
+    // 2-4 s: a blue frame fades in over the footage.
+    const fade = {
+      nodes: [
+        { id: 'out', type: 'mediaOut', x: 560, y: 90, p: {} },
+        { id: 'bg', type: 'background', x: 60, y: 90, p: { color: '#0000FF' } },
+        { id: 'mg', type: 'merge', x: 300, y: 90, p: {}, k: { opacity: lin(0, 1) } },
+      ],
+      links: [{ from: 'bg', to: 'mg', port: 1 }, { from: 'mg', to: 'out', port: 0 }],
+    };
+    const p = {
+      name: 'anim', canvas,
+      media: [{ id: 'v', path: src, kind: 'video', duration: 4, hasAudio: false }],
+      tracks: [
+        { id: 'v1', kind: 'video', name: 'V1', clips: [{ id: 'a', mediaId: 'v', start: 0, in: 0, out: 4, fit: 'fill' }] },
+        { id: 'v2', kind: 'video', name: 'V2', clips: [
+          { id: 'f1', start: 0, in: 0, out: 2, gen: 'fusion', fusion: slide },
+          { id: 'f2', start: 2, in: 0, out: 2, gen: 'fusion', fusion: fade },
+        ] },
+      ],
+    };
+    const out = join(dir, 'out.mp4');
+    await runExport(p, out);
+    const isGreen = (c) => c[1] > 180 && c[0] < 80;
+    const isRed = (c) => c[0] > 180 && c[1] < 80;
+    const early = [pixel(out, 0.1, 40, 100), pixel(out, 0.1, 280, 100)];
+    const late = [pixel(out, 1.9, 40, 100), pixel(out, 1.9, 280, 100)];
+    assert.ok(isGreen(early[0]) && isRed(early[1]), `start: green on the left, footage on the right: ${early.join(' | ')}`);
+    assert.ok(isRed(late[0]) && isGreen(late[1]), `end: footage on the left, green on the right: ${late.join(' | ')}`);
+    const f0 = pixel(out, 2.1, 100, 100);
+    const f1 = pixel(out, 3.0, 100, 100);
+    const f2 = pixel(out, 3.9, 100, 100);
+    assert.ok(f0[0] > 200 && f0[2] < 50, `fade start: the footage: ${f0}`);
+    assert.ok(f1[0] > 80 && f1[0] < 180 && f1[2] > 80 && f1[2] < 180, `half way: half red, half blue: ${f1}`);
+    assert.ok(f2[2] > 200 && f2[0] < 50, `fade end: blue: ${f2}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -33,3 +33,10 @@ export function shapeGeo(W: number, H: number, p: Record<string, unknown>): { cx
 /** Opacity 0..1 of a Rectangle or Ellipse mask at a pixel. */
 export function shapeAlpha(x: number, y: number, W: number, H: number, p: Record<string, unknown>, shape: 'rectangle' | 'ellipse'): number;
 export function shapeFF(W: number, H: number, p: Record<string, unknown>, shape: 'rectangle' | 'ellipse'): string;
+
+import type { FNode } from '../types';
+/** True when a node setting changes over time (two keyframes or more). */
+export function nodeAnimated(n: FNode, k: string): boolean;
+/** Value of a numeric node setting at local time t (keyframes win over the fixed value). */
+export function nodeNum(n: FNode, k: string, def: number, t: number): number;
+export function nodeExpr(n: FNode, k: string, def: number, T?: string): string;

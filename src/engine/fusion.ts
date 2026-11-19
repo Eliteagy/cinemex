@@ -3,7 +3,7 @@
 // shorter side, positions fractions of the frame.
 import nodesJson from '../lib/fusion-nodes.json';
 import { gradeMath } from '../lib/project';
-import { flareRGB, galleryMaxSigma, gradGeo, irisWeight, levelWeights, relightFactor, relightJS, relightParams, shapeAlpha, tiltWeight, LUMA709 } from '../lib/fusionfx.js';
+import { nodeNum, flareRGB, galleryMaxSigma, gradGeo, irisWeight, levelWeights, relightFactor, relightJS, relightParams, shapeAlpha, tiltWeight, LUMA709 } from '../lib/fusionfx.js';
 import type { FNode, FNodeType, Fusion } from '../types';
 
 export interface ParamSpec {
@@ -14,6 +14,8 @@ export interface ParamSpec {
   step?: number;
   default: number | string | boolean;
   options?: Record<string, string>;
+  /** Can be animated with keyframes (the preview and the export both follow them). */
+  key?: boolean;
   /** Shown only while another setting of the node has one of these values. */
   when?: Record<string, string[]>;
 }
@@ -26,7 +28,8 @@ export interface NodeSpec {
 export const NODES = Object.fromEntries(Object.entries(nodesJson).filter(([k]) => k !== '_comment')) as unknown as Record<FNodeType, NodeSpec>;
 
 export const param = (n: FNode, k: string) => n.p[k] ?? NODES[n.type].params[k]?.default;
-const num = (n: FNode, k: string) => Number(param(n, k));
+/** A setting at local time t: its keyframes when it has them (src/lib/fusionfx.js nodeNum), else the fixed value. */
+export const paramAt = (n: FNode, k: string, t: number) => (n.k?.[k]?.length ? nodeNum(n, k, Number(NODES[n.type].params[k]?.default ?? 0), t) : param(n, k));
 
 /** A graph only matters when it does more than In -> Out. */
 export function hasFusion(f?: Fusion) {
@@ -95,6 +98,8 @@ function boxBlur3(a: Float32Array, w: number, h: number, sigma: number) {
 export function evalFusion(f: Fusion, env: FusionEnv, pool: Map<string, HTMLCanvasElement>): HTMLCanvasElement | null {
   const { w, h } = env;
   const short = Math.min(w, h);
+  // Numeric settings follow their keyframes at this moment of the clip.
+  const num = (n: FNode, k: string) => Number(paramAt(n, k, env.local));
   const memo = new Map<string, HTMLCanvasElement>();
   const surface = (key: string) => {
     let c = pool.get(key);

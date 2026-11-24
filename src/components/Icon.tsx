@@ -1,5 +1,17 @@
 // Small line icons (own drawings, 24x24 grid, 1.75 stroke).
 const P: Record<string, string> = {
+  cursor: 'M5 3l14 7.5-6 1.7-2.6 6.3z',
+  trimTool: 'M4 4v16M20 4v16M8 12h8M10 9l-3 3 3 3M14 9l3 3-3 3',
+  blade: 'M4 20 15 9M15 9l3-3a2.1 2.1 0 0 0-3-3l-3 3zM4 20l3.5-1M4 20l1-3.5',
+  insert: 'M4 6h5v12H4zM15 6h5v12h-5zM12 4v16M10 9l2 2 2-2',
+  overwrite: 'M3 6h18v12H3zM8 6v12M16 6v12M12 9v6',
+  replace: 'M4 6h16v12H4zM9 10l-2 2 2 2M15 10l2 2-2 2M7 12h10',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
+  flag: 'M6 21V4M6 4h11l-2.5 4L17 12H6',
+  marker: 'M12 21s-6-6.3-6-11a6 6 0 0 1 12 0c0 4.7-6 11-6 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  posLock: 'M3 12h4M17 12h4M12 3v4M12 17v4M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0z',
+  fullExtent: 'M3 9V5h4M21 9V5h-4M3 15v4h4M21 15v4h-4M7 12h10',
   play: 'M7 5.5v13l11-6.5z',
   pause: 'M7 5h3.5v14H7zM13.5 5H17v14h-3.5z',
   start: 'M6 5v14M18 6l-9 6 9 6z',

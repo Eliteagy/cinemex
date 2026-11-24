@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { ACTIONS, comboLabel, comboOf, keysOf, useKeys, type KeyAction } from '../keys';
 import { Icon } from './Icon';
 
-const GROUPS: KeyAction['group'][] = ['Reprodução', 'Timeline', 'Fusion', 'Vista', 'Projeto'];
+const GROUPS: KeyAction['group'][] = ['Reprodução', 'Timeline', 'Edição', 'Fusion', 'Vista', 'Projeto'];
 
 export function Shortcuts() {
   const open = useKeys((s) => s.open);

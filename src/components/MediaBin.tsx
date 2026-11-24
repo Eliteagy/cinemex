@@ -7,6 +7,7 @@ import { FxLibrary } from './FxLibrary';
 
 export function MediaBin() {
   const media = useEditor((s) => s.project.media);
+  const source = useEditor((s) => s.source);
   const [tab, setTab] = useState<'media' | 'fx'>('media');
 
   return (
@@ -42,9 +43,11 @@ export function MediaBin() {
             {media.map((m) => (
               <div
                 key={m.id}
-                className="media-card"
+                className={`media-card${source === m.id ? ' src' : ''}`}
                 draggable
-                title={`${m.name}\nDuplo clique: pôr no fim da timeline`}
+                aria-pressed={source === m.id}
+                title={`${m.name}\nClique: fonte do F9 insert, F10 overwrite, F11 replace, F12 place on top\nDuplo clique: pôr no fim da timeline`}
+                onClick={() => useEditor.getState().setSource(source === m.id ? null : m.id)}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('application/x-ec-media', m.id);
                   e.dataTransfer.effectAllowed = 'copy';

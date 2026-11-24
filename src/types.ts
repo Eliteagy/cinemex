@@ -168,6 +168,8 @@ export interface Frame {
 
 export interface Clip {
   id: string;
+  /** Flag colour on the timeline (Resolve's clip flags). */
+  flag?: string;
   mediaId?: string;
   /** Position on the timeline. */
   start: number;
@@ -290,6 +292,8 @@ export interface Track {
   name: string;
   muted?: boolean;
   hidden?: boolean;
+  /** Locked (Resolve's track lock): no edit changes its clips. */
+  locked?: boolean;
   /** Audio track that holds the sound of this video track (its id): V1 -> A1 (src/lib/links.js). */
   of?: string;
   clips: Clip[];

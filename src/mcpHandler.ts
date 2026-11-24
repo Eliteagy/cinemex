@@ -1,4 +1,6 @@
 // What each MCP tool does in the editor (electron/mcp.cjs lists the tools and their schemas).
+import { EDIT_MODES } from './lib/edit.js';
+import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
 import { addSfx, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
@@ -51,6 +53,50 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (kind !== 'video' && kind !== 'audio' && kind !== 'text') throw new Error('kind: video, audio ou text');
       return { track_id: S().addTrack(kind, s(a.name)) };
     }
+    case 'set_tool': {
+      const t = s(a.tool);
+      if (t !== 'select' && t !== 'trim' && t !== 'blade') throw new Error('tool: select, trim ou blade');
+      S().setTool(t);
+      return { tool: t };
+    }
+    case 'mark_in_out': {
+      if (a.clear === true) {
+        S().setMark('in', null);
+        S().setMark('out', null);
+      } else {
+        if ('in' in a) S().setMark('in', n(a.in) ?? null);
+        if ('out' in a) S().setMark('out', n(a.out) ?? null);
+      }
+      return { in: S().markIn, out: S().markOut };
+    }
+    case 'edit_to_timeline': {
+      const mode = s(a.mode) as EditMode | undefined;
+      if (!mode || !EDIT_MODES.includes(mode)) throw new Error(`mode: ${EDIT_MODES.join(', ')}`);
+      const id = S().editToTimeline(mode, { mediaId: s(a.media_id), at: n(a.time), trackId: s(a.track) });
+      return { clip_id: id };
+    }
+    case 'trim_edit': {
+      const kind = s(a.kind);
+      if (kind !== 'ripple' && kind !== 'roll' && kind !== 'slip' && kind !== 'slide') throw new Error('kind: ripple, roll, slip ou slide');
+      const edge = s(a.edge) === 'left' ? 'left' : 'right';
+      return { moved: S().trimEdit(kind, String(a.clip_id), n(a.delta) ?? 0, edge) };
+    }
+    case 'ripple_delete_range': {
+      if (n(a.from) !== undefined && n(a.to) !== undefined) {
+        S().setMark('in', n(a.from)!);
+        S().setMark('out', n(a.to)!);
+      }
+      return { removed: S().rippleDeleteMarked() };
+    }
+    case 'lock_track': {
+      const t = S().project.tracks.find((x) => x.id === String(a.track_id));
+      if (!t) throw new Error('Pista não encontrada');
+      if (Boolean(t.locked) !== (a.locked === true)) S().toggleTrack(t.id, 'locked');
+      return { track_id: t.id, locked: a.locked === true };
+    }
+    case 'set_flag':
+      S().setFlag(String(a.clip_id), s(a.color) || null);
+      return { ok: true };
     case 'remove_track':
       S().removeTrack(String(a.track_id), a.force === true);
       return { ok: true };

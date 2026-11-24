@@ -6,12 +6,14 @@ import { useEditor } from './store';
 import type { Page } from './store';
 import { exportVideo, importDialog, openProject, saveProject } from './actions';
 import { openNodePicker } from './components/Fusion';
+import type { EditMode } from './lib/edit.js';
+import { end } from './lib/project';
 
 type S = ReturnType<typeof useEditor.getState>;
 export interface KeyAction {
   id: string;
   label: string;
-  group: 'Projeto' | 'Reprodução' | 'Timeline' | 'Vista' | 'Fusion';
+  group: 'Projeto' | 'Reprodução' | 'Timeline' | 'Edição' | 'Vista' | 'Fusion';
   keys: string[];
   /** Only on these pages (the same key can do something else on another page). */
   pages?: Page[];
@@ -21,6 +23,23 @@ export interface KeyAction {
 const PAGE_IDS: Page[] = ['media', 'edit', 'fusion', 'color', 'captions', 'deliver'];
 const PAGE_NAMES: Record<Page, string> = { media: 'Média', edit: 'Editar', fusion: 'Fusion', color: 'Cor', captions: 'Legendas', deliver: 'Entregar' };
 const fps = (s: S) => s.project.canvas.fps || 30;
+const findFlag = (s: S) => s.project.tracks.flatMap((t) => t.clips).find((c) => c.id === s.selected)?.flag;
+/** Edits from the Média panel: the error (no source, locked track...) goes to the status line. */
+function tryEdit(s: S, mode: EditMode) {
+  try {
+    s.editToTimeline(mode);
+  } catch (e) {
+    s.setStatus((e as Error).message);
+  }
+}
+/** X: In and Out around the selected clip (or the clip under the playhead on the first video track). */
+function markClip(s: S) {
+  const all = s.project.tracks.flatMap((t) => (t.locked ? [] : t.clips.map((c) => ({ c, t }))));
+  const f = all.find((x) => x.c.id === s.selected) ?? all.find((x) => x.t.kind === 'video' && s.playhead >= x.c.start && s.playhead < end(x.c));
+  if (!f) return;
+  s.setMark('in', f.c.start);
+  s.setMark('out', end(f.c));
+}
 
 /** Actions are tried in this order: a page-specific one comes before a general one with the same keys. */
 export const ACTIONS: KeyAction[] = [
@@ -40,8 +59,28 @@ export const ACTIONS: KeyAction[] = [
   { id: 'nextSecond', label: 'Avançar 1 segundo', group: 'Reprodução', keys: ['shift+arrowright'], run: (s) => s.seek(s.playhead + 1) },
   { id: 'split', label: 'Cortar na cabeça de leitura', group: 'Timeline', keys: ['s', 'c'], run: (s) => void s.splitAt(s.playhead, s.selected) },
   { id: 'delete', label: 'Apagar o clip', group: 'Timeline', keys: ['delete', 'backspace'], run: (s) => s.selected && s.deleteClip(s.selected, false) },
-  { id: 'rippleDelete', label: 'Apagar e fechar o espaço', group: 'Timeline', keys: ['shift+delete', 'shift+backspace'], run: (s) => s.selected && s.deleteClip(s.selected, true) },
-  { id: 'addText', label: 'Acrescentar texto', group: 'Timeline', keys: ['t'], run: (s) => void s.addText('Texto', s.playhead, 3, 'title') },
+  { id: 'rippleDelete', label: 'Apagar e fechar o espaço (com In e Out: apaga esse troço)', group: 'Timeline', keys: ['shift+delete', 'shift+backspace'], run: (s) => (s.markIn !== null && s.markOut !== null ? void s.rippleDeleteMarked() : s.selected && s.deleteClip(s.selected, true)) },
+  { id: 'addText', label: 'Acrescentar texto', group: 'Timeline', keys: ['mod+t'], run: (s) => void s.addText('Texto', s.playhead, 3, 'title') },
+  { id: 'tool.select', label: 'Ferramenta Seleção', group: 'Edição', keys: ['a'], run: (s) => s.setTool('select') },
+  { id: 'tool.trim', label: 'Ferramenta Trim (ripple, roll, slip, slide)', group: 'Edição', keys: ['t'], run: (s) => s.setTool('trim') },
+  { id: 'tool.blade', label: 'Ferramenta Blade (cortar com clique)', group: 'Edição', keys: ['b'], run: (s) => s.setTool('blade') },
+  { id: 'bladePlayhead', label: 'Cortar todas as pistas na cabeça de leitura', group: 'Edição', keys: ['mod+b'], run: (s) => void s.splitAt(s.playhead, null) },
+  { id: 'markIn', label: 'Marcar In', group: 'Edição', keys: ['i'], run: (s) => s.setMark('in', s.playhead) },
+  { id: 'markOut', label: 'Marcar Out', group: 'Edição', keys: ['o'], run: (s) => s.setMark('out', s.playhead) },
+  { id: 'clearIn', label: 'Limpar In', group: 'Edição', keys: ['alt+i'], run: (s) => s.setMark('in', null) },
+  { id: 'clearOut', label: 'Limpar Out', group: 'Edição', keys: ['alt+o'], run: (s) => s.setMark('out', null) },
+  { id: 'clearMarks', label: 'Limpar In e Out', group: 'Edição', keys: ['alt+x'], run: (s) => (s.setMark('in', null), s.setMark('out', null)) },
+  { id: 'markClip', label: 'Marcar In e Out à volta do clip', group: 'Edição', keys: ['x'], run: (s) => markClip(s) },
+  { id: 'edit.insert', label: 'Insert (empurra o resto)', group: 'Edição', keys: ['f9'], run: (s) => tryEdit(s, 'insert') },
+  { id: 'edit.overwrite', label: 'Overwrite (por cima)', group: 'Edição', keys: ['f10'], run: (s) => tryEdit(s, 'overwrite') },
+  { id: 'edit.replace', label: 'Replace (troca o clip)', group: 'Edição', keys: ['f11'], run: (s) => tryEdit(s, 'replace') },
+  { id: 'edit.fit', label: 'Fit to fill (encaixa entre In e Out)', group: 'Edição', keys: ['shift+f11'], run: (s) => tryEdit(s, 'fit') },
+  { id: 'edit.top', label: 'Place on top (pista de cima)', group: 'Edição', keys: ['f12'], run: (s) => tryEdit(s, 'top') },
+  { id: 'edit.append', label: 'Append (no fim)', group: 'Edição', keys: ['shift+f12'], run: (s) => tryEdit(s, 'append') },
+  { id: 'flag', label: 'Pôr / tirar flag no clip', group: 'Edição', keys: ['g'], run: (s) => s.selected && s.setFlag(s.selected, findFlag(s) ? null : '#f2c14e') },
+  { id: 'shuttle.back', label: 'J: para trás (mais vezes = mais rápido)', group: 'Reprodução', keys: ['j'], run: (s) => s.setShuttle(s.shuttle >= 0 ? -1 : s.shuttle * 2) },
+  { id: 'shuttle.stop', label: 'K: parar', group: 'Reprodução', keys: ['k'], run: (s) => s.setShuttle(0) },
+  { id: 'shuttle.fwd', label: 'L: para a frente (mais vezes = mais rápido)', group: 'Reprodução', keys: ['l'], run: (s) => s.setShuttle(s.shuttle <= 0 ? 1 : s.shuttle * 2) },
   { id: 'marker', label: 'Acrescentar marcador', group: 'Timeline', keys: ['m'], run: (s) => void s.addMarker(s.playhead) },
   { id: 'deselect', label: 'Tirar a seleção', group: 'Timeline', keys: ['escape'], run: (s) => s.select(null) },
   { id: 'snap', label: 'Ligar / desligar o íman', group: 'Timeline', keys: ['n'], run: (s) => s.setSnap(!s.snap) },

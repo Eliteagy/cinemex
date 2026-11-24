@@ -16,11 +16,16 @@ import { cleanBlendIf } from './lib/pslayer.js';
 import { separateAudio, syncLinks, textToVideo, unlink } from './lib/links.js';
 import { GENERATORS, GEN_DURATION, genColor, hasPicture, isGen, newComp } from './lib/generators.js';
 import type { GenKind } from './types';
+import * as ED from './lib/edit.js';
+import type { EditMode } from './lib/edit.js';
 
 const MAX_HISTORY = 150;
 const clone = <T,>(v: T): T => structuredClone(v);
 
 export type Page = 'media' | 'edit' | 'fusion' | 'color' | 'captions' | 'deliver';
+/** Timeline pointer tools, like Resolve's Edit page: Selection (A), Trim edit (T), Blade (B). */
+export type Tool = 'select' | 'trim' | 'blade';
+export type TrimKind = 'ripple' | 'roll' | 'slip' | 'slide';
 
 export interface EditorState {
   page: Page;
@@ -66,7 +71,31 @@ export interface EditorState {
   splitAt(time: number, clipId?: string | null): number;
   deleteClip(id: string, ripple?: boolean): void;
   cutSilences(id: string, minPause?: number, padding?: number): { removed: number; pieces: number; ids: string[]; range: { start: number; end: number } };
-  toggleTrack(id: string, key: 'muted' | 'hidden'): void;
+  toggleTrack(id: string, key: 'muted' | 'hidden' | 'locked'): void;
+  /** Pointer tool of the timeline. */
+  tool: Tool;
+  setTool(t: Tool): void;
+  /** Timeline In and Out marks (I / O), null when not set. */
+  markIn: number | null;
+  markOut: number | null;
+  setMark(which: 'in' | 'out', t: number | null): void;
+  /** Media chosen in the Média panel: the source of insert / overwrite / replace / fit / place on top / append. */
+  source: string | null;
+  setSource(id: string | null): void;
+  /** Edit the source into the timeline (Resolve's F9-F12). Returns the new clip id. */
+  editToTimeline(mode: EditMode, opts?: { mediaId?: string; at?: number; trackId?: string }): string;
+  /** Ripple / roll / slip / slide by delta seconds (one undo step). For roll, id is the left clip of the cut. */
+  trimEdit(kind: TrimKind, id: string, delta: number, edge?: 'left' | 'right'): number;
+  /** Ripple delete between the In and Out marks on every unlocked track. */
+  rippleDeleteMarked(): number;
+  /** Clip flag colour (null removes it). */
+  setFlag(id: string, color: string | null): void;
+  /** JKL shuttle: playback speed and direction (0 = stopped). */
+  shuttle: number;
+  setShuttle(rate: number): void;
+  /** Position lock: clips cannot be moved (trims and cuts still work). */
+  posLock: boolean;
+  setPosLock(v: boolean): void;
   /** New empty track: video on top of the other video tracks, audio after the other audio tracks ('text' = a video track named for captions). Returns its id. */
   addTrack(kind: Track['kind'], name?: string): string;
   /** Removes a track. With clips only when force=true (the clips go too). The last video track stays. */
@@ -288,6 +317,63 @@ function pickTrack(p: Project, m: Media, start: number, len: number): Track {
   return free ?? trackOf(p, kind);
 }
 
+/** Cuts a clip at a timeline time (keyframes, Fusion keys, words and transitions kept continuous).
+ *  Returns the right half (not yet on a track), or null when the time is not inside the clip. */
+function cutClip(c: Clip, time: number, margin = 0.001): Clip | null {
+  if (time <= c.start + margin || time >= end(c) - margin) return null;
+  const cut = r3(c.in + (time - c.start) * speedOf(c));
+  const right: Clip = { ...clone(c), id: uid('c'), start: r3(time), in: cut };
+  if (c.keyframes) {
+    // Keep the animation continuous: both halves get a keyframe at the cut.
+    const off = time - c.start;
+    const left: NonNullable<Clip['keyframes']> = {};
+    const rightK: NonNullable<Clip['keyframes']> = {};
+    for (const [prop, list] of Object.entries(c.keyframes) as [KeyProp, { t: number; v: number }[] | undefined][]) {
+      if (!list?.length) continue;
+      const v = r3(kfValue(list, off, KEY_DEFAULT[prop]));
+      left[prop] = [...list.filter((k) => k.t < off), { t: r3(off), v }];
+      rightK[prop] = [{ t: 0, v }, ...list.filter((k) => k.t > off).map((k) => ({ t: r3(k.t - off), v: k.v }))];
+    }
+    c.keyframes = left;
+    right.keyframes = rightK;
+  }
+  // Fusion node keyframes: each half keeps its part of the animation, with a keyframe at the cut.
+  if (c.fusion && right.fusion) {
+    const off = time - c.start;
+    c.fusion.nodes.forEach((n, i) => {
+      const rn = right.fusion!.nodes[i]!;
+      for (const [param, list] of Object.entries(n.k ?? {})) {
+        if (!list?.length) continue;
+        const v = r3(kfValue(list, off, Number(NODE_KEYS[n.type]?.[param]?.default ?? 0)));
+        const ease = list[0]!.ease;
+        const cut = { v, ...(ease ? { ease } : {}) };
+        n.k![param] = [...list.filter((k) => k.t < off - 0.001), { t: r3(off), ...cut }];
+        rn.k![param] = [{ t: 0, ...cut }, ...list.filter((k) => k.t > off + 0.001).map((k) => ({ ...k, t: r3(k.t - off) }))];
+      }
+    });
+  }
+  if (c.transitionOut) right.transitionOut = c.transitionOut;
+  c.transitionOut = null;
+  right.transitionIn = null;
+  if (c.words) {
+    const off = time - c.start;
+    right.words = c.words.filter((w) => w.s >= off).map((w) => ({ ...w, s: r3(w.s - off), e: r3(w.e - off) }));
+    c.words = c.words.filter((w) => w.s < off);
+  }
+  if ((c.text !== undefined || isGen(c)) && !c.mediaId) {
+    right.in = 0;
+    right.out = r3(end(c) - time);
+    c.out = r3(time - c.start);
+  } else c.out = cut;
+  return right;
+}
+/** The cutter edit.js uses: the right half goes onto the track. */
+const splitOnTrack = (track: Track, c: Clip, time: number) => {
+  const right = cutClip(c, time);
+  if (right) track.clips.push(right);
+  return right;
+};
+
 export const useEditor = create<EditorState>((set, get) => ({
   page: 'edit',
   setPage(page) {
@@ -301,6 +387,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   playing: false,
   zoom: 80,
   snap: true,
+  tool: 'select',
+  markIn: null,
+  markOut: null,
+  source: null,
+  shuttle: 0,
+  posLock: false,
   status: null,
   busy: false,
   exportProgress: null,
@@ -493,54 +585,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     let n = 0;
     get().commit((p) => {
       for (const track of p.tracks) {
+        if (track.locked) continue;
         const add: Clip[] = [];
         for (const c of track.clips) {
           if (clipId && c.id !== clipId) continue;
-          if (time <= c.start + 0.05 || time >= end(c) - 0.05) continue;
-          const cut = r3(c.in + (time - c.start) * speedOf(c));
-          const right: Clip = { ...clone(c), id: uid('c'), start: r3(time), in: cut };
-          if (c.keyframes) {
-            // Keep the animation continuous: both halves get a keyframe at the cut.
-            const off = time - c.start;
-            const left: NonNullable<Clip['keyframes']> = {};
-            const rightK: NonNullable<Clip['keyframes']> = {};
-            for (const [prop, list] of Object.entries(c.keyframes) as [KeyProp, { t: number; v: number }[] | undefined][]) {
-              if (!list?.length) continue;
-              const v = r3(kfValue(list, off, KEY_DEFAULT[prop]));
-              left[prop] = [...list.filter((k) => k.t < off), { t: r3(off), v }];
-              rightK[prop] = [{ t: 0, v }, ...list.filter((k) => k.t > off).map((k) => ({ t: r3(k.t - off), v: k.v }))];
-            }
-            c.keyframes = left;
-            right.keyframes = rightK;
-          }
-          // Fusion node keyframes: each half keeps its part of the animation, with a keyframe at the cut.
-          if (c.fusion && right.fusion) {
-            const off = time - c.start;
-            c.fusion.nodes.forEach((n, i) => {
-              const rn = right.fusion!.nodes[i]!;
-              for (const [param, list] of Object.entries(n.k ?? {})) {
-                if (!list?.length) continue;
-                const v = r3(kfValue(list, off, Number(NODE_KEYS[n.type]?.[param]?.default ?? 0)));
-                const ease = list[0]!.ease;
-                const cut = { v, ...(ease ? { ease } : {}) };
-                n.k![param] = [...list.filter((k) => k.t < off - 0.001), { t: r3(off), ...cut }];
-                rn.k![param] = [{ t: 0, ...cut }, ...list.filter((k) => k.t > off + 0.001).map((k) => ({ ...k, t: r3(k.t - off) }))];
-              }
-            });
-          }
-          if (c.transitionOut) right.transitionOut = c.transitionOut;
-          c.transitionOut = null;
-          right.transitionIn = null;
-          if (c.words) {
-            const off = time - c.start;
-            right.words = c.words.filter((w) => w.s >= off).map((w) => ({ ...w, s: r3(w.s - off), e: r3(w.e - off) }));
-            c.words = c.words.filter((w) => w.s < off);
-          }
-          if ((c.text !== undefined || isGen(c)) && !c.mediaId) {
-            right.in = 0;
-            right.out = r3(end(c) - time);
-            c.out = r3(time - c.start);
-          } else c.out = cut;
+          const right = cutClip(c, time, 0.05);
+          if (!right) continue;
           add.push(right);
           n++;
         }
@@ -554,6 +604,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     get().commit((p) => {
       const f = findClip(p, id);
       if (!f) throw new Error(`Clip não encontrado: ${id}`);
+      if (f.track.locked) throw new Error(`A pista ${f.track.name} está bloqueada`);
       const gap = dur(f.clip);
       const at = f.clip.start;
       f.track.clips.splice(f.index, 1);
@@ -1345,6 +1396,81 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
 
+  setTool(t) {
+    set({ tool: t });
+  },
+  setMark(which, t) {
+    const v = t === null ? null : r3(Math.max(0, t));
+    if (which === 'in') set({ markIn: v, ...(v !== null && get().markOut !== null && get().markOut! <= v ? { markOut: null } : {}) });
+    else set({ markOut: v, ...(v !== null && get().markIn !== null && get().markIn! >= v ? { markIn: null } : {}) });
+  },
+  setSource(id) {
+    set({ source: id });
+  },
+  editToTimeline(mode, opts = {}) {
+    const mediaId = opts.mediaId ?? get().source;
+    if (!mediaId) throw new Error('Escolhe primeiro um ficheiro na Média (um clique)');
+    const { markIn, markOut, playhead, selected } = get();
+    const at = opts.at ?? markIn ?? playhead;
+    const range = markIn !== null && markOut !== null ? markOut - markIn : undefined;
+    // Target track: the one given, else the selected clip's track when it fits.
+    let trackId = opts.trackId;
+    if (!trackId && selected) trackId = findClip(get().project, selected)?.track.id;
+    const src: ED.EditSource = { mediaId, ...(range !== undefined ? { length: range } : {}) };
+    let id = '';
+    get().commit((p) => {
+      const o = { trackId, split: splitOnTrack };
+      if (mode === 'insert') id = ED.insertEdit(p, src, at, o);
+      else if (mode === 'overwrite') id = ED.overwriteEdit(p, src, at, o);
+      else if (mode === 'replace') id = ED.replaceEdit(p, { mediaId }, opts.at ?? playhead, o);
+      else if (mode === 'fit') id = ED.fitToFillEdit(p, { mediaId }, markIn ?? at, markOut ?? -1, o);
+      else if (mode === 'top') id = ED.placeOnTopEdit(p, src, at, o);
+      else id = ED.appendEdit(p, src, o);
+    });
+    set({ selected: id });
+    return id;
+  },
+  trimEdit(kind, id, delta, edge = 'right') {
+    let d = 0;
+    get().commit((p) => {
+      if (kind === 'ripple') d = ED.rippleTrim(p, id, edge, delta);
+      else if (kind === 'slip') d = ED.slip(p, id, delta);
+      else if (kind === 'slide') d = ED.slide(p, id, delta);
+      else {
+        const f = findClip(p, id);
+        if (!f) throw new Error('Clip não encontrado');
+        const pair = ED.cutAt(f.track, end(f.clip), 0.02);
+        if (!pair || pair[0].id !== id) throw new Error('O roll precisa de um clip encostado a seguir');
+        d = ED.roll(p, pair[0].id, pair[1].id, delta);
+      }
+    });
+    return d;
+  },
+  rippleDeleteMarked() {
+    const { markIn, markOut } = get();
+    if (markIn === null || markOut === null) throw new Error('Marca In (I) e Out (O) primeiro');
+    let n = 0;
+    get().commit((p) => {
+      n = ED.rippleDeleteRange(p, markIn, markOut, { split: splitOnTrack });
+    });
+    set({ markOut: null, playhead: markIn });
+    return n;
+  },
+  setFlag(id, color) {
+    get().commit((p) => {
+      const f = findClip(p, id);
+      if (!f) throw new Error('Clip não encontrado');
+      if (color) f.clip.flag = color;
+      else delete f.clip.flag;
+    });
+  },
+  setPosLock(v) {
+    set({ posLock: v });
+  },
+  setShuttle(rate) {
+    const r = Math.max(-8, Math.min(8, rate));
+    set({ shuttle: r, playing: r !== 0 });
+  },
   select(id) {
     set({ selected: id });
   },
@@ -1352,6 +1478,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ playhead: r3(Math.max(0, Math.min(t, Math.max(projectDuration(get().project), 0)))) });
   },
   setPlaying(v) {
+    set({ shuttle: v ? 1 : 0 });
     if (v && get().playhead >= projectDuration(get().project) - 0.02) set({ playhead: 0 });
     set({ playing: v });
   },

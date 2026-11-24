@@ -40,7 +40,7 @@ export class Player {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private get: () => { project: Project; playhead: number; playing: boolean; userStyles?: Record<string, CaptionStyle> },
+    private get: () => { project: Project; playhead: number; playing: boolean; shuttle?: number; userStyles?: Record<string, CaptionStyle> },
     private onTime: (t: number) => void,
     private onEnd: () => void,
   ) {
@@ -243,8 +243,17 @@ export class Player {
     return img;
   }
 
+  private lastRate = 0;
   private tick() {
-    const { project, playhead, playing } = this.get();
+    const { project, playhead, playing, shuttle } = this.get();
+    // JKL shuttle: any speed other than 1x forward is drawn as a fast scrub (the media elements are
+    // paused and seek each frame), so reverse and 2x-8x work on every kind of media.
+    const rate = playing ? (shuttle || 1) : 0;
+    const scrubbing = playing && rate !== 1;
+    if (rate !== this.lastRate) {
+      this.lastRate = rate;
+      this.lastPlaying = false;
+    }
     let t = playhead;
     if (playing) {
       // Started, or the user moved the playhead while playing: restart the clock from there.
@@ -252,10 +261,13 @@ export class Player {
         this.wallStart = performance.now();
         this.tStart = playhead;
       }
-      t = this.tStart + (performance.now() - this.wallStart) / 1000;
+      t = this.tStart + ((performance.now() - this.wallStart) / 1000) * rate;
       const total = projectDuration(project);
       if (t >= total) {
         t = total;
+        this.onEnd();
+      } else if (t <= 0) {
+        t = 0;
         this.onEnd();
       }
       this.lastEmitted = t;
@@ -266,7 +278,7 @@ export class Player {
       this.dirty = true;
     }
     this.lastPlaying = playing;
-    if (playing || this.dirty) this.draw(project, t, playing);
+    if (playing || this.dirty) this.draw(project, t, playing && !scrubbing);
   }
 
   private sync(el: El, target: number, playing: boolean, volume: number, rate = 1) {

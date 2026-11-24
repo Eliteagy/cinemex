@@ -8,6 +8,8 @@ import { Icon } from './Icon';
 import { peerColor, useCollab } from '../collab';
 import { GENERATORS, hasPicture, isGen } from '../lib/generators.js';
 import type { GenKind } from '../types';
+import * as ED from '../lib/edit.js';
+import type { EditMode } from '../lib/edit.js';
 
 const RANK: Record<string, number> = { text: 0, video: 1, audio: 2 };
 const SNAP_PX = 8;
@@ -34,6 +36,16 @@ function roleOf(t: Track, tracks: Track[]) {
 const WAVE: Record<string, string> = { voice: 'rgba(160,222,255,0.92)', fx: 'rgba(255,160,135,0.9)', music: 'rgba(110,231,183,0.9)' };
 
 type Drag = { kind: 'move' | 'left' | 'right'; id: string; x0: number; start: number; in: number; out: number; speed: number; trackKind: string };
+/** Trim tool drag: the edit is applied bit by bit (each op returns how far it really went). */
+type TrimDrag = { op: 'ripple' | 'roll' | 'slip' | 'slide'; id: string; edge: 'left' | 'right'; x0: number; applied: number };
+
+const FLAGS = ['#f2c14e', '#ff6b6b', '#4f8ef7', '#2fcb8a', '#b48cff'];
+const EDITS: [EditMode, string, string, string][] = [
+  ['insert', 'insert', 'Insert: empurra o resto para a frente (F9)', 'Insert'],
+  ['overwrite', 'overwrite', 'Overwrite: põe por cima do que lá está (F10)', 'Overwrite'],
+  ['replace', 'replace', 'Replace: troca o clip na cabeça de leitura, mesmo sítio e duração (F11)', 'Replace'],
+];
+
 type Menu = { x: number; y: number; trackId: string | null };
 
 /** A small menu at the pointer (right-click): kept inside the window, closed by a click outside, Esc or a resize. */
@@ -120,6 +132,11 @@ function ClipMenu({ menu, onClose }: { menu: { x: number; y: number; clipId: str
           Desligar imagem do som
         </button>
       )}
+      <div className="tl-menu-flags" role="group" aria-label="Flag">
+        {FLAGS.map((col) => (
+          <button key={col} role="menuitemradio" aria-checked={c.flag === col} aria-label={`Flag ${col}`} style={{ background: col }} onClick={run(() => st().setFlag(c.id, c.flag === col ? null : col))} />
+        ))}
+      </div>
       <hr />
       <button role="menuitem" className="danger" onClick={run(() => st().deleteClip(c.id))}>
         Apagar
@@ -217,6 +234,12 @@ export function Timeline() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [clipMenu, setClipMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
   const linked = useEditor((s) => s.linked);
+  const tool = useEditor((s) => s.tool);
+  const markIn = useEditor((s) => s.markIn);
+  const markOut = useEditor((s) => s.markOut);
+  const posLock = useEditor((s) => s.posLock);
+  const [zoomMode, setZoomMode] = useState<'full' | 'detail' | 'custom'>('custom');
+  const trim = useRef<TrimDrag | null>(null);
   const st = useEditor.getState;
 
   const total = projectDuration(project);
@@ -261,10 +284,18 @@ export function Timeline() {
   }
 
   // ---------------------------------------------------------------- clip gestures
-  const onClipDown = (e: React.PointerEvent, c: Clip, kind: Drag['kind'], trackKind: string) => {
+  const onClipDown = (e: React.PointerEvent, c: Clip, kind: Drag['kind'], trackKind: string, track?: Track) => {
     e.stopPropagation();
     if (e.button !== 0) return;
     st().select(c.id);
+    if (track?.locked) return st().setStatus(`A pista ${track.name} está bloqueada`);
+    // Blade: a click cuts the clip there (snapped like everything else).
+    if (st().tool === 'blade') {
+      st().splitAt(snapTime(timeAt(e.clientX), ''), c.id);
+      return;
+    }
+    if (st().tool === 'trim') return startTrim(e, c, kind, track);
+    if (kind === 'move' && st().posLock) return;
     st().beginGesture();
     drag.current = { kind, id: c.id, x0: e.clientX, start: c.start, in: c.in, out: c.out, speed: speedOf(c), trackKind };
     // Followed on the window: a clip dragged to another track is drawn again there, in another lane.
@@ -279,6 +310,65 @@ export function Timeline() {
     addEventListener('pointerup', up);
     addEventListener('pointercancel', up);
   };
+  /** Trim tool, like Resolve: ends = ripple (or roll right on a cut between two clips), middle = slip, Alt + middle = slide. */
+  const startTrim = (e: React.PointerEvent, c: Clip, kind: Drag['kind'], track?: Track) => {
+    let op: TrimDrag['op'] = kind === 'move' ? (e.altKey ? 'slide' : 'slip') : 'ripple';
+    let id = c.id;
+    const edge: TrimDrag['edge'] = kind === 'left' ? 'left' : 'right';
+    if (kind !== 'move' && track) {
+      // Right on the cut (4 px) between two touching clips: roll.
+      const cutT = kind === 'left' ? c.start : end(c);
+      const pair = ED.cutAt(track, cutT, 0.02);
+      if (pair && Math.abs(e.clientX - (cutT * zoom - scroll.current!.scrollLeft + scroll.current!.getBoundingClientRect().left)) <= 4) {
+        op = 'roll';
+        id = pair[0].id;
+      }
+    }
+    st().beginGesture();
+    trim.current = { op, id, edge, x0: e.clientX, applied: 0 };
+    st().setStatus(op === 'roll' ? 'Roll: mexe só o corte' : op === 'ripple' ? 'Ripple: o resto da pista acompanha' : op === 'slip' ? 'Slip: outra parte do clip, mesmo sítio (Alt = slide)' : 'Slide: o clip desliza entre os vizinhos');
+    const move = (ev: PointerEvent) => {
+      const d = trim.current;
+      if (!d) return;
+      const want = (ev.clientX - d.x0) / zoom - d.applied;
+      if (Math.abs(want) < 1e-4) return;
+      st().live((p) => {
+        try {
+          if (d.op === 'ripple') {
+            const got = ED.rippleTrim(p, d.id, d.edge, want);
+            d.applied += d.edge === 'left' ? -got : got;
+          } else if (d.op === 'roll') {
+            const pr = ED.cutAt(p.tracks.find((t) => t.clips.some((x) => x.id === d.id))!, end(p.tracks.flatMap((t) => t.clips).find((x) => x.id === d.id)!), 0.02);
+            if (pr) d.applied += ED.roll(p, pr[0].id, pr[1].id, want);
+          } else if (d.op === 'slip') d.applied -= ED.slip(p, d.id, -want);
+          else d.applied += ED.slide(p, d.id, want);
+        } catch (err) {
+          st().setStatus((err as Error).message);
+        }
+      });
+    };
+    const up = () => {
+      trim.current = null;
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+  };
+
+  const zoomTo = (mode: 'full' | 'detail' | 'custom') => {
+    setZoomMode(mode);
+    const el = scroll.current;
+    if (!el) return;
+    if (mode === 'full') st().setZoom((el.clientWidth - 40) / Math.max(1, total));
+    else if (mode === 'detail') {
+      st().setZoom(240);
+      requestAnimationFrame(() => el && (el.scrollLeft = Math.max(0, st().playhead * 240 - el.clientWidth / 2)));
+    }
+  };
+
   const onClipMove = (e: PointerEvent) => {
     const d = drag.current;
     if (!d) return;
@@ -377,22 +467,65 @@ export function Timeline() {
   };
   const videoTracks = tracks.filter((x) => x.kind === 'video').length;
   return (
-    <section className="timeline" aria-label="Timeline">
+    <section className={`timeline tool-${tool}`} aria-label="Timeline">
       <div className="tl-tools">
-        <button className="btn icon round" onClick={() => st().addText('Texto', st().playhead, 3, 'title')} title="Acrescentar texto (T)" aria-label="Acrescentar texto">
+        <div className="tl-group" role="radiogroup" aria-label="Ferramenta">
+          {(
+            [
+              ['select', 'cursor', 'Seleção: mexer e aparar clips (A)'],
+              ['trim', 'trimTool', 'Trim: pontas = ripple, no corte = roll, meio = slip, Alt + meio = slide (T)'],
+              ['blade', 'blade', 'Blade: clica num clip para o cortar (B)'],
+            ] as const
+          ).map(([t, icon, label]) => (
+            <button key={t} role="radio" aria-checked={tool === t} className={`btn icon round${tool === t ? ' on' : ''}`} onClick={() => st().setTool(t)} title={label} aria-label={label}>
+              <Icon name={icon} />
+            </button>
+          ))}
+        </div>
+        <i className="tl-sep" />
+        <div className="tl-group" role="group" aria-label="Editar a partir da Média">
+          {EDITS.map(([mode, icon, label]) => (
+            <button
+              key={mode}
+              className="btn icon round"
+              onClick={() => {
+                try {
+                  st().editToTimeline(mode);
+                } catch (err) {
+                  st().setStatus((err as Error).message);
+                }
+              }}
+              title={`${label}. Fonte: o ficheiro escolhido na Média${mode !== 'replace' ? '; com In e Out marcados usa esse troço' : ''}`}
+              aria-label={label}
+            >
+              <Icon name={icon} />
+            </button>
+          ))}
+        </div>
+        <i className="tl-sep" />
+        <div className="tl-group" role="group" aria-label="Ajudas">
+          <button className={`btn icon round${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips (N)" aria-pressed={snap} aria-label="Íman">
+            <Icon name="magnet" />
+          </button>
+          <button className={`btn icon round${linked ? ' on' : ''}`} onClick={() => st().setLinked(!linked)} title={linked ? 'Imagem e som ligados: movem-se, cortam-se e apagam-se juntos (clica para mexer em cada um à parte)' : 'Imagem e som soltos: cada um mexe-se à parte (clica para voltar a ligar)'} aria-pressed={linked} aria-label="Ligar imagem e som">
+            <Icon name="link" />
+          </button>
+          <button className={`btn icon round${posLock ? ' on' : ''}`} onClick={() => st().setPosLock(!posLock)} title="Bloquear posição: os clips não saem do sítio (aparar e cortar continua)" aria-pressed={posLock} aria-label="Bloquear posição">
+            <Icon name="posLock" />
+          </button>
+        </div>
+        <i className="tl-sep" />
+        <div className="tl-group" role="group" aria-label="Marcas">
+          <button className="btn icon round" disabled={!sel} onClick={() => sel && st().setFlag(sel, project.tracks.flatMap((t) => t.clips).find((c) => c.id === sel)?.flag ? null : FLAGS[0]!)} title="Flag no clip escolhido (G); mais cores no botão direito" aria-label="Flag">
+            <Icon name="flag" />
+          </button>
+          <button className="btn icon round" onClick={() => st().addMarker(st().playhead)} title="Marcador na cabeça de leitura (M)" aria-label="Marcador">
+            <Icon name="marker" />
+          </button>
+        </div>
+        <i className="tl-sep" />
+        <button className="btn icon round" onClick={() => st().addText('Texto', st().playhead, 3, 'title')} title="Acrescentar texto (Ctrl+T)" aria-label="Acrescentar texto">
           <Icon name="text" />
-        </button>
-        <button className="btn icon round" onClick={() => st().splitAt(st().playhead, sel)} title="Cortar na cabeça de leitura (S)" aria-label="Cortar na cabeça de leitura">
-          <Icon name="scissors" />
-        </button>
-        <button className="btn icon round" disabled={!sel} onClick={() => sel && st().deleteClip(sel, true)} title="Apagar e fechar o espaço (Shift+Delete)" aria-label="Apagar e fechar o espaço">
-          <Icon name="trash" />
-        </button>
-        <button className={`btn icon round${snap ? ' on' : ''}`} onClick={() => st().setSnap(!snap)} title="Íman: colar às pontas dos clips" aria-pressed={snap} aria-label="Íman">
-          <Icon name="magnet" />
-        </button>
-        <button className={`btn icon round${linked ? ' on' : ''}`} onClick={() => st().setLinked(!linked)} title={linked ? 'Imagem e som ligados: movem-se, cortam-se e apagam-se juntos (clica para mexer em cada um à parte)' : 'Imagem e som soltos: cada um mexe-se à parte (clica para voltar a ligar)'} aria-pressed={linked} aria-label="Ligar imagem e som">
-          <Icon name="link" />
         </button>
         <div className="tl-add" role="group" aria-label="Nova pista">
           <button className="btn icon round" onClick={() => setAddOpen((o) => !o)} title="Nova pista" aria-label="Nova pista" aria-expanded={addOpen}>
@@ -425,10 +558,23 @@ export function Timeline() {
           <button className="btn ghost icon" onClick={() => st().setZoom(zoom / 1.4)} title="Afastar (-)" aria-label="Afastar">
             <Icon name="zoomOut" />
           </button>
-          <input className="range" type="range" min={8} max={600} value={zoom} onChange={(e) => st().setZoom(Number(e.target.value))} aria-label="Zoom" />
+          <input className="range" type="range" min={8} max={600} value={zoom} onChange={(e) => (setZoomMode('custom'), st().setZoom(Number(e.target.value)))} aria-label="Zoom" />
           <button className="btn ghost icon" onClick={() => st().setZoom(zoom * 1.4)} title="Aproximar (+)" aria-label="Aproximar">
             <Icon name="zoomIn" />
           </button>
+        </div>
+        <div className="seg tl-zmodes" role="radiogroup" aria-label="Modo de zoom">
+          {(
+            [
+              ['full', 'Extensão', 'Ver a timeline toda'],
+              ['detail', 'Detalhe', 'Perto da cabeça de leitura'],
+              ['custom', 'Personalizado', 'O zoom que escolheres'],
+            ] as const
+          ).map(([m, l, h]) => (
+            <button key={m} role="radio" aria-checked={zoomMode === m} className={zoomMode === m ? 'on' : ''} onClick={() => zoomTo(m)} title={h}>
+              {l}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -464,6 +610,9 @@ export function Timeline() {
                   <span className="tlabel">{t.name}</span>
                 )}
               </span>
+              <button className={t.locked ? 'locked' : ''} onClick={() => st().toggleTrack(t.id, 'locked')} title={t.locked ? 'Desbloquear pista' : 'Bloquear pista: nenhuma edição lhe mexe'} aria-label="Bloquear pista" aria-pressed={Boolean(t.locked)}>
+                <Icon name={t.locked ? 'lock' : 'unlock'} />
+              </button>
               {t.kind !== 'audio' && (
                 <button className={t.hidden ? 'off' : ''} onClick={() => st().toggleTrack(t.id, 'hidden')} title={t.hidden ? 'Mostrar pista' : 'Esconder pista'} aria-label="Ver pista">
                   <Icon name={t.hidden ? 'eyeOff' : 'eye'} />
@@ -489,6 +638,12 @@ export function Timeline() {
           <div className="tl-inner" style={{ width }}>
             <div className="ruler" onPointerDown={scrub}>
               {ticks}
+              {(markIn !== null || markOut !== null) && (
+                <div className="tl-range" style={{ left: (markIn ?? 0) * zoom, width: Math.max(0, ((markOut ?? total) - (markIn ?? 0)) * zoom) }} title="In / Out (Alt+X limpa)">
+                  {markIn !== null && <span className="in">In {fmtTime(markIn, project.canvas.fps)}</span>}
+                  {markOut !== null && <span className="out">Out {fmtTime(markOut, project.canvas.fps)}</span>}
+                </div>
+              )}
               {(project.markers ?? []).map((mk) => (
                 <div
                   key={mk.id}
@@ -505,7 +660,7 @@ export function Timeline() {
             {tracks.map((t) => (
               <div
                 key={t.id}
-                className={`lane r-${roleOf(t, tracks)}${dropLane === t.id ? ' drop' : ''}`}
+                className={`lane r-${roleOf(t, tracks)}${dropLane === t.id ? ' drop' : ''}${t.locked ? ' locked' : ''}`}
                 data-lane={t.id}
                 onPointerDown={(e) => {
                   if (e.target === e.currentTarget) {
@@ -535,7 +690,7 @@ export function Timeline() {
                       key={c.id}
                       className={`clip ${kind}${kind === 'text' ? ' r-text' : ''}${gen ? ` gk-${gen}` : ''}${sel === c.id ? ' sel' : ''}${selLink && c.link === selLink && sel !== c.id ? ' link-sel' : ''}${peerSel[c.id] ? ' peer-sel' : ''}`}
                       style={{ left: c.start * zoom, width: w, opacity: t.hidden || (t.kind === 'audio' && t.muted) ? 0.4 : 1, ...(peerSel[c.id] ? { ['--pc' as string]: peerSel[c.id] } : {}) }}
-                      onPointerDown={(e) => onClipDown(e, c, 'move', grip)}
+                      onPointerDown={(e) => onClipDown(e, c, 'move', grip, t)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -560,12 +715,13 @@ export function Timeline() {
                           <i key={kt} className="kf" style={{ left: kt * zoom }} title={`Keyframe ${kt.toFixed(2)} s`} />
                         ))}
                       <span className="label">
+                        {c.flag && <i className="flag-dot" style={{ background: c.flag }} aria-label="Flag" />}
                         {(c.speed ?? 1) !== 1 && <b className="spd">{c.speed}×</b>}
                         {gen === 'solid' && <i className="gen-chip" style={{ background: c.genColor ?? '#000' }} />}
                         {c.text ?? m?.name ?? (gen ? GENERATORS[gen].label : 'clip')}
                       </span>
-                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', grip)} />
-                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', grip)} />
+                      <div className="h l" onPointerDown={(e) => onClipDown(e, c, 'left', grip, t)} />
+                      <div className="h r" onPointerDown={(e) => onClipDown(e, c, 'right', grip, t)} />
                     </div>
                   );
                 })}
@@ -578,6 +734,8 @@ export function Timeline() {
                 </div>
               ) : null,
             )}
+            {markIn !== null && <div className="tl-mark in" style={{ left: markIn * zoom }} />}
+            {markOut !== null && <div className="tl-mark out" style={{ left: markOut * zoom }} />}
             <div className="playhead" style={{ left: playhead * zoom }}>
               <span>{fmtTime(playhead, project.canvas.fps)}</span>
             </div>
@@ -587,7 +745,7 @@ export function Timeline() {
 
       <div className="status">
         {busy && <span className="busy" aria-hidden="true" />}
-        <span className="msg">{status ?? 'Espaço reproduz · S corta · Delete apaga · Ctrl+Z desfaz · arrasta clips entre pistas · botão direito num clip ou no nome da pista: opções'}</span>
+        <span className="msg">{status ?? 'Espaço reproduz · J K L shuttle · A seleção · T trim · B blade · I / O marcas · F9 insert · F10 overwrite · Ctrl+Z desfaz · botão direito: opções'}</span>
         <div className="spacer" />
         {progress !== null && (
           <>

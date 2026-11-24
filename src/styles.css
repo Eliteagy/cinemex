@@ -359,7 +359,7 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .tl-zoom input[type="range"].range, .tl-zoom input[type="range"].range:hover:not(:disabled) { width: 120px; height: 16px; border-radius: 0; background: none; overflow: visible; }
 .tl-zoom input[type="range"].range::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--bg-4); }
 .tl-zoom input[type="range"].range::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4.5px; border-radius: 50%; background: #f1f1f3; box-shadow: none; }
-.tl-body { display: grid; grid-template-columns: 148px minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.tl-body { display: grid; grid-template-columns: 184px minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .tl-heads { overflow: hidden; padding: 28px 0 10px; }
 .tl-head { height: 50px; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 12px; }
 .tl-head.text { height: 40px; }
@@ -1105,3 +1105,25 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .kf-btn.on { color: var(--accent); text-shadow: 0 0 8px var(--accent); }
 .kf-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; margin-top: 6px; color: var(--text-3); font-size: 11.5px; }
 .kf-row .select { height: 26px; font-size: 12px; }
+
+/* ---------------------------------------------------------------- Resolve edit tools (v1.2) */
+.tl-group { display: inline-flex; align-items: center; gap: 4px; }
+.tl-sep { width: 1px; height: 22px; background: var(--stroke-2); margin: 0 4px; flex: none; }
+.tl-zmodes { margin-left: 8px; }
+.tl-zmodes button { font-size: 12px; padding: 0 10px; }
+.timeline.tool-blade .clip, .timeline.tool-blade .clip .h { cursor: crosshair; }
+.timeline.tool-trim .clip { cursor: ew-resize; }
+.timeline.tool-trim .clip .h { cursor: col-resize; }
+.lane.locked { background-image: repeating-linear-gradient(135deg, transparent 0 8px, rgba(255, 255, 255, 0.025) 8px 16px); }
+.lane.locked .clip { cursor: not-allowed; filter: saturate(0.5) brightness(0.85); }
+.tl-head button.locked { color: var(--accent); }
+.tl-range { position: absolute; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.08); border-left: 1px solid rgba(255, 255, 255, 0.55); border-right: 1px solid rgba(255, 255, 255, 0.55); pointer-events: none; }
+.tl-range span { position: absolute; top: 2px; font: 600 10px/16px var(--font-num, inherit); padding: 0 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.65); color: #fff; white-space: nowrap; }
+.tl-range .in { left: 2px; }
+.tl-range .out { right: 2px; }
+.tl-mark { position: absolute; top: 26px; bottom: 0; width: 0; border-left: 1px solid rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 3; }
+.flag-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; flex: none; }
+.tl-menu-flags { display: flex; gap: 6px; padding: 6px 10px; }
+.tl-menu .tl-menu-flags button { width: 16px; height: 16px; min-height: 0; padding: 0; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.2); }
+.tl-menu .tl-menu-flags button[aria-checked='true'] { outline: 2px solid #fff; outline-offset: 1px; }
+.media-card.src .media-thumb { box-shadow: inset 0 0 0 2px var(--accent); }

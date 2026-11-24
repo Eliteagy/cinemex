@@ -502,6 +502,8 @@ export interface EcBridge {
   sfxList(): Promise<{ id: string; label: string; path: string; duration: number }[]>;
   /** A still of one frame of a video (PNG in the app's data folder) for freeze frames. */
   freezeFrame(file: string, time: number): Promise<string>;
+  /** Voice command recording -> temp file path (allowed for transcribe). */
+  saveVoice(bytes: Uint8Array): Promise<string>;
   onMcpCall(handler: (name: string, args: Record<string, unknown>) => Promise<unknown>): () => void;
   /** Ligação: live link with the other computer (see electron/collab.cjs). */
   collabGet(): Promise<CollabView>;

@@ -1,4 +1,7 @@
 // What each MCP tool does in the editor (electron/mcp.cjs lists the tools and their schemas).
+import { AUTO_STEPS, applySuggestions, autoColor, autoEdit, cutBreaths, splitScreen, suggestEdits, voiceCommand } from './aiTools';
+import type { AutoStep, Pace } from './aiTools';
+import { CUT_PACES } from './lib/autoedit.js';
 import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
@@ -97,6 +100,34 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     case 'set_flag':
       S().setFlag(String(a.clip_id), s(a.color) || null);
       return { ok: true };
+    case 'auto_edit': {
+      const steps = Array.isArray(a.steps) ? (a.steps.filter((x) => AUTO_STEPS.some((st) => st.id === x)) as AutoStep[]) : undefined;
+      const pace = s(a.pace) && s(a.pace)! in CUT_PACES ? (s(a.pace) as Pace) : undefined;
+      return autoEdit({ steps, pace, style: s(a.style) });
+    }
+    case 'cut_breaths': {
+      const pace = s(a.pace) && s(a.pace)! in CUT_PACES ? (s(a.pace) as Pace) : 'normal';
+      return cutBreaths(pace, s(a.clip_id));
+    }
+    case 'auto_color':
+      return autoColor(Array.isArray(a.clip_ids) ? a.clip_ids.map(String) : undefined, { wb: a.white_balance !== false });
+    case 'ai_zoom_suggest': {
+      const list = await suggestEdits(Math.max(1, Math.min(20, n(a.count) ?? 6)));
+      if (a.apply === true) return { moments: list, ...(await applySuggestions(list)) };
+      return { moments: list };
+    }
+    case 'split_screen': {
+      const layout = s(a.layout) === 'left-right' ? 'left-right' : 'top-bottom';
+      return splitScreen(layout, n(a.ratio) ?? 0.5, String(a.clip_a), s(a.clip_b));
+    }
+    case 'safe_zone': {
+      const z = s(a.zone);
+      if (z !== 'off' && z !== 'reels' && z !== 'tiktok' && z !== 'shorts') throw new Error('zone: reels, tiktok, shorts ou off');
+      S().setSafeZone(z === 'off' ? null : z);
+      return { zone: z };
+    }
+    case 'voice_command':
+      return voiceCommand(String(a.text ?? ''));
     case 'remove_track':
       S().removeTrack(String(a.track_id), a.force === true);
       return { ok: true };

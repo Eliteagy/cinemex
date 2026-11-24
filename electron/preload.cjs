@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('ec', {
   mcpInfo: () => ipcRenderer.invoke('mcp:info'),
   sfxList: () => ipcRenderer.invoke('sfx:list'),
   freezeFrame: (file, time) => ipcRenderer.invoke('media:freeze', file, time),
+  saveVoice: (bytes) => ipcRenderer.invoke('voice:save', bytes),
   paths: () => ipcRenderer.invoke('app:paths'),
   // Ligação (live link with the other computer) and updates from GitHub.
   collabGet: () => ipcRenderer.invoke('collab:get'),

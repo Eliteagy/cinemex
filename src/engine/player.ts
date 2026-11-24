@@ -17,6 +17,7 @@ import { colorGL, needsLut, rememberSource } from './glcolor';
 import { blendGL, colorToAlphaGL } from './glblend';
 import { blendIfActive } from '../lib/pslayer.js';
 import { genMedia } from '../lib/generators.js';
+import { transformed, xformAt } from '../lib/xform.js';
 
 type El = HTMLVideoElement | HTMLAudioElement;
 
@@ -297,8 +298,10 @@ export class Player {
     }
   }
 
+  private byIdCache: Map<string, Clip> | null = null;
   private draw(project: Project, t: number, playing: boolean) {
     this.dirty = false;
+    this.byIdCache = null;
     const { w: W, h: H } = project.canvas;
     const scale = Math.min(1, 1280 / Math.max(W, H)); // preview resolution cap
     const cw = Math.round(W * scale);
@@ -398,7 +401,11 @@ export class Player {
       const fused = hasFusion(clip.fusion);
       // Rotation, opacity, transition blur and flash/dip are applied when the clip layer is
       // composited (after masks and Fusion), in the same order as the export.
-      const masked = Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal') || blendIfActive(clip.blendIf) || Boolean(clip.colorToAlpha) || hasFrame(clip.frame);
+      // Picture-in-picture / split screen (scale, px, py; parents): applied when the layer is composited,
+      // after masks and crop, like the export (xform.js).
+      const byId = (this.byIdCache ??= new Map(project.tracks.flatMap((tk) => tk.clips.map((c) => [c.id, c] as [string, Clip]))));
+      const xf = transformed(clip, byId) ? xformAt(clip, local, byId, W, H) : null;
+      const masked = Boolean(xf) || Boolean(clip.masks?.length) || fused || Math.abs(rot) > 1e-4 || opacity < 0.999 || blurPx > 0.3 || tr.white > 0 || tr.black > 0 || tr.bright > 0 || Boolean(clip.effects?.length) || Boolean(clip.matte) || Boolean(clip.blend && clip.blend !== 'normal') || blendIfActive(clip.blendIf) || Boolean(clip.colorToAlpha) || hasFrame(clip.frame);
       const x = masked ? this.layer(cw, ch) : ctx;
       const alpha = masked ? 1 : tr.alpha;
       const slide = masked ? 0 : tr.slide;
@@ -519,8 +526,9 @@ export class Player {
         d.save();
         d.globalCompositeOperation = gb ? 'source-over' : (BLEND_CANVAS[clip.blend ?? 'normal'] ?? 'source-over');
         d.globalAlpha = tr.alpha * opacity;
-        d.translate(cw / 2 + tr.slide * cw, ch / 2);
-        d.rotate(rot);
+        d.translate(cw / 2 + tr.slide * cw + (xf ? (xf.x * cw) / W : 0), ch / 2 + (xf ? (xf.y * ch) / H : 0));
+        if (xf) d.scale(xf.s, xf.s);
+        d.rotate(rot + (xf ? (xf.pr * Math.PI) / 180 : 0));
         d.beginPath();
         d.rect(-cw / 2, -ch / 2, cw, ch);
         d.clip();
@@ -545,8 +553,9 @@ export class Player {
           // The flashes below draw on the result with the clip's own transform.
           ctx.save();
           ctx.globalAlpha = tr.alpha * opacity;
-          ctx.translate(cw / 2 + tr.slide * cw, ch / 2);
-          ctx.rotate(rot);
+          ctx.translate(cw / 2 + tr.slide * cw + (xf ? (xf.x * cw) / W : 0), ch / 2 + (xf ? (xf.y * ch) / H : 0));
+          if (xf) ctx.scale(xf.s, xf.s);
+          ctx.rotate(rot + (xf ? (xf.pr * Math.PI) / 180 : 0));
           ctx.beginPath();
           ctx.rect(-cw / 2, -ch / 2, cw, ch);
           ctx.clip();

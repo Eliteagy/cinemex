@@ -368,6 +368,20 @@ function handlers() {
     list.forEach((x) => allow(x.path));
     return list;
   });
+  // Voice command: the recording (webm/opus from MediaRecorder) goes to a temp file for Whisper.
+  ipcMain.handle('voice:save', (_e, bytes) => {
+    if (!(bytes instanceof Uint8Array) && !(bytes instanceof ArrayBuffer)) throw new Error('Gravação inválida');
+    const buf = Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes);
+    if (buf.length < 200 || buf.length > 20 * 1024 * 1024) throw new Error('Gravação vazia ou longa demais');
+    const dir = path.join(app.getPath('userData'), 'voice');
+    fs.mkdirSync(dir, { recursive: true });
+    // Only the last few recordings are kept.
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.webm')).sort().slice(0, -4)) fs.rmSync(path.join(dir, f), { force: true });
+    const out = path.join(dir, `cmd-${Date.now()}.webm`);
+    fs.writeFileSync(out, buf);
+    allow(out);
+    return out;
+  });
   ipcMain.handle('media:freeze', async (_e, file, time) => {
     if (!allowed.has(norm(file))) throw new Error('Media não importada');
     const out = await freezeFrame(file, Number(time) || 0, path.join(app.getPath('userData'), 'frames'));
@@ -498,6 +512,12 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !process.env.ELITE_HIDDEN },
   });
   nativeTheme.themeSource = 'dark';
+  // Microphone (voice commands) only for the app's own page and only audio; everything else as before.
+  win.webContents.session.setPermissionRequestHandler((wc, perm, cb, details) => {
+    if (perm !== 'media') return cb(true);
+    const audioOnly = Array.isArray(details?.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every((t) => t === 'audio');
+    cb(Boolean(win && wc === win.webContents && audioOnly));
+  });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith('http://localhost:5199')) e.preventDefault();

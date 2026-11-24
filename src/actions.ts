@@ -92,7 +92,7 @@ export async function autoCaptions(opts: AutoCaptionOptions = {}) {
   }
 }
 
-export async function cutSilences(clipId: string, minPause = 0.5, padding = 0.12) {
+export async function cutSilences(clipId: string, minPause = 0.5, padding = 0.12, byLevel = false) {
   const f = findClip(S().project, clipId);
   const m = f && S().project.media.find((x) => x.id === f.clip.mediaId);
   if (!f || !m) throw new Error('Escolhe um clip de vídeo');
@@ -100,7 +100,7 @@ export async function cutSilences(clipId: string, minPause = 0.5, padding = 0.12
   const texts = textClips(S().project);
   const hadCaptions = texts.some((c) => c.auto && c.start < end(f.clip) && end(c) > f.clip.start);
   const style = texts.find((c) => c.auto)?.style ?? 'elite';
-  const r = S().cutSilences(clipId, minPause, padding);
+  const r = S().cutSilences(clipId, minPause, padding, byLevel && m.peaks ? decodePeaks(m.peaks) : null);
   // Captions made before the cut no longer line up: remake them for the new pieces.
   if (hadCaptions) {
     S().replaceAutoCaptions(r.range, []);

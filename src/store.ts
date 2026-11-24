@@ -17,6 +17,8 @@ import { separateAudio, syncLinks, textToVideo, unlink } from './lib/links.js';
 import { GENERATORS, GEN_DURATION, genColor, hasPicture, isGen, newComp } from './lib/generators.js';
 import type { GenKind } from './types';
 import * as ED from './lib/edit.js';
+import { applySplit, refineEdges } from './lib/autoedit.js';
+import type { SafeZoneId, SplitLayout } from './lib/autoedit.js';
 import type { EditMode } from './lib/edit.js';
 
 const MAX_HISTORY = 150;
@@ -70,7 +72,7 @@ export interface EditorState {
   trimClip(id: string, edge: { in?: number; out?: number }): void;
   splitAt(time: number, clipId?: string | null): number;
   deleteClip(id: string, ripple?: boolean): void;
-  cutSilences(id: string, minPause?: number, padding?: number): { removed: number; pieces: number; ids: string[]; range: { start: number; end: number } };
+  cutSilences(id: string, minPause?: number, padding?: number, peaks?: ArrayLike<number> | null): { removed: number; pieces: number; ids: string[]; range: { start: number; end: number } };
   toggleTrack(id: string, key: 'muted' | 'hidden' | 'locked'): void;
   /** Pointer tool of the timeline. */
   tool: Tool;
@@ -96,6 +98,11 @@ export interface EditorState {
   /** Position lock: clips cannot be moved (trims and cuts still work). */
   posLock: boolean;
   setPosLock(v: boolean): void;
+  /** Safe-zone guides drawn on the viewer only (never exported). */
+  safeZone: SafeZoneId | null;
+  setSafeZone(z: SafeZoneId | null): void;
+  /** Two clips on different video tracks share the frame (top/bottom or left/right). */
+  splitScreen(aId: string, bId: string, layout?: SplitLayout, ratio?: number): void;
   /** New empty track: video on top of the other video tracks, audio after the other audio tracks ('text' = a video track named for captions). Returns its id. */
   addTrack(kind: Track['kind'], name?: string): string;
   /** Removes a track. With clips only when force=true (the clips go too). The last video track stays. */
@@ -393,6 +400,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   source: null,
   shuttle: 0,
   posLock: false,
+  safeZone: null,
   status: null,
   busy: false,
   exportProgress: null,
@@ -612,13 +620,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
     if (get().selected === id) set({ selected: null });
   },
-  cutSilences(id, minPause = 0.5, padding = 0.12) {
+  cutSilences(id, minPause = 0.5, padding = 0.12, peaks = null) {
     const p0 = get().project;
     const f = findClip(p0, id);
     if (!f) throw new Error(`Clip não encontrado: ${id}`);
     const m = mediaOf(p0, f.clip.mediaId);
     if (!m?.transcript?.length) throw new Error('Este clip ainda não tem transcrição');
-    const segs = speechSegments(f.clip, m.transcript, minPause, padding);
+    let segs = speechSegments(f.clip, m.transcript, minPause, padding);
+    // Sound still loud at a segment edge: keep it (never eat the start or end of a word).
+    if (peaks?.length) segs = refineEdges(segs, peaks, { rate: 100, min: f.clip.in, max: f.clip.out });
     if (!segs.length) throw new Error('Não encontrei fala neste clip');
     let removed = 0;
     let ids: string[] = [];
@@ -1463,6 +1473,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (color) f.clip.flag = color;
       else delete f.clip.flag;
     });
+  },
+  setSafeZone(z) {
+    set({ safeZone: z });
+  },
+  splitScreen(aId, bId, layout = 'top-bottom', ratio = 0.5) {
+    get().commit((p) => void applySplit(p, aId, bId, layout, ratio));
   },
   setPosLock(v) {
     set({ posLock: v });

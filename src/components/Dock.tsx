@@ -14,6 +14,7 @@ import { Inspector } from './Inspector';
 import { Timeline } from './Timeline';
 import { ColorLooks, ColorPanel } from './Color';
 import { ShortsPanel } from './Shorts';
+import { AiPanel } from './AiPanel';
 import { FusionInspector, FusionLibrary, NodeEditor } from './Fusion';
 import { CaptionList, CaptionStylePanel } from './Captions';
 import { DeliverQueue, DeliverSettings, type DoneExport } from './Deliver';
@@ -21,7 +22,7 @@ import { DeliverQueue, DeliverSettings, type DoneExport } from './Deliver';
 /** Finished exports of the Entregar page: its two panels live in different places of the dock. */
 export const DeliverContext = createContext<{ done: DoneExport[]; add: (d: DoneExport) => void }>({ done: [], add: () => {} });
 
-type PanelId = 'media' | 'viewer' | 'inspector' | 'timeline' | 'fusionLib' | 'fusionInspector' | 'nodes' | 'colorLooks' | 'colorPanel' | 'captionList' | 'captionStyle' | 'deliverSettings' | 'deliverQueue' | 'shorts';
+type PanelId = 'media' | 'viewer' | 'inspector' | 'timeline' | 'fusionLib' | 'fusionInspector' | 'nodes' | 'colorLooks' | 'colorPanel' | 'captionList' | 'captionStyle' | 'deliverSettings' | 'deliverQueue' | 'shorts' | 'ia';
 
 function DeliverSettingsPanel() {
   const { add } = useContext(DeliverContext);
@@ -47,12 +48,14 @@ const PANELS: Record<PanelId, { title: string; render: () => ReactNode }> = {
   deliverSettings: { title: 'Definições de exportação', render: () => <DeliverSettingsPanel /> },
   deliverQueue: { title: 'Exportações', render: () => <DeliverQueuePanel /> },
   shorts: { title: 'Shorts e IA', render: () => <ShortsPanel /> },
+  ia: { title: 'IA', render: () => <AiPanel /> },
 };
 
 /** How each page comes: a panel on the left, the viewer, a panel on the right and one across the bottom. */
-const LAYOUTS: Record<Page, { left: PanelId; leftW: number; right?: PanelId; rightW?: number; bottom?: PanelId }> = {
-  media: { left: 'media', leftW: 560, right: 'shorts', rightW: 420 },
-  edit: { left: 'media', leftW: 300, right: 'inspector', rightW: 400, bottom: 'timeline' },
+/** `tabs`: more panels stacked as tabs with the right one; the last one is shown first. */
+const LAYOUTS: Record<Page, { left: PanelId; leftW: number; right?: PanelId; rightW?: number; bottom?: PanelId; tabs?: PanelId[] }> = {
+  media: { left: 'media', leftW: 560, right: 'shorts', rightW: 420, tabs: ['ia'] },
+  edit: { left: 'media', leftW: 300, right: 'inspector', rightW: 440, bottom: 'timeline', tabs: ['ia'] },
   fusion: { left: 'fusionLib', leftW: 300, right: 'fusionInspector', rightW: 320, bottom: 'nodes' },
   color: { left: 'colorLooks', leftW: 300, right: 'colorPanel', rightW: 540, bottom: 'timeline' },
   captions: { left: 'captionList', leftW: 340, right: 'captionStyle', rightW: 320, bottom: 'timeline' },
@@ -62,10 +65,11 @@ const BOTTOM_H = 300;
 
 const panelsOf = (page: Page): PanelId[] => {
   const l = LAYOUTS[page];
-  return ['viewer', l.left, ...(l.right ? [l.right] : []), ...(l.bottom ? [l.bottom] : [])];
+  return ['viewer', l.left, ...(l.right ? [l.right] : []), ...(l.tabs ?? []), ...(l.bottom ? [l.bottom] : [])];
 };
 // The colour page (Lightroom-style panel) and the media page (Shorts e IA) changed in v2: their old saved arrangements are ignored.
-const storeKey = (page: Page) => `cinemex.dock.${page === 'color' || page === 'media' ? 'v2' : 'v1'}.${page}`;
+// v3: the IA panel joined the media and edit pages.
+const storeKey = (page: Page) => `cinemex.dock.${page === 'media' || page === 'edit' ? 'v3' : page === 'color' ? 'v2' : 'v1'}.${page}`;
 
 /** Forgets the saved arrangement of a page (the dock must be mounted again to show the default). */
 export function resetDock(page: Page) {
@@ -84,6 +88,7 @@ function buildDefault(api: DockviewApi, page: Page) {
   if (l.bottom) add(l.bottom, { position: { direction: 'below' }, initialHeight: BOTTOM_H });
   add(l.left, { position: { referencePanel: 'viewer', direction: 'left' }, initialWidth: l.leftW });
   if (l.right) add(l.right, { position: { referencePanel: 'viewer', direction: 'right' }, initialWidth: l.rightW });
+  if (l.right) for (const t of l.tabs ?? []) add(t, { position: { referencePanel: l.right, direction: 'within' } });
   api.getPanel('viewer')?.api.setActive();
 }
 

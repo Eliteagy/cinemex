@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { MaskOverlay } from './MaskOverlay';
 import { CaptionOverlay } from './CaptionOverlay';
 import { CompareOverlay } from './Color';
+import { SafeZoneOverlay } from './SafeZoneOverlay';
 import { onCompare } from '../engine/glcolor';
 
 export function Viewer() {
@@ -50,6 +51,7 @@ export function Viewer() {
         <MaskOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
         <CaptionOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
         <CompareOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
+        <SafeZoneOverlay width={Math.floor(project.canvas.w * k)} height={Math.floor(project.canvas.h * k)} />
         {!total && (
           <div className="empty">
             <div className="empty-state">

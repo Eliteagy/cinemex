@@ -25,7 +25,7 @@ import type { AutoCaptionOptions } from './actions';
 import type { CanvasPreset, Hotclip } from './types';
 import { LOOKS, PRESETS, STYLES, findClip, parseSrt, toSrt } from './lib/project';
 import type { CaptionStyle, FNodeType, Grade, Mask, MaskMode } from './types';
-import { MY_STYLE_ID, applyOverride, cleanOverride, validateStyle } from './lib/capstyle.js';
+import { ANIMS, MY_STYLE_ID, applyOverride, cleanOverride, validateStyle } from './lib/capstyle.js';
 import { cleanLines } from './lib/emphasis.js';
 
 const S = () => useEditor.getState();
@@ -504,7 +504,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (n(a.spacing) !== undefined) patch.spacing = Math.max(0, Math.min(0.012, n(a.spacing)!));
       const anim = s(a.anim);
       if (anim) {
-        if (!['pop', 'fade', 'slide', 'words', 'bounce', 'karaoke', 'marker'].includes(anim)) throw new Error('anim: pop, fade, slide, words, bounce, karaoke ou marker');
+        if (!ANIMS.includes(anim)) throw new Error(`anim: ${ANIMS.join(', ')}`);
         patch.anim = anim as CaptionStyle['anim'];
       }
       if (typeof a.uppercase === 'boolean') patch.uppercase = a.uppercase;

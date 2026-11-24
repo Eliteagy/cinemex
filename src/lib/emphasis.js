@@ -114,6 +114,26 @@ export const FONT_METRICS = {
   'Inter Black': { upem: 2048, a: 2269, d: 660 },
   'Great Vibes': { upem: 1000, a: 851, d: 401 },
   'Birds of Paradise': { upem: 1000, a: 1001, d: 335 },
+  // Other bundled fonts (public/fonts), for keyword styles and per-caption font changes.
+  Anton: { upem: 2048, a: 2876, d: 674 },
+  'Archivo Black': { upem: 1000, a: 1035, d: 312 },
+  'Bebas Neue': { upem: 1000, a: 950, d: 350 },
+  'DM Serif Display': { upem: 1000, a: 1036, d: 335 },
+  'Abril Fatface': { upem: 1000, a: 1058, d: 291 },
+  Pacifico: { upem: 1000, a: 1478, d: 457 },
+  'Permanent Marker': { upem: 1024, a: 1136, d: 325 },
+  'Poppins Black': { upem: 1000, a: 1135, d: 627 },
+  'Poppins ExtraBold': { upem: 1000, a: 1135, d: 627 },
+  'Lilita One': { upem: 1000, a: 923, d: 220 },
+  Bangers: { upem: 1000, a: 1401, d: 356 },
+  'Black Ops One': { upem: 2048, a: 2232, d: 689 },
+  Bungee: { upem: 1000, a: 1647, d: 927 },
+  'Luckiest Guy': { upem: 2048, a: 2006, d: 504 },
+  Monoton: { upem: 2048, a: 2366, d: 822 },
+  'Press Start 2P': { upem: 1000, a: 1000, d: 374 },
+  Righteous: { upem: 2048, a: 2017, d: 526 },
+  'Russo One': { upem: 1000, a: 926, d: 279 },
+  Staatliches: { upem: 1000, a: 1006, d: 306 },
 };
 const DEFAULT_METRICS = { upem: 1000, a: 900, d: 250 };
 export const metricsOf = (font) => FONT_METRICS[font] ?? DEFAULT_METRICS;

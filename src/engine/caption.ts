@@ -1,30 +1,42 @@
 // Caption drawing shared by the preview and the caption gallery. Every effect here has an
-// equivalent in the export (electron/render.cjs buildAss), so what you see is what you get.
+// equivalent in the export (electron/render.cjs buildAss), so what you see is what you get. The
+// timing of the effects lives in src/lib/capanim.js, read by both sides.
 //
 // Effects (style.anim):
-//   pop      whole caption scales in (0.86 -> 1, 120 ms)
-//   fade     whole caption fades in (150 ms)
-//   slide    whole caption slides up and fades in (180 ms)
-//   words    words appear as they are spoken
-//   bounce   words appear as spoken; the spoken word bounces (1 -> 1.25 -> 1.15)
-//   karaoke  each word fills with the highlight colour while it is spoken
-//   marker   the spoken word gets a thick marker-pen outline
+//   intros     pop, fade, slide, zoom, flip, stretch, drop, rise, blur (whole caption)
+//   steps      shake, glitch (whole caption jumps through a table; glitch flashes colours)
+//   per word   words (appear as spoken), bounce, popin, scaleword, karaoke (\kf fill),
+//              marker (marker-pen outline), colorsweep (spoken words keep the highlight),
+//              typewriter (letter by letter)
 // Extras: highlight (spoken word colour), glow, shadow, letter spacing.
 import type { CaptionStyle, TextLayer, Word } from '../types';
-import { USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions, metricsOf, registerMetrics, revealDur, riseAt, roleOrder } from '../lib/emphasis.js';
+import { FONT_METRICS, USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions, metricsOf, registerMetrics, revealDur, riseAt, roleOrder } from '../lib/emphasis.js';
 import type { EmphasisRole, LineOffsets } from '../lib/emphasis.js';
+import { TYPE, hidesWords, introAt, stepAt, typedChars, wordScaleAt } from '../lib/capanim.js';
 
 /** Fonts shipped with the app (public/fonts, OFL / Apache). Same files are given to libass on export. */
 export const BUNDLED_FONTS: Record<string, string> = {
+  'Abril Fatface': 'AbrilFatface-Regular.ttf',
   Anton: 'Anton-Regular.ttf',
   'Archivo Black': 'ArchivoBlack-Regular.ttf',
   Bangers: 'Bangers-Regular.ttf',
   'Bebas Neue': 'BebasNeue-Regular.ttf',
+  'Black Ops One': 'BlackOpsOne-Regular.ttf',
+  Bungee: 'Bungee-Regular.ttf',
+  'DM Serif Display': 'DMSerifDisplay-Regular.ttf',
   'Great Vibes': 'GreatVibes-Regular.ttf',
   'Inter Black': 'Inter-Black.ttf',
   'Lilita One': 'LilitaOne-Regular.ttf',
+  'Luckiest Guy': 'LuckiestGuy-Regular.ttf',
+  Monoton: 'Monoton-Regular.ttf',
+  Pacifico: 'Pacifico-Regular.ttf',
   'Permanent Marker': 'PermanentMarker-Regular.ttf',
   'Poppins Black': 'Poppins-Black.ttf',
+  'Poppins ExtraBold': 'Poppins-ExtraBold.ttf',
+  'Press Start 2P': 'PressStart2P-Regular.ttf',
+  Righteous: 'Righteous-Regular.ttf',
+  'Russo One': 'RussoOne-Regular.ttf',
+  Staatliches: 'Staatliches-Regular.ttf',
 };
 
 let fontsLoading: Promise<void> | null = null;
@@ -108,7 +120,6 @@ export function fontOf(name: string, px: number) {
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-const easeOut = (u: number) => 1 - Math.pow(1 - clamp01(u), 3);
 
 /** Scale of the spoken word in the bounce effect, `a` seconds after it starts. */
 export function bounceScale(a: number) {
@@ -131,14 +142,16 @@ export interface CaptionInput {
 
 /**
  * Draw one caption `local` seconds after it starts. `duration` is its length on the timeline.
- * cw/ch: canvas size in pixels.
+ * cw/ch: canvas size in pixels. The timing of every effect comes from src/lib/capanim.js, the
+ * same numbers the export turns into ASS tags.
  */
 export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: CaptionStyle, local: number, duration: number, cw: number, ch: number) {
   if (st.emphasis) return drawEmphasis(ctx, c, st, local, duration, cw, ch);
   const anim = st.anim ?? 'pop';
   const up = (x: string) => (st.uppercase ? x.toUpperCase() : x);
   const timed = Boolean(c.words?.length);
-  const words = timed ? c.words!.map((w) => ({ ...w, w: up(w.w) })) : [{ w: up(c.text), s: 0, e: duration }];
+  // Untimed captions are one "word"; the typewriter types it during the first 70 % of the caption.
+  const words = timed ? c.words!.map((w) => ({ ...w, w: up(w.w) })) : [{ w: up(c.text), s: 0, e: anim === 'typewriter' ? duration * TYPE.untimed : duration }];
   let current = -1;
   if (timed) for (let i = 0; i < words.length; i++) if (local >= words[i]!.s) current = i;
 
@@ -146,34 +159,35 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
   const lineSize = Math.round((c.size ?? st.size) * ch);
   ctx.save();
   ctx.font = fontOf(st.font, lineSize);
+  // Known fonts: their win ascent + descent (what libass uses); others: the browser's line box.
+  const wm = FONT_METRICS[st.font];
   const fm = ctx.measureText('Hg');
-  const lh = fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent;
+  const lh = wm ? (lineSize * (wm.a + wm.d)) / wm.upem : fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent;
   const size = lh > 0 ? Math.round((lineSize * lineSize) / lh) : lineSize;
   ctx.font = fontOf(st.font, size);
   ctx.letterSpacing = `${Math.round((st.spacing ?? 0) * ch)}px`;
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
 
-  // Whole-caption intro.
-  let scale = 1;
-  let alpha = 1;
-  let dy = 0;
-  if (anim === 'pop') scale = 0.86 + 0.14 * easeOut(local / 0.12);
-  else if (anim === 'fade') alpha = clamp01(local / 0.15);
-  else if (anim === 'slide') {
-    const u = easeOut(local / 0.18);
-    dy = (1 - u) * 0.04 * ch;
-    alpha = clamp01(local / 0.18);
-  }
-  ctx.globalAlpha *= alpha;
-  ctx.translate((c.x ?? 0.5) * cw, (c.y ?? st.y) * ch + dy);
-  ctx.scale(scale, scale);
+  // Whole-caption intro and steps (shake, glitch).
+  const I = introAt(anim, local);
+  const S = stepAt(anim, local);
+  ctx.globalAlpha *= I.alpha;
+  if (I.blur > 0) ctx.filter = `blur(${I.blur * lineSize}px)`;
+  ctx.translate((c.x ?? 0.5) * cw + S.dx * ch, (c.y ?? st.y) * ch + (I.dy + S.dy) * ch);
+  ctx.scale(I.sx, I.sy);
 
-  const wordScale = (i: number) => (timed && anim === 'bounce' && i === current ? bounceScale(local - words[i]!.s) : 1);
-  const visible = (i: number) => !timed || !(anim === 'words' || anim === 'bounce') || i <= current;
+  const wordScale = (i: number) => {
+    if (!timed || i > current) return 1;
+    if (anim === 'bounce') return i === current ? bounceScale(local - words[i]!.s) : 1;
+    if (anim === 'scaleword') return i === current ? wordScaleAt(anim, local - words[i]!.s) : 1;
+    if (anim === 'popin') return wordScaleAt(anim, local - words[i]!.s);
+    return 1;
+  };
+  const typed = (i: number) => (anim === 'typewriter' ? typedChars(words, i, local) : Infinity);
+  const visible = (i: number) => (anim === 'typewriter' ? typed(i) > 0 : !timed || !hidesWords(anim) || i <= current);
   const space = ctx.measureText(' ').width;
   const widths = words.map((w, i) => ctx.measureText(w.w).width * wordScale(i));
-  const total = widths.reduce((a, b) => a + b, 0) + space * (words.length - 1);
   // Wrap into lines that fit 88% of the frame.
   const maxW = cw * 0.88;
   const lines: number[][] = [[]];
@@ -187,21 +201,41 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
     lines[lines.length - 1]!.push(i);
     lw += (lw ? space : 0) + wv;
   });
-  const lineH = size * 1.15;
+  // libass: one line per font size (line height), the box (BorderStyle 3) is each line's box padded
+  // by the outline width, square.
+  const lineH = lineSize;
+  const lineWidthOf = (line: number[]) => line.reduce((a, i) => a + widths[i]!, 0) + space * (line.length - 1);
   if (st.box) {
-    const bw = Math.min(total, maxW) + size * 0.7;
-    const bh = lines.length * lineH + size * 0.35;
+    const pad = st.outline * ch;
     ctx.fillStyle = st.boxColor ?? 'rgba(0,0,0,0.75)';
-    ctx.beginPath();
-    ctx.roundRect(-bw / 2, -bh / 2, bw, bh, size * 0.25);
-    ctx.fill();
+    // Only behind the words shown so far (hidden words hide their part of the box in libass).
+    lines.forEach((line, li) => {
+      let x = -lineWidthOf(line) / 2;
+      let l = Infinity;
+      let r = -Infinity;
+      for (const i of line) {
+        if (visible(i)) {
+          const n = typed(i);
+          const wv = n === Infinity ? widths[i]! : ctx.measureText(Array.from(words[i]!.w).slice(0, n).join('')).width * wordScale(i);
+          l = Math.min(l, x);
+          // A whole word keeps the space after it (it is in the visible run in ASS).
+          r = Math.max(r, x + wv + (wv === widths[i] && i !== line[line.length - 1] ? space : 0));
+        }
+        x += widths[i]! + space;
+      }
+      const y = (li - (lines.length - 1) / 2) * lineH;
+      if (l < r) ctx.fillRect(l - pad, y - lineH / 2 - pad, r - l + 2 * pad, lineH + 2 * pad);
+    });
   }
-  const outline = st.outline * ch * 2;
+  const outline = st.outline * ch * 2 * I.bord;
   const shadow = (st.shadow ?? st.outline / 2) * ch;
   const shadowColor = st.shadowColor ? st.shadowColor : 'rgba(0,0,0,0.5)';
+  // Known fonts sit on their baseline inside the line box like in libass (\an5 centres the box).
+  const by = wm ? lineSize * (wm.a / (wm.a + wm.d) - 0.5) : 0;
+  if (wm) ctx.textBaseline = 'alphabetic';
 
   lines.forEach((line, li) => {
-    const lineWidth = line.reduce((a, i) => a + widths[i]!, 0) + space * (line.length - 1);
+    const lineWidth = lineWidthOf(line);
     let x = -lineWidth / 2;
     const y = (li - (lines.length - 1) / 2) * lineH;
     for (const i of line) {
@@ -210,10 +244,15 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
       const cx = x + widths[i]! / 2;
       x += widths[i]! + space;
       if (!visible(i)) continue;
+      // Typewriter: only the letters typed so far, drawn from the word's left edge.
+      const n = typed(i);
+      const shown = n === Infinity ? w.w : Array.from(w.w).slice(0, n).join('');
+      const half = shown === w.w ? 0 : widths[i]! / 2 / ws;
       ctx.save();
       ctx.translate(cx, y);
       ctx.scale(ws, ws);
-      ctx.textAlign = 'center';
+      ctx.textAlign = half ? 'left' : 'center';
+      const tx = -half;
       const spoken = timed && i === current;
       if (st.glow) {
         ctx.shadowColor = st.outlineColor;
@@ -226,11 +265,11 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
       if (anim === 'marker' && spoken) {
         ctx.lineWidth = size * 0.36;
         ctx.strokeStyle = st.marker ?? st.highlight;
-        ctx.strokeText(w.w, 0, 0);
+        ctx.strokeText(shown, tx, by);
       } else if (outline > 0 && !st.box) {
         ctx.lineWidth = outline;
         ctx.strokeStyle = st.outlineColor;
-        ctx.strokeText(w.w, 0, 0);
+        ctx.strokeText(shown, tx, by);
       }
       ctx.shadowColor = 'transparent';
       if (anim === 'karaoke' && timed) {
@@ -239,17 +278,20 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
         const p = clamp01((local - w.s) / Math.max(0.01, next - w.s));
         const tw = widths[i]!;
         ctx.fillStyle = st.color;
-        ctx.fillText(w.w, 0, 0);
+        ctx.fillText(w.w, 0, by);
         if (p > 0) {
           ctx.beginPath();
-          ctx.rect(-tw / 2, -size, tw * p, size * 2);
+          ctx.rect(-tw / 2, -lineSize, tw * p, lineSize * 2);
           ctx.clip();
           ctx.fillStyle = st.highlight;
-          ctx.fillText(w.w, 0, 0);
+          ctx.fillText(w.w, 0, by);
         }
       } else {
-        ctx.fillStyle = spoken && st.highlight !== st.color && anim !== 'marker' ? st.highlight : st.color;
-        ctx.fillText(w.w, 0, 0);
+        // Spoken word in the highlight colour (colorsweep: every word spoken so far); a glitch
+        // flash paints every word.
+        const lit = timed && st.highlight !== st.color && anim !== 'marker' && (anim === 'colorsweep' ? i <= current : spoken);
+        ctx.fillStyle = S.flash ?? (lit ? st.highlight : st.color);
+        ctx.fillText(shown, tx, by);
       }
       ctx.restore();
     }

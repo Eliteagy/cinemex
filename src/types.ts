@@ -361,8 +361,10 @@ export interface CaptionStyle {
   y: number;
   /** Box colour (CSS) when box is on. */
   boxColor?: string;
-  /** Effect: pop, fade, slide, words, bounce, karaoke, marker (src/engine/caption.ts). */
+  /** Effect (src/lib/capanim.js, drawn by src/engine/caption.ts and exported by electron/render.cjs). */
   anim?: CaptionAnim;
+  /** Gallery group (Básicas, Reels/TikTok, Karaoke…). */
+  category?: string;
   /** Soft glow in the outline colour instead of a hard shadow. */
   glow?: boolean;
   /** Shadow offset (fraction of the frame height) and colour #RRGGBB. */
@@ -416,7 +418,29 @@ export interface Emphasis {
   rest?: TextLayer;
 }
 
-export type CaptionAnim = 'pop' | 'fade' | 'slide' | 'words' | 'bounce' | 'karaoke' | 'marker';
+export type CaptionAnim =
+  | 'pop'
+  | 'fade'
+  | 'slide'
+  | 'words'
+  | 'bounce'
+  | 'karaoke'
+  | 'marker'
+  | 'typewriter'
+  | 'blur'
+  | 'zoom'
+  | 'flip'
+  | 'stretch'
+  | 'drop'
+  | 'rise'
+  | 'shake'
+  | 'glitch'
+  | 'colorsweep'
+  | 'scaleword'
+  | 'popin';
+
+/** Gallery groups of the caption styles (styles.json category). */
+export type CaptionCategory = 'Básicas' | 'Reels/TikTok' | 'Karaoke' | 'Destaque' | 'Néon' | 'Cinema' | 'Caixa' | 'Palavra-chave' | 'Gaming' | 'Minimal';
 
 /** Transcription options (from AutoSubs): Whisper model, language ('auto' detects), translate to English, prompt. */
 export interface TranscribeOptions {

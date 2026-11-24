@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { STYLES, baseStyle, findClip, isText, styleOf } from '../lib/project';
 import { applyOverride } from '../lib/capstyle.js';
+import { ANIM_LABELS } from '../lib/capanim.js';
 import { USER_FONTS, lineOffset } from '../lib/emphasis.js';
 import { getDragScope, setDragScope, targetIds, type DragScope } from './CaptionOverlay';
 import { BUNDLED_FONTS, requestFont } from '../engine/caption';
@@ -20,15 +21,7 @@ export const BRAND_SWATCHES = [
   { hex: '#000000', name: 'Preto' },
 ];
 
-export const ANIMS: { k: CaptionAnim; label: string }[] = [
-  { k: 'pop', label: 'Pop' },
-  { k: 'fade', label: 'Aparecer' },
-  { k: 'slide', label: 'Deslizar' },
-  { k: 'words', label: 'Palavra a palavra' },
-  { k: 'bounce', label: 'Salto' },
-  { k: 'karaoke', label: 'Karaoke' },
-  { k: 'marker', label: 'Marcador' },
-];
+export const ANIMS: { k: CaptionAnim; label: string }[] = (Object.entries(ANIM_LABELS) as [CaptionAnim, string][]).map(([k, label]) => ({ k, label }));
 
 const HEX = /^#?[0-9a-f]{6}$/i;
 

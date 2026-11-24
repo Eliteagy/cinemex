@@ -9,6 +9,7 @@ const { spawn } = require('node:child_process');
 
 const { USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions, metricsOf, mixHex, registerMetrics, revealDur, roleOrder } = require('../src/lib/emphasis.js');
 const { applyOverride, cleanOverride, isStyleId, validateStyle } = require('../src/lib/capstyle.js');
+const capanim = require('../src/lib/capanim.js');
 const { findUserFont, findFamily, familyName } = require('./fonts.cjs');
 const { TRANSITIONS, BLUR_STEPS, BFLASH, blurWindow, stageSigma } = require('../src/lib/fx.js');
 const { graphicEvents, roundRectPath } = require('../src/lib/graphics.js');
@@ -789,8 +790,9 @@ function graphicAss(c, W, H, events, styles, files, userFonts) {
 }
 
 /**
- * Captions -> ASS. Mirrors src/engine/caption.ts: same effects (pop, fade, slide, words,
- * bounce, karaoke, marker), highlight, glow, shadow and spacing.
+ * Captions -> ASS. Mirrors src/engine/caption.ts: same effects (timings from src/lib/capanim.js),
+ * highlight, glow, shadow and spacing. Intros are \t, \move and \fade tags; stepped effects (shake,
+ * glitch) and the typewriter are one event per step / letter.
  */
 function buildAss(project, { files, userFonts = true } = {}) {
   const { w: W, h: H } = project.canvas;
@@ -829,66 +831,85 @@ function buildAss(project, { files, userFonts = true } = {}) {
       const y = Math.round((c.y ?? st.y) * H);
       const up = (s) => (st.uppercase ? s.toUpperCase() : s);
       const end = c.start + clipDuration(c);
+      const dur = end - c.start;
       const shadowA = st.shadowColor ? 0 : 0x80;
-      const glow = st.glow ? `\\blur${Math.max(1, Math.round(size * 0.12))}` : '';
-      // Whole-caption intro, only on the event that starts with the caption.
-      const intro = (first) => {
-        if (!first) return `\\pos(${x},${y})`;
-        if (anim === 'pop') return `\\pos(${x},${y})\\fscx86\\fscy86\\t(0,120,\\fscx100\\fscy100)`;
-        if (anim === 'fade') return `\\pos(${x},${y})\\fad(150,0)`;
-        if (anim === 'slide') return `\\move(${x},${y + Math.round(0.04 * H)},${x},${y},0,180)\\fad(180,0)`;
-        return `\\pos(${x},${y})`;
-      };
-      const head = (first) => `{\\an5${intro(first)}\\fs${size}${glow}}`;
-      const words = Array.isArray(c.words) && c.words.length ? c.words : null;
+      const glowBlur = st.glow ? Math.max(1, Math.round(size * 0.12)) : 0;
+      const bordPx = Math.round(st.outline * H);
+      const timed = Array.isArray(c.words) && c.words.length > 0;
       const push = (s, e, text) => {
         if (e - s > 0.005) events.push(`Dialogue: 0,${assTime(s)},${assTime(Math.min(e, end))},${name},,0,0,0,,${text}`);
       };
+      // Intro tags for an event starting `o` s into the caption (the rest of the animation), plus
+      // the step offset (shake, glitch) at that time. Same numbers as the preview (src/lib/capanim.js).
+      const introOf = (o) => {
+        const S = capanim.stepAt(anim, o);
+        const I = capanim.introAss(anim, Math.round(o * 1000), { x: x + Math.round(S.dx * H), y: y + Math.round(S.dy * H), H, size, bord: bordPx, glowBlur });
+        if (st.box) I.bord = `\\bord${bordPx}`;
+        return { ...I, flash: S.flash };
+      };
+      const head = (I) => `{\\an5${I.pos}${I.fade}${I.scale}\\fs${size}${I.blur}${st.box ? '' : I.bord}${I.flash ? `\\c${assColor(I.flash)}` : ''}}`;
 
-      if (!words) {
-        push(c.start, end, `${head(true)}${assText(up(c.text))}`);
-        continue;
-      }
-      if (anim === 'karaoke') {
+      if (timed && anim === 'karaoke') {
         // One event; \kf fills each word with PrimaryColour (the highlight) while it is spoken.
+        const words = c.words;
         const cs = (t) => Math.max(0, Math.round(t * 100));
         let text = words[0].s > 0 ? `{\\k${cs(words[0].s)}}` : '';
         words.forEach((w, i) => {
           const next = i + 1 < words.length ? words[i + 1].s : w.e;
           text += `{\\kf${cs(next - w.s)}}${assText(up(w.w))}${i + 1 < words.length ? ' ' : ''}`;
         });
-        push(c.start, end, `${head(true)}${text}`);
+        push(c.start, end, `${head(introOf(0))}${text}`);
         continue;
       }
-      const hides = anim === 'words' || anim === 'bounce';
-      // Tags that bring a word back to the style after an override (same values as the style line).
+      // Untimed captions are one "word" (the typewriter types it during the first 70 %).
+      const words = (timed ? c.words : [{ w: c.text, s: 0, e: anim === 'typewriter' ? dur * capanim.TYPE.untimed : dur }]).map((w) => ({ ...w, w: up(w.w) }));
+      const hides = timed && capanim.hidesWords(anim);
       const boxA = st.boxColor ? 0 : 0x40;
       const outC = st.box ? (st.boxColor ? assColor(st.boxColor) : assColor('#000000', 0x40)) : assColor(st.outlineColor);
-      const base = `\\c${assColor(st.color)}\\3c${outC}\\bord${Math.round(st.outline * H)}\\fscx100\\fscy100\\1a&H00&\\3a${anyAlpha(st.box ? boxA : 0)}\\4a${anyAlpha(st.box ? boxA : shadowA)}`;
-      // One event per interval: before the first word (nothing spoken yet), then one per word.
-      // Words that start together keep the last one (same as the preview's "current word").
+      const HIDE = '\\1a&HFF&\\3a&HFF&\\4a&HFF&';
+      // Event boundaries (s from the caption start): the start, every spoken word, every step of a
+      // stepped effect and every typed letter. Words that start together keep the last one (same
+      // as the preview's "current word").
+      const times = [0];
+      if (timed) for (const w of words) times.push(Math.max(0, w.s));
+      for (const t of capanim.stepTimes(anim)) times.push(t);
+      if (anim === 'typewriter') for (const t of capanim.typeTimes(words)) times.push(Math.max(0, t));
+      const cuts = [...new Set(times.filter((t) => t < dur - 0.005).map((t) => Math.round(t * 1000) / 1000))].sort((a, b) => a - b);
       const marks = [];
-      if (words[0].s > 0.005) marks.push({ t: c.start, k: -1 });
-      words.forEach((w, i) => {
-        const t = c.start + Math.max(0, w.s);
-        if (marks.length && t <= marks[marks.length - 1].t + 0.005) marks[marks.length - 1].k = i;
-        else marks.push({ t, k: i });
-      });
-      marks[0].t = c.start;
-      marks.forEach((m, mi) => {
-        const ws = m.t;
-        const we = mi + 1 < marks.length ? marks[mi + 1].t : end;
-        const k = m.k;
+      for (const t of cuts) if (!marks.length || t > marks[marks.length - 1] + 0.005) marks.push(t);
+      marks.forEach((t, mi) => {
+        const te = mi + 1 < marks.length ? marks[mi + 1] : dur;
+        let k = -1;
+        if (timed) words.forEach((w, j) => t + 0.005 >= w.s && (k = j));
+        const I = introOf(t);
+        const fill = I.flash ?? st.color;
+        // Tags that bring a word back to the style after an override (the intro's scale and
+        // outline keep animating).
+        const base = `\\c${assColor(fill)}\\3c${outC}${st.box ? `\\bord${bordPx}` : I.bord}${I.scale}\\1a&H00&\\3a${anyAlpha(st.box ? boxA : 0)}\\4a${anyAlpha(st.box ? boxA : shadowA)}`;
         const parts = words.map((w, j) => {
-          const t = assText(up(w.w));
-          if (hides && j > k) return `{\\1a&HFF&\\3a&HFF&\\4a&HFF&}${t}{${base}}`;
-          if (j !== k) return t;
-          if (anim === 'marker') return `{\\bord${Math.round(size * 0.18)}\\3c${assColor(st.marker || st.highlight)}}${t}{${base}}`;
-          const colour = st.highlight && st.highlight !== st.color ? `\\c${assColor(st.highlight)}` : '';
+          const raw = w.w;
+          const tx = assText(raw);
+          if (anim === 'typewriter') {
+            const n = capanim.typedChars(words, j, t + 0.005);
+            const all = Array.from(raw);
+            if (n <= 0) return `{${HIDE}}${tx}{${base}}`;
+            if (n < all.length) return `${assText(all.slice(0, n).join(''))}{${HIDE}}${assText(all.slice(n).join(''))}{${base}}`;
+            return tx;
+          }
+          if (hides && j > k) return `{${HIDE}}${tx}{${base}}`;
+          if (!timed || j > k) return tx;
+          const lit = st.highlight && st.highlight !== st.color && !I.flash ? `\\c${assColor(st.highlight)}` : '';
+          if (j !== k) {
+            const pop = anim === 'popin' ? capanim.wordScaleAss(anim, t - w.s) : '';
+            const sweep = anim === 'colorsweep' ? lit : '';
+            return pop || sweep ? `{${sweep}${pop}}${tx}{${base}}` : tx;
+          }
+          if (anim === 'marker') return `{\\bord${Math.round(size * 0.18)}\\3c${assColor(st.marker || st.highlight)}}${tx}{${base}}`;
           const bounce = anim === 'bounce' ? '\\t(0,80,\\fscx125\\fscy125)\\t(80,160,\\fscx115\\fscy115)' : '';
-          return colour || bounce ? `{${colour}${bounce}}${t}{${base}}` : t;
+          const grow = anim === 'popin' || anim === 'scaleword' ? capanim.wordScaleAss(anim, t - w.s) : '';
+          return lit || bounce || grow ? `{${lit}${bounce}${grow}}${tx}{${base}}` : tx;
         });
-        push(ws, we, `${head(ws <= c.start + 0.005)}${parts.join(' ')}`);
+        push(c.start + t, c.start + te, `${head(I)}${parts.join(' ')}`);
       });
     }
   }

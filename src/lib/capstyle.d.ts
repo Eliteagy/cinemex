@@ -1,6 +1,7 @@
 import type { CaptionOverride, CaptionStyle, Clip, Project } from '../types';
 
 export const ANIMS: string[];
+export const CATEGORIES: string[];
 export const OVERRIDE_KEYS: (keyof CaptionOverride)[];
 export const MY_STYLE_ID: string;
 export function isStyleId(id: unknown): id is string;

@@ -889,16 +889,18 @@ function buildAss(project, { files, userFonts = true } = {}) {
         const parts = words.map((w, j) => {
           const raw = w.w;
           const tx = assText(raw);
+          const lit = st.highlight && st.highlight !== st.color && !I.flash ? `\\c${assColor(st.highlight)}` : '';
           if (anim === 'typewriter') {
+            // Letters not typed yet are transparent (they keep their place); the spoken word is lit.
             const n = capanim.typedChars(words, j, t + 0.005);
             const all = Array.from(raw);
             if (n <= 0) return `{${HIDE}}${tx}{${base}}`;
-            if (n < all.length) return `${assText(all.slice(0, n).join(''))}{${HIDE}}${assText(all.slice(n).join(''))}{${base}}`;
-            return tx;
+            const on = timed && j === k && lit ? `{${lit}}` : '';
+            if (n < all.length) return `${on}${assText(all.slice(0, n).join(''))}{${HIDE}}${assText(all.slice(n).join(''))}{${base}}`;
+            return on ? `${on}${tx}{${base}}` : tx;
           }
           if (hides && j > k) return `{${HIDE}}${tx}{${base}}`;
           if (!timed || j > k) return tx;
-          const lit = st.highlight && st.highlight !== st.color && !I.flash ? `\\c${assColor(st.highlight)}` : '';
           if (j !== k) {
             const pop = anim === 'popin' ? capanim.wordScaleAss(anim, t - w.s) : '';
             const sweep = anim === 'colorsweep' ? lit : '';

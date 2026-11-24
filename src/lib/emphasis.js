@@ -125,6 +125,15 @@ export const FONT_METRICS = {
   'Poppins Black': { upem: 1000, a: 1135, d: 627 },
   'Poppins ExtraBold': { upem: 1000, a: 1135, d: 627 },
   'Lilita One': { upem: 1000, a: 923, d: 220 },
+  Bangers: { upem: 1000, a: 1401, d: 356 },
+  'Black Ops One': { upem: 2048, a: 2232, d: 689 },
+  Bungee: { upem: 1000, a: 1647, d: 927 },
+  'Luckiest Guy': { upem: 2048, a: 2006, d: 504 },
+  Monoton: { upem: 2048, a: 2366, d: 822 },
+  'Press Start 2P': { upem: 1000, a: 1000, d: 374 },
+  Righteous: { upem: 2048, a: 2017, d: 526 },
+  'Russo One': { upem: 1000, a: 926, d: 279 },
+  Staatliches: { upem: 1000, a: 1006, d: 306 },
 };
 const DEFAULT_METRICS = { upem: 1000, a: 900, d: 250 };
 export const metricsOf = (font) => FONT_METRICS[font] ?? DEFAULT_METRICS;

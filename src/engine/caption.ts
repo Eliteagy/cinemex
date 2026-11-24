@@ -10,7 +10,7 @@
 //              typewriter (letter by letter)
 // Extras: highlight (spoken word colour), glow, shadow, letter spacing.
 import type { CaptionStyle, TextLayer, Word } from '../types';
-import { USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions, metricsOf, registerMetrics, revealDur, riseAt, roleOrder } from '../lib/emphasis.js';
+import { FONT_METRICS, USER_FONTS, emphasisLines, keywordOf, layerOf, lineOffset, linePositions, metricsOf, registerMetrics, revealDur, riseAt, roleOrder } from '../lib/emphasis.js';
 import type { EmphasisRole, LineOffsets } from '../lib/emphasis.js';
 import { TYPE, hidesWords, introAt, stepAt, typedChars, wordScaleAt } from '../lib/capanim.js';
 
@@ -159,8 +159,10 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
   const lineSize = Math.round((c.size ?? st.size) * ch);
   ctx.save();
   ctx.font = fontOf(st.font, lineSize);
+  // Known fonts: their win ascent + descent (what libass uses); others: the browser's line box.
+  const wm = FONT_METRICS[st.font];
   const fm = ctx.measureText('Hg');
-  const lh = fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent;
+  const lh = wm ? (lineSize * (wm.a + wm.d)) / wm.upem : fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent;
   const size = lh > 0 ? Math.round((lineSize * lineSize) / lh) : lineSize;
   ctx.font = fontOf(st.font, size);
   ctx.letterSpacing = `${Math.round((st.spacing ?? 0) * ch)}px`;
@@ -186,7 +188,6 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
   const visible = (i: number) => (anim === 'typewriter' ? typed(i) > 0 : !timed || !hidesWords(anim) || i <= current);
   const space = ctx.measureText(' ').width;
   const widths = words.map((w, i) => ctx.measureText(w.w).width * wordScale(i));
-  const total = widths.reduce((a, b) => a + b, 0) + space * (words.length - 1);
   // Wrap into lines that fit 88% of the frame.
   const maxW = cw * 0.88;
   const lines: number[][] = [[]];
@@ -200,21 +201,41 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
     lines[lines.length - 1]!.push(i);
     lw += (lw ? space : 0) + wv;
   });
-  const lineH = size * 1.15;
+  // libass: one line per font size (line height), the box (BorderStyle 3) is each line's box padded
+  // by the outline width, square.
+  const lineH = lineSize;
+  const lineWidthOf = (line: number[]) => line.reduce((a, i) => a + widths[i]!, 0) + space * (line.length - 1);
   if (st.box) {
-    const bw = Math.min(total, maxW) + size * 0.7;
-    const bh = lines.length * lineH + size * 0.35;
+    const pad = st.outline * ch;
     ctx.fillStyle = st.boxColor ?? 'rgba(0,0,0,0.75)';
-    ctx.beginPath();
-    ctx.roundRect(-bw / 2, -bh / 2, bw, bh, size * 0.25);
-    ctx.fill();
+    // Only behind the words shown so far (hidden words hide their part of the box in libass).
+    lines.forEach((line, li) => {
+      let x = -lineWidthOf(line) / 2;
+      let l = Infinity;
+      let r = -Infinity;
+      for (const i of line) {
+        if (visible(i)) {
+          const n = typed(i);
+          const wv = n === Infinity ? widths[i]! : ctx.measureText(Array.from(words[i]!.w).slice(0, n).join('')).width * wordScale(i);
+          l = Math.min(l, x);
+          // A whole word keeps the space after it (it is in the visible run in ASS).
+          r = Math.max(r, x + wv + (wv === widths[i] && i !== line[line.length - 1] ? space : 0));
+        }
+        x += widths[i]! + space;
+      }
+      const y = (li - (lines.length - 1) / 2) * lineH;
+      if (l < r) ctx.fillRect(l - pad, y - lineH / 2 - pad, r - l + 2 * pad, lineH + 2 * pad);
+    });
   }
   const outline = st.outline * ch * 2 * I.bord;
   const shadow = (st.shadow ?? st.outline / 2) * ch;
   const shadowColor = st.shadowColor ? st.shadowColor : 'rgba(0,0,0,0.5)';
+  // Known fonts sit on their baseline inside the line box like in libass (\an5 centres the box).
+  const by = wm ? lineSize * (wm.a / (wm.a + wm.d) - 0.5) : 0;
+  if (wm) ctx.textBaseline = 'alphabetic';
 
   lines.forEach((line, li) => {
-    const lineWidth = line.reduce((a, i) => a + widths[i]!, 0) + space * (line.length - 1);
+    const lineWidth = lineWidthOf(line);
     let x = -lineWidth / 2;
     const y = (li - (lines.length - 1) / 2) * lineH;
     for (const i of line) {
@@ -244,11 +265,11 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
       if (anim === 'marker' && spoken) {
         ctx.lineWidth = size * 0.36;
         ctx.strokeStyle = st.marker ?? st.highlight;
-        ctx.strokeText(shown, tx, 0);
+        ctx.strokeText(shown, tx, by);
       } else if (outline > 0 && !st.box) {
         ctx.lineWidth = outline;
         ctx.strokeStyle = st.outlineColor;
-        ctx.strokeText(shown, tx, 0);
+        ctx.strokeText(shown, tx, by);
       }
       ctx.shadowColor = 'transparent';
       if (anim === 'karaoke' && timed) {
@@ -257,20 +278,20 @@ export function drawCaption(ctx: CanvasRenderingContext2D, c: CaptionInput, st: 
         const p = clamp01((local - w.s) / Math.max(0.01, next - w.s));
         const tw = widths[i]!;
         ctx.fillStyle = st.color;
-        ctx.fillText(w.w, 0, 0);
+        ctx.fillText(w.w, 0, by);
         if (p > 0) {
           ctx.beginPath();
-          ctx.rect(-tw / 2, -size, tw * p, size * 2);
+          ctx.rect(-tw / 2, -lineSize, tw * p, lineSize * 2);
           ctx.clip();
           ctx.fillStyle = st.highlight;
-          ctx.fillText(w.w, 0, 0);
+          ctx.fillText(w.w, 0, by);
         }
       } else {
         // Spoken word in the highlight colour (colorsweep: every word spoken so far); a glitch
         // flash paints every word.
         const lit = timed && st.highlight !== st.color && anim !== 'marker' && (anim === 'colorsweep' ? i <= current : spoken);
         ctx.fillStyle = S.flash ?? (lit ? st.highlight : st.color);
-        ctx.fillText(shown, tx, 0);
+        ctx.fillText(shown, tx, by);
       }
       ctx.restore();
     }

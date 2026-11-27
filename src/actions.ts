@@ -204,7 +204,7 @@ export async function polishEdit(opts: PolishOptions = {}) {
     }
   }
   if (opts.sfx) {
-    for (const s of sfxPlan(beats)) {
+    for (const s of sfxPlan(beats, { every: 2 })) {
       await addSfx(s.id, s.at, s.volume);
       added.sfx++;
     }
@@ -312,7 +312,7 @@ export async function applyCaptionModel(ref: string | CaptionModel, opts: { clip
       try {
         S().setStatus('A IA está a escolher a palavra principal de cada legenda…', true);
         const blocks = groups.map((g) => (g.words ?? []).map((w) => w.w));
-        keywords = parseKeywordPicks(await window.ec.aiAsk(keywordPrompt(blocks, { learned: (await window.ec.learned()).keywords }), { model: 'haiku' }), blocks);
+        keywords = parseKeywordPicks(await window.ec.aiAsk(keywordPrompt(blocks, { learned: (await window.ec.learned()).keywords }), { model: 'sonnet' }), blocks);
       } catch {
         keywords = undefined; // automatic pick
       }

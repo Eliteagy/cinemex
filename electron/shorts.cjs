@@ -108,7 +108,7 @@ function shortProject(media, c, o = {}) {
   const sfxClips = [];
   const sfxMedia = [];
   if (o.sfx && Array.isArray(o.sfxList)) {
-    for (const s of polish.sfxPlan(beats, { volume: 0.35 })) {
+    for (const s of polish.sfxPlan(beats, { every: 2, volume: 0.12 })) {
       const fx = o.sfxList.find((x) => x.id === s.id);
       if (!fx) continue;
       let m = sfxMedia.find((x) => x.path === fx.path);
@@ -239,7 +239,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       try {
         const win = { start: 0, in: c.start, out: c.end, speed: 1 };
         const blocks = captionClipsFor(win, clipMedia.transcript || [], capmodels.groupingFor(model)).map((g) => (g.words || []).map((w) => w.w));
-        keywords = ai.parseKeywordPicks(await o.ask(ai.keywordPrompt(blocks, { learned: o.learned?.keywords }), 'haiku'), blocks);
+        keywords = ai.parseKeywordPicks(await o.ask(ai.keywordPrompt(blocks, { learned: o.learned?.keywords }), 'sonnet'), blocks);
       } catch {
         keywords = undefined;
       }

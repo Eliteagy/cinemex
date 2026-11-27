@@ -6,11 +6,12 @@
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
 /**
- * Moments to hit: start times of the big words (timeline seconds), at least `minGap` apart, never
+ * Moments to hit: start times of the big words (timeline seconds), at least `minGap` apart (a punch
+ * every ~4 s reads as edited; every 2 s feels busy), never
  * in the first `skip` seconds (the hook card is there) nor in the last `tail` seconds (CTA).
  * Accent-coloured words (override colour) come first when two are close.
  */
-export function beatsFromCaptions(back, { minGap = 2.5, skip = 0.6, tail = 0, duration = Infinity } = {}) {
+export function beatsFromCaptions(back, { minGap = 4, skip = 0.6, tail = 0, duration = Infinity } = {}) {
   const list = (back || [])
     .filter((c) => c && Number.isFinite(c.start) && c.start >= skip && c.start <= duration - tail)
     .map((c) => ({ t: c.start, strong: Boolean(c.override?.color) || String(c.text || '').length >= 7 }))
@@ -45,14 +46,14 @@ export function punchKeyframes(beats, clip, { amount = 0.12, up = 0.12, hold = 0
   return keys;
 }
 
-/** Sound effects for the beats: a whoosh on the first, then pops (every `every`-th beat). */
-export function sfxPlan(beats, { every = 1, first = 'whoosh', rest = 'pop', volume = 0.35 } = {}) {
+/** Sound effects for the beats: a whoosh on the first, then pops (every `every`-th beat), -18 dB (0.12) so they sit under the voice. */
+export function sfxPlan(beats, { every = 1, first = 'whoosh', rest = 'pop', volume = 0.12 } = {}) {
   return (beats || []).filter((_, i) => i % Math.max(1, every) === 0).map((at, i) => ({ id: i === 0 ? first : rest, at: r3(at), volume }));
 }
 
 /** Progress bar along the whole short (graphic clip body, top of the frame). */
 export function progressClip(duration, { color = '#FFFFFF', y = 0.004 } = {}) {
-  return { start: 0, in: 0, out: r3(duration), text: '', graphic: { kind: 'progress', title: '', y, color } };
+  return { start: 0, in: 0, out: r3(duration), text: '', graphic: { kind: 'progress', title: '', subtitle: '', y, color } };
 }
 
 /** Call to action at the end (graphic clip body), `len` s long, low in the frame. */
@@ -60,7 +61,7 @@ export function ctaClip(text, duration, { len = 2.5, y = 0.8, kind = 'reveal' } 
   const t = String(text || '').trim().slice(0, 80);
   if (!t) return null;
   const l = Math.min(len, Math.max(1, duration / 3));
-  return { start: r3(Math.max(0, duration - l)), in: 0, out: r3(l), text: t, graphic: { kind, title: t, y } };
+  return { start: r3(Math.max(0, duration - l)), in: 0, out: r3(l), text: t, graphic: { kind, title: t, subtitle: '', y } };
 }
 
 /** Music clips covering `len` s (the track repeats when shorter), fading out at the end. */

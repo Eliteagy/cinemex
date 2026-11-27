@@ -8,8 +8,9 @@ const require = createRequire(import.meta.url);
 
 test('beats: spaced, not under the hook or the CTA, accent words preferred', () => {
   const back = [0.2, 1, 2, 2.4, 5, 5.3, 9.5].map((start, i) => ({ start, text: i === 5 ? 'DINHEIRO' : 'CASA', ...(i === 5 ? { override: { color: '#D4AF37' } } : {}) }));
-  assert.deepEqual(beatsFromCaptions(back, { duration: 10, tail: 1 }), [1, 5.3]);
-  assert.deepEqual(beatsFromCaptions(back, { duration: 12, tail: 1 }), [1, 5.3, 9.5]);
+  assert.deepEqual(beatsFromCaptions(back, { duration: 10, tail: 1, minGap: 2.5 }), [1, 5.3]);
+  assert.deepEqual(beatsFromCaptions(back, { duration: 12, tail: 1, minGap: 2.5 }), [1, 5.3, 9.5]);
+  assert.deepEqual(beatsFromCaptions(back, { duration: 12, tail: 1 }), [1, 5.3, 9.5], 'default gap 4 s');
 });
 
 test('punch keyframes: in clip time, inside the clip, no overlaps', () => {
@@ -23,6 +24,7 @@ test('punch keyframes: in clip time, inside the clip, no overlaps', () => {
 test('sfx plan, progress bar and CTA', () => {
   assert.deepEqual(sfxPlan([1, 4, 7]).map((s) => s.id), ['whoosh', 'pop', 'pop']);
   assert.deepEqual(progressClip(30).graphic.kind, 'progress');
+  assert.equal(ctaClip('x', 30).graphic.subtitle, '', 'no template subtitle under the CTA');
   const c = ctaClip('Segue para mais', 30);
   assert.deepEqual([c.start, c.out, c.graphic.title], [27.5, 2.5, 'Segue para mais']);
   assert.equal(ctaClip('  ', 30), null);

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
-const { importFile, kindOf, peaks, freezeFrame } = require('./media.cjs');
+const { importFile, kindOf, peaks, freezeFrame, probe } = require('./media.cjs');
 const { ensureSfx } = require('./sfx.cjs');
 const { listDrafts, convertDraft, DRAFTS } = require('./capcut.cjs');
 const { transcribe, captionClipsFor } = require('./captions.cjs');
@@ -17,6 +17,7 @@ const { createLearnStore } = require('./learn.cjs');
 const { createMusic } = require('./music.cjs');
 const { createBroll } = require('./broll.cjs');
 const { createPackStore } = require('./editpacks.cjs');
+const { createBatch } = require('./batch.cjs');
 const { packShortOptions } = require('../src/lib/editpacks.js');
 const effectgen = require('./effectgen.cjs');
 const { createEffectLibrary } = require('./effectlib.cjs');
@@ -421,44 +422,88 @@ function handlers() {
     if (!(tout > tin)) throw new Error('Intervalo do clip inválido');
     return reframeEngine.detect({ file, tin, tout, srcW: Number(req.w), srcH: Number(req.h) }, { onStatus: (status) => !e.sender.isDestroyed() && e.sender.send('matte:progress', { id: req.id, status }) });
   });
-  ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
-    if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
-    let outDir = opts.outDir;
-    if (!outDir) {
-      const r = await dialog.showOpenDialog(win, { title: 'Pasta para os shorts', defaultPath: app.getPath('videos'), properties: ['openDirectory', 'createDirectory'] });
-      if (r.canceled || !r.filePaths[0]) return null;
-      outDir = r.filePaths[0];
-    }
-    exportAbort = new AbortController();
+  /** The shorts builder options from the panel / MCP choices (a pack sets every edit option). */
+  const shortsOptions = (opts, e) => {
     const fromPack = opts.pack ? packShortOptions(packs.resolve(opts.pack)) : null;
     if (fromPack) opts = { ...opts, ...fromPack, layout: undefined };
+    return {
+      style: typeof opts.style === 'string' ? opts.style : 'felipe',
+      reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
+      reframer: reframeEngine,
+      ask: (prompt, model) => askJson(String(prompt).slice(0, 200_000), { model, signal: exportAbort?.signal }),
+      review: opts.review !== false,
+      punch: opts.punch === true || (typeof opts.punch === 'number' && opts.punch > 0 && opts.punch <= 0.4) ? opts.punch : false,
+      sfx: opts.sfx === true,
+      music: ['auto', 'calma', 'media', 'forte'].includes(opts.music) ? opts.music : false,
+      musicLib,
+      broll: opts.broll === true,
+      brollSrc,
+      sfxList: opts.sfx === true ? ensureSfx(path.join(app.getPath('userData'), 'sfx')) : undefined,
+      progress: opts.progress === true,
+      cta: typeof opts.cta === 'string' ? opts.cta.slice(0, 80) : undefined,
+      learned: learn.get(),
+      keywordAI: opts.keywordAI !== false,
+      layout: opts.layout === 'atras' ? 'atras' : undefined,
+      model: opts.model ? capmodels.resolve(opts.model) : undefined,
+      matter: matteEngine,
+      cards: opts.cards !== false,
+      preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',
+      encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',
+      signal: exportAbort?.signal,
+      onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('shorts:progress', p),
+    };
+  };
+  const askOutDir = async (title) => {
+    const r = await dialog.showOpenDialog(win, { title, defaultPath: app.getPath('videos'), properties: ['openDirectory', 'createDirectory'] });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  };
+  ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
+    if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
+    const outDir = opts.outDir || (await askOutDir('Pasta para os shorts'));
+    if (!outDir) return null;
+    exportAbort = new AbortController();
     try {
-      return await shorts.buildShorts(media, clips, path.resolve(String(outDir)), {
-        style: typeof opts.style === 'string' ? opts.style : 'felipe',
-        reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
-        reframer: reframeEngine,
-        ask: (prompt, model) => askJson(String(prompt).slice(0, 200_000), { model, signal: exportAbort?.signal }),
-        review: opts.review !== false,
-        punch: opts.punch === true || (typeof opts.punch === 'number' && opts.punch > 0 && opts.punch <= 0.4) ? opts.punch : false,
-        sfx: opts.sfx === true,
-        music: ['auto', 'calma', 'media', 'forte'].includes(opts.music) ? opts.music : false,
-        musicLib,
-        broll: opts.broll === true,
-        brollSrc,
-        sfxList: opts.sfx === true ? ensureSfx(path.join(app.getPath('userData'), 'sfx')) : undefined,
-        progress: opts.progress === true,
-        cta: typeof opts.cta === 'string' ? opts.cta.slice(0, 80) : undefined,
-        learned: learn.get(),
-        keywordAI: opts.keywordAI !== false,
-        layout: opts.layout === 'atras' ? 'atras' : undefined,
-        model: opts.model ? capmodels.resolve(opts.model) : undefined,
-        matter: matteEngine,
-        cards: opts.cards !== false,
-        preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',
-        encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',
-        signal: exportAbort.signal,
-        onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('shorts:progress', p),
-      });
+      return await shorts.buildShorts(media, clips, path.resolve(String(outDir)), shortsOptions(opts, e));
+    } finally {
+      exportAbort = null;
+    }
+  });
+  // "Pasta inteira": every video of a folder -> moments -> shorts (electron/batch.cjs).
+  const batch = createBatch({ transcribe: (f) => transcribe(f, { language: 'pt' }), findHotclips: (w, o) => shorts.findHotclips(w, o), probe });
+  let batchFolder = null;
+  ipcMain.handle('batch:scan', async (e, folder, opts = {}) => {
+    const dir = folder || (await askOutDir('Pasta com os vídeos longos'));
+    if (!dir) return null;
+    batchFolder = path.resolve(String(dir));
+    aiAbort = new AbortController();
+    try {
+      const list = await batch.scan(batchFolder, { count: Number(opts.count) || 5, min: Number(opts.min) || 20, max: Number(opts.max) || 60, context: typeof opts.context === 'string' ? opts.context : undefined, signal: aiAbort.signal, onProgress: (p) => !e.sender.isDestroyed() && e.sender.send('batch:progress', p) });
+      return { folder: batchFolder, clips: list };
+    } finally {
+      aiAbort = null;
+    }
+  });
+  ipcMain.handle('batch:build', async (e, items, opts = {}) => {
+    if (!batchFolder) throw new Error('Escolhe primeiro a pasta (Pasta inteira)');
+    const byVideo = new Map();
+    for (const it of Array.isArray(items) ? items : []) {
+      const v = path.resolve(String(it.video || ''));
+      if (path.dirname(v) !== batchFolder || !fs.existsSync(v)) continue; // only videos of the scanned folder
+      if (!byVideo.has(v)) byVideo.set(v, []);
+      byVideo.get(v).push(it);
+    }
+    if (!byVideo.size) throw new Error('Escolhe pelo menos um momento');
+    const outRoot = opts.outDir || path.join(batchFolder, 'Shorts Cinemex');
+    exportAbort = new AbortController();
+    const done = [];
+    try {
+      for (const [v, list] of byVideo) {
+        const media = await batch.mediaFor(batchFolder, v);
+        allow(v);
+        const out = await shorts.buildShorts(media, list, path.join(outRoot, path.basename(v).replace(/\.[^.]+$/, '')), shortsOptions(opts, e));
+        done.push(...out);
+      }
+      return done;
     } finally {
       exportAbort = null;
     }

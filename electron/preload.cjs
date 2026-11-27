@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld('ec', {
   matte: (req) => ipcRenderer.invoke('matte:run', req),
   detectFace: (req) => ipcRenderer.invoke('face:detect', req),
   musicLibrary: () => ipcRenderer.invoke('music:library'),
+  scanFolder: (folder, opts) => ipcRenderer.invoke('batch:scan', folder, opts),
+  buildFolder: (items, opts) => ipcRenderer.invoke('batch:build', items, opts),
+  onBatchProgress: (cb) => {
+    const f = (_e, p) => cb(p);
+    ipcRenderer.on('batch:progress', f);
+    return () => ipcRenderer.removeListener('batch:progress', f);
+  },
   openUpload: (network) => ipcRenderer.invoke('publish:open', network),
   listEditPacks: () => ipcRenderer.invoke('packs:list'),
   saveEditPack: (id, pack, thumb) => ipcRenderer.invoke('packs:save', id, pack, thumb),

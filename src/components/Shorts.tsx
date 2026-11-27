@@ -22,7 +22,8 @@ export function ShortsPanel() {
   const [min, setMin] = useState(20);
   const [max, setMax] = useState(60);
   const [context, setContext] = useState('');
-  const [clips, setClips] = useState<Hotclip[]>(hotclipState.clips);
+  const [clips, setClips] = useState<(Hotclip & { video?: string; name?: string })[]>(hotclipState.clips);
+  const [folder, setFolder] = useState<string | null>(null);
   const [pick, setPick] = useState<Set<number>>(new Set(hotclipState.clips.map((_, i) => i)));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export function ShortsPanel() {
   const src = mediaId || videos[0]?.id || '';
 
   useEffect(() => window.ec.onAiProgress((p) => setProgress(p.of > 1 ? `Parte ${p.step} de ${p.of}` : null)), []);
+  useEffect(() => window.ec.onBatchProgress((p) => setProgress(`${p.phase}: ${p.video} (${p.step} de ${p.of})`)), []);
   useEffect(() => window.ec.onShortsProgress((p) => setProgress(`Short ${p.index + 1} de ${p.of} · ${p.status ? `${p.status} · ` : ''}${Math.round(p.progress * 100)} %`)), []);
 
   const run = async (label: string, fn: () => Promise<void>) => {
@@ -71,6 +73,7 @@ export function ShortsPanel() {
   const find = () =>
     run('find', async () => {
       const r = await findHotclips({ mediaId: src, count, min, max, context });
+      setFolder(null);
       setClips(r);
       setPick(new Set(r.map((_, i) => i)));
       setDone([]);
@@ -78,7 +81,8 @@ export function ShortsPanel() {
   const make = () =>
     run('make', async () => {
       const chosen = clips.filter((_, i) => pick.has(i));
-      const out = await makeShorts(chosen, { mediaId: src, style, reframe, model: model || undefined, pack: pack || undefined, cards, gpu });
+      const opts = { style, reframe, model: model || undefined, pack: pack || undefined, cards, gpu };
+      const out = folder ? await window.ec.buildFolder(chosen as (Hotclip & { video: string })[], opts) : await makeShorts(chosen, { mediaId: src, ...opts });
       if (out) setDone(out.map((o) => ({ file: o.file, name: o.name, title: o.title || o.hook, cover: o.cover, posts: o.posts })));
     });
 
@@ -125,6 +129,23 @@ export function ShortsPanel() {
           <button className="btn primary" disabled={Boolean(busy)} onClick={find}>
             {busy === 'find' ? 'A procurar…' : 'Encontrar momentos'}
           </button>
+          <button
+            className="btn"
+            disabled={Boolean(busy)}
+            title="Todos os vídeos de uma pasta: transcreve um a um, encontra os momentos de cada um e junta tudo numa lista (se fechares a app, continua de onde parou)"
+            onClick={() =>
+              run('find', async () => {
+                const r = await window.ec.scanFolder(null, { count, min, max, context });
+                if (!r) return;
+                setFolder(r.folder);
+                setClips(r.clips);
+                setPick(new Set(r.clips.slice(0, 10).map((_, i) => i)));
+                setDone([]);
+              })
+            }
+          >
+            Pasta inteira…
+          </button>
           {busy && (
             <button className="btn" onClick={() => void (busy === 'make' ? window.ec.cancelExport() : window.ec.cancelAi())}>
               Cancelar
@@ -153,7 +174,7 @@ export function ShortsPanel() {
                       }
                     />
                     <span className="sh-score">{c.score}</span>
-                    <span className="sh-title">{c.title || c.hook}</span>
+                    <span className="sh-title">{c.title || c.hook}{c.name ? <em className="panel-sub"> · {c.name}</em> : null}</span>
                     <span className="sh-time">
                       {fmtShort(c.start)} · {Math.round(c.duration)} s
                     </span>

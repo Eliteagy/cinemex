@@ -82,3 +82,12 @@ test('model store: saves, never overwrites a built-in, validates on read, delete
   assert.equal(store.delete('vitor'), false);
   assert.throws(() => store.resolve('nada'), /desconhecido/);
 });
+
+test('duas-linhas: the two lines never overlap, even with the face high in the frame', () => {
+  for (const face of [{ y: 0.3, h: 0.08 }, { y: 0.12, h: 0.09 }]) {
+    const { back } = modelCaptions(BUILTIN_MODELS['duas-linhas'], [g(0, 'e', 'tu', 'mantens-te', 'ali')], W, H, face);
+    const [a, b] = back;
+    assert.ok(b.y - a.y >= (a.size + b.size) * 0.5, `face ${face.y}: ${a.y} / ${b.y}`);
+    assert.ok(a.y >= a.size * 0.55 - 1e-9, 'top line inside the frame');
+  }
+});

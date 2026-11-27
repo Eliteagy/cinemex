@@ -165,8 +165,11 @@ export function modelCaptions(model, groups, W, H, face, { keywords } = {}) {
       const bot = ws.slice(cut).map((w) => cleanWord(w.w)).join(' ').toUpperCase();
       const s1 = fitSize(top, m.back.font, m.back.width, m.back.maxSize, W, H);
       const s2 = Math.min(fitSize(bot, m.back.font, m.back.width, m.back.maxSize * 0.8, W, H), s1 * 0.85);
-      const y2 = headTop;
-      const y1 = y2 - (s1 + s2) * 0.5;
+      // The pair keeps its spacing: when the top line would leave the frame, both lines move down
+      // together (clamping only the top one stacked it on the bottom one).
+      const gap = (s1 + s2) * 0.55;
+      const y1 = Math.max(s1 * 0.55, headTop - gap);
+      const y2 = y1 + gap;
       back.push(backClip(top, g.start, g.out, s1, y1, ws.slice(0, cut)));
       back.push(backClip(bot, g.start, g.out, r3(s2), y2, ws.slice(cut)));
       continue;

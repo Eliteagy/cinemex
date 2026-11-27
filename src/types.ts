@@ -582,6 +582,9 @@ export interface EcBridge {
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
   musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
+  scanFolder(folder: string | null, opts?: { count?: number; min?: number; max?: number; context?: string }): Promise<{ folder: string; clips: (Hotclip & { video: string; name: string })[] } | null>;
+  buildFolder(items: (Hotclip & { video: string })[], opts?: Record<string, unknown>): Promise<(Hotclip & { file: string; project: string; name: string; cover?: string | null; posts?: PublishPosts })[]>;
+  onBatchProgress(cb: (p: { step: number; of: number; video: string; phase: string }) => void): () => void;
   openUpload(network: 'instagram' | 'tiktok' | 'youtube'): Promise<boolean>;
   listEditPacks(): Promise<(EditPack & { id: string; builtin: boolean; thumb?: string })[]>;
   saveEditPack(id: string | null, pack: EditPack, thumb?: string | null): Promise<{ id: string; pack: EditPack }>;

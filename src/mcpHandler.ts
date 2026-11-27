@@ -463,7 +463,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (!cat || !['fusion', 'legendas', 'titulos', 'movimento'].includes(cat)) throw new Error('category: fusion, legendas, titulos ou movimento');
       const providers = Array.isArray(a.providers) ? (a.providers.map(String).filter((p) => ['claude', 'gemini', 'gpt'].includes(p)) as EffectProvider[]) : undefined;
       const sel = S().selected ? findClip(S().project, S().selected!) : null;
-      return window.ec.generateEffects(cat, String(a.request ?? ''), { providers, canvas: S().project.canvas, clipDuration: sel ? sel.clip.out - sel.clip.in : undefined });
+      return window.ec.generateEffects(cat, String(a.request ?? ''), { providers, canvas: S().project.canvas, clipDuration: sel ? sel.clip.out - sel.clip.in : undefined, imagePath: s(a.image) });
     }
     case 'list_effects': {
       const list = await window.ec.listEffects();

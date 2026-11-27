@@ -558,7 +558,8 @@ export interface EcBridge {
   captionClips(clip: Clip, words: Word[], opts: CaptionOptions): Promise<Omit<Clip, 'id'>[]>;
   /** Person matte for a clip's source range (x/y: keep only the person under that point). Resolves with the matte file. */
   matte(req: { id?: string; file: string; tin: number; tout: number; x?: number; y?: number }): Promise<string>;
-  generateEffects(category: EffectCategory, request: string, opts?: { providers?: EffectProvider[]; canvas?: { w: number; h: number }; clipDuration?: number }): Promise<EffectResult[]>;
+  generateEffects(category: EffectCategory, request: string, opts?: { providers?: EffectProvider[]; canvas?: { w: number; h: number }; clipDuration?: number; imagePath?: string }): Promise<EffectResult[]>;
+  pickEffectImage(): Promise<string | null>;
   cancelEffects(): Promise<void>;
   onEffectResult(cb: (r: EffectResult) => void): () => void;
   listEffects(): Promise<(EffectRecipe & { id: string; created: string; thumb?: string })[]>;

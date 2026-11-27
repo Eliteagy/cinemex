@@ -36,6 +36,7 @@ export function EffectGenPanel() {
   const [trying, setTrying] = useState<EffectProvider | null>(null);
   const [lib, setLib] = useState<Lib[]>([]);
   const [libCat, setLibCat] = useState<EffectCategory | 'all'>('all');
+  const [refImg, setRefImg] = useState<string | null>(null);
 
   const loadLib = async () => setLib(await window.ec.listEffects());
   useEffect(() => {
@@ -51,12 +52,12 @@ export function EffectGenPanel() {
   const generate = async () => {
     const providers = PROVIDERS.map(([p]) => p).filter((p) => use.has(p));
     if (!providers.length) return setStatus('Escolhe pelo menos uma IA');
-    const request = text.trim() || CATS.find(([k]) => k === cat)![2];
+    const request = text.trim() || (refImg ? '' : CATS.find(([k]) => k === cat)![2]);
     setBusy(true);
     setTrying(null);
     setResults(Object.fromEntries(providers.map((p) => [p, 'busy'])));
     try {
-      await window.ec.generateEffects(cat, request, { providers, canvas: { w: canvas.w, h: canvas.h }, clipDuration });
+      await window.ec.generateEffects(cat, request, { providers, canvas: { w: canvas.w, h: canvas.h }, clipDuration, imagePath: refImg ?? undefined });
     } catch (e) {
       setStatus((e as Error).message);
     } finally {
@@ -110,6 +111,20 @@ export function EffectGenPanel() {
           ))}
         </div>
         <textarea className="input eg-text" rows={3} value={text} maxLength={600} placeholder={`Ex.: ${CATS.find(([k]) => k === cat)![2]}`} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && void generate()} />
+        <div className="eg-row">
+          {refImg ? (
+            <span className="eg-ref">
+              <img src={mediaUrl(refImg)} alt="Imagem de referência" />
+              <button className="btn sm" onClick={() => setRefImg(null)} title="Tirar a imagem">
+                ✕
+              </button>
+            </span>
+          ) : (
+            <button className="btn sm" onClick={() => void window.ec.pickEffectImage().then((f) => f && setRefImg(f))} title="Um print de um vídeo de que gostes: as IAs copiam o look">
+              Imagem de referência
+            </button>
+          )}
+        </div>
         <div className="eg-row">
           {PROVIDERS.map(([p, l]) => (
             <label key={p} className="sh-check">

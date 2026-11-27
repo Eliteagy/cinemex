@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('ec', {
   forgetAll: () => ipcRenderer.invoke('learn:clear'),
   generateEffects: (category, request, opts) => ipcRenderer.invoke('effects:generate', category, request, opts),
   cancelEffects: () => ipcRenderer.invoke('effects:cancel'),
+  pickEffectImage: () => ipcRenderer.invoke('effects:pickImage'),
   onEffectResult: (cb) => {
     const f = (_e, r) => cb(r);
     ipcRenderer.on('effects:result', f);

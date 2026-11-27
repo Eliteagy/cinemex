@@ -316,7 +316,14 @@ function handlers() {
     effectAbort?.abort();
     effectAbort = new AbortController();
     const providers = Array.isArray(opts.providers) ? opts.providers.filter((p) => effectgen.PROVIDERS.includes(p)) : effectgen.PROVIDERS;
+    let image;
+    if (opts.imagePath) {
+      const f = String(opts.imagePath);
+      if (!/\.(jpe?g|png)$/i.test(f) || !fs.existsSync(f) || fs.statSync(f).size > 8_000_000) throw new Error('A imagem de referência tem de ser JPG ou PNG até 8 MB');
+      image = fs.readFileSync(f);
+    }
     return effectgen.generateEffects(String(category), String(request || '').slice(0, 600), {
+      image,
       providers,
       ctx: { canvas: opts.canvas, clipDuration: Number(opts.clipDuration) || undefined },
       signal: effectAbort.signal,
@@ -324,6 +331,12 @@ function handlers() {
     });
   });
   ipcMain.handle('effects:cancel', () => effectAbort?.abort());
+  ipcMain.handle('effects:pickImage', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Imagem de referência (print de um vídeo)', properties: ['openFile'], filters: [{ name: 'Imagem', extensions: ['jpg', 'jpeg', 'png'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    allow(r.filePaths[0]);
+    return r.filePaths[0];
+  });
   const thumbDir = path.join(app.getPath('userData'), 'thumbs');
   /** Saves a viewer snapshot (data:image/jpeg;base64, max 400 KB) as thumbs/<id>.jpg. */
   const saveThumb = (id, dataUrl) => {

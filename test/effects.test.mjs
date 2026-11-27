@@ -91,3 +91,33 @@ test('vertical projects get the letterbox hint, horizontal ones do not', () => {
   assert.match(gen.recipePrompt('fusion', 'x', { canvas: { w: 1080, h: 1920 } }), /VERTICAL[\s\S]*ratio entre 1\.0 e 1\.15/);
   assert.doesNotMatch(gen.recipePrompt('fusion', 'x', { canvas: { w: 1920, h: 1080 } }), /ratio entre/);
 });
+
+test('claude -p never gets tools; a reference image goes inside the message (stream-json)', () => {
+  const { buildLlmArgs } = require('../electron/llm.cjs');
+  const plain = buildLlmArgs({ model: 'sonnet', mcpConfigPath: 'm.json' });
+  const img = buildLlmArgs({ model: 'sonnet', mcpConfigPath: 'm.json', image: true });
+  for (const a of [plain, img]) {
+    assert.equal(a[a.indexOf('--tools') + 1], '', 'no tools');
+    assert.ok(!a.includes('--allowedTools'));
+    assert.equal(a[a.indexOf('--permission-mode') + 1], 'dontAsk');
+  }
+  assert.equal(plain[plain.indexOf('--output-format') + 1], 'json');
+  assert.equal(img[img.indexOf('--input-format') + 1], 'stream-json');
+  assert.equal(img[img.indexOf('--output-format') + 1], 'stream-json');
+});
+
+test('reference image reaches the three providers', async () => {
+  const seen = {};
+  const ask = Object.fromEntries(['claude', 'gemini', 'gpt'].map((p) => [p, async (prompt, o) => {
+    seen[p] = { image: o.image, prompt };
+    return { name: 'x', steps: [{ tool: 'set_color', args: { look: 'teal' } }] };
+  }]));
+  const img = Buffer.from([0xff, 0xd8, 0xff]);
+  const out = await gen.generateEffects('fusion', '', { ask, image: img });
+  assert.ok(out.every((r) => r.ok));
+  for (const p of ['claude', 'gemini', 'gpt']) {
+    assert.equal(seen[p].image, img);
+    assert.match(seen[p].prompt, /IMAGEM DE REFERÊNCIA/);
+  }
+  await assert.rejects(gen.generateEffects('fusion', '', { ask }), /imagem de referência/);
+});

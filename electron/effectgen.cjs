@@ -76,7 +76,7 @@ function recipePrompt(category, request, ctx = {}) {
     .join('\n');
   return `És um editor de vídeo e motion designer. Cria UM efeito para o editor Cinemex.
 
-Pedido do editor: """${String(request).slice(0, 600)}"""
+Pedido do editor: """${String(request).slice(0, 600)}"""${ctx.image ? '\nHá uma IMAGEM DE REFERÊNCIA (um frame de um vídeo de que o editor gosta): olha para a cor, o contraste, o grão, a luz, as barras e o enquadramento e recria esse look com as ferramentas abaixo.' : ''}
 Tipo: ${cat.label}. ${cat.brief}
 Projeto: ${ctx.canvas ? `${ctx.canvas.w}x${ctx.canvas.h}` : '1080x1920'} (${vertical ? 'VERTICAL, para Reels/TikTok' : 'horizontal'})${ctx.clipDuration ? `, clip selecionado com ${Number(ctx.clipDuration).toFixed(1)} s` : ''}.
 
@@ -163,12 +163,18 @@ async function askGemini(prompt, { fetchFn = fetch, signal, image } = {}) {
   throw last || new Error('Gemini sem resposta');
 }
 
-function askGpt(prompt, { env = process.env, signal, timeoutMs = 240_000 } = {}) {
+function askGpt(prompt, { env = process.env, signal, timeoutMs = 240_000, image } = {}) {
   return new Promise((resolve, reject) => {
     const bin = findCodex(env);
     if (!bin) return reject(new Error('O ChatGPT usa o Codex CLI (npm i -g @openai/codex e codex login)'));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmx-gpt-'));
-    const p = spawn(bin, ['exec', '--json', '--skip-git-repo-check', '-s', 'read-only', '-'], { cwd: dir, env, windowsHide: true });
+    let img = [];
+    if (image) {
+      const f = path.join(dir, image[0] === 0x89 ? 'ref.png' : 'ref.jpg');
+      fs.writeFileSync(f, image);
+      img = ['-i', f];
+    }
+    const p = spawn(bin, ['exec', '--json', '--skip-git-repo-check', '-s', 'read-only', ...img, '-'], { cwd: dir, env, windowsHide: true });
     let out = '';
     let err = '';
     let text = '';
@@ -220,7 +226,7 @@ function askGpt(prompt, { env = process.env, signal, timeoutMs = 240_000 } = {})
 }
 
 const ASK = {
-  claude: (prompt, o) => askJson(prompt, { model: 'sonnet', signal: o.signal }),
+  claude: (prompt, o) => askJson(prompt, { model: 'sonnet', signal: o.signal, image: o.image }),
   gemini: (prompt, o) => askGemini(prompt, o),
   gpt: (prompt, o) => askGpt(prompt, o),
 };
@@ -229,17 +235,17 @@ const ASK = {
  * Asks the chosen providers at the same time. Resolves with one entry per provider:
  * { provider, label, ok, recipe?, error?, ms }. onResult(entry) as each one arrives.
  */
-async function generateEffects(category, request, { providers = PROVIDERS, ctx, ask = ASK, onResult, signal } = {}) {
+async function generateEffects(category, request, { providers = PROVIDERS, ctx, ask = ASK, onResult, signal, image } = {}) {
   if (!CATEGORIES[category]) throw new Error('Tipo de efeito desconhecido');
-  if (!String(request || '').trim()) throw new Error('Escreve o efeito que queres');
-  const prompt = recipePrompt(category, request, ctx);
+  if (!String(request || '').trim() && !image) throw new Error('Escreve o efeito que queres (ou dá uma imagem de referência)');
+  const prompt = recipePrompt(category, String(request || '').trim() || 'o mesmo look da imagem de referência', { ...ctx, image: Boolean(image) });
   const list = providers.filter((p) => PROVIDERS.includes(p));
   return Promise.all(
     list.map(async (provider) => {
       const t0 = Date.now();
       let entry;
       try {
-        const raw = await ask[provider](prompt, { signal });
+        const raw = await ask[provider](prompt, { signal, image });
         const recipe = validateRecipe(raw, category);
         entry = recipe ? { provider, label: PROVIDER_LABEL[provider], ok: true, recipe: { ...recipe, provider, prompt: String(request).slice(0, 600) } } : { provider, label: PROVIDER_LABEL[provider], ok: false, error: 'A resposta não trazia passos válidos' };
       } catch (e) {

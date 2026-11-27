@@ -15,8 +15,11 @@ const { buildChildEnv, findClaude, AUTH_MESSAGE, MISSING_MESSAGE } = require('./
 const MODELS = new Set(['opus', 'sonnet', 'haiku']);
 
 /** Static argv for one call (no user text). */
-function buildLlmArgs({ model, mcpConfigPath } = {}) {
-  const args = ['-p', '--output-format', 'json', '--setting-sources', '', '--disable-slash-commands', '--tools', '', '--strict-mcp-config', '--mcp-config', mcpConfigPath, '--permission-mode', 'dontAsk'];
+function buildLlmArgs({ model, mcpConfigPath, image } = {}) {
+  // No tools ever. A reference image goes inside the message itself (stream-json input with an image
+  // block), not as a file to Read: a Read permission would also open every other file on the PC.
+  const io = image ? ['--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'] : ['--output-format', 'json'];
+  const args = ['-p', ...io, '--setting-sources', '', '--disable-slash-commands', '--tools', '', '--strict-mcp-config', '--mcp-config', mcpConfigPath, '--permission-mode', 'dontAsk'];
   if (model && MODELS.has(model)) args.push('--model', model);
   return args;
 }
@@ -62,7 +65,7 @@ function askJson(prompt, o = {}) {
     const dir = fs.mkdtempSync(path.join(o.workDir || os.tmpdir(), 'cmx-llm-'));
     const cfg = path.join(dir, 'mcp.json');
     fs.writeFileSync(cfg, JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
-    const args = buildLlmArgs({ model: o.model, mcpConfigPath: cfg });
+    const args = buildLlmArgs({ model: o.model, mcpConfigPath: cfg, image: Boolean(o.image) });
     const env = buildChildEnv(env0);
     const isCmd = /\.cmd$/i.test(bin);
     const p = isCmd
@@ -98,7 +101,9 @@ function askJson(prompt, o = {}) {
     p.on('close', (code) => {
       let res;
       try {
-        res = JSON.parse(out);
+        // stream-json (with an image): the last {"type":"result"} line carries the answer.
+        res = o.image ? out.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l)).filter((m) => m.type === 'result').pop() : JSON.parse(out);
+        if (!res) throw new Error('no result');
       } catch {
         const auth = /log ?in|auth|credential/i.test(out + err);
         return finish(reject, new Error(auth ? AUTH_MESSAGE : `Claude terminou com o código ${code}: ${(err || out).slice(0, 300)}`));
@@ -110,7 +115,11 @@ function askJson(prompt, o = {}) {
         finish(reject, e);
       }
     });
-    p.stdin.end(String(prompt));
+    if (o.image) {
+      const media = o.image[0] === 0x89 ? 'image/png' : 'image/jpeg';
+      const msg = { type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: media, data: Buffer.from(o.image).toString('base64') } }, { type: 'text', text: String(prompt) }] } };
+      p.stdin.end(JSON.stringify(msg) + '\n');
+    } else p.stdin.end(String(prompt));
   });
 }
 

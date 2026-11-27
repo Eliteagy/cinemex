@@ -27,7 +27,7 @@ export function ShortsPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [style, setStyle] = useState('felipe');
-  const [reframe, setReframe] = useState<'cover' | 'fit'>('cover');
+  const [reframe, setReframe] = useState<'cover' | 'fit' | 'face'>('face');
   const [cards, setCards] = useState(true);
   const [gpu, setGpu] = useState(true);
   const [progress, setProgress] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function ShortsPanel() {
   const src = mediaId || videos[0]?.id || '';
 
   useEffect(() => window.ec.onAiProgress((p) => setProgress(p.of > 1 ? `Parte ${p.step} de ${p.of}` : null)), []);
-  useEffect(() => window.ec.onShortsProgress((p) => setProgress(`Short ${p.index + 1} de ${p.of} · ${Math.round(p.progress * 100)} %`)), []);
+  useEffect(() => window.ec.onShortsProgress((p) => setProgress(`Short ${p.index + 1} de ${p.of} · ${p.status ? `${p.status} · ` : ''}${Math.round(p.progress * 100)} %`)), []);
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -168,6 +168,9 @@ export function ShortsPanel() {
                 </select>
               </label>
               <div className="seg sm" role="radiogroup" aria-label="Enquadramento">
+                <button className={reframe === 'face' ? 'on' : ''} onClick={() => setReframe('face')} title="O corte 9:16 segue a cara de quem está a falar (a primeira vez instala o detetor de caras)">
+                  Seguir cara
+                </button>
                 <button className={reframe === 'cover' ? 'on' : ''} onClick={() => setReframe('cover')} title="Corta ao centro para 9:16">
                   Cortar
                 </button>

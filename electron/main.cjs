@@ -11,6 +11,7 @@ const { ensureSfx } = require('./sfx.cjs');
 const { listDrafts, convertDraft, DRAFTS } = require('./capcut.cjs');
 const { transcribe, captionClipsFor } = require('./captions.cjs');
 const { createMatteEngine } = require('./matte.cjs');
+const { createReframeEngine } = require('./reframe.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
 const { createStyleStore } = require('./styles.cjs');
 const { USER_FONTS } = require('../src/lib/emphasis.js');
@@ -299,6 +300,7 @@ function handlers() {
       aiAbort = null;
     }
   });
+  const reframeEngine = createReframeEngine(app.getPath('userData'));
   ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
     if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
     let outDir = opts.outDir;
@@ -311,7 +313,8 @@ function handlers() {
     try {
       return await shorts.buildShorts(media, clips, path.resolve(String(outDir)), {
         style: typeof opts.style === 'string' ? opts.style : 'felipe',
-        reframe: opts.reframe === 'fit' ? 'fit' : 'cover',
+        reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
+        reframer: reframeEngine,
         cards: opts.cards !== false,
         preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',
         encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',

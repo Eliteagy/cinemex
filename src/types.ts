@@ -501,8 +501,8 @@ export interface EcBridge {
   dubVoices(): Promise<{ id: string; name: string; labels: Record<string, string> }[]>;
   dub(cues: { start: number; end: number; text: string }[], opts: { total: number; voiceId?: string; maxSpeed?: number }): Promise<{ file: string; lines: number; sped: number; overflow: number }>;
   onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
-  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
-  onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string }) => void): () => void;
+  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
+  onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string; status?: string }) => void): () => void;
   onExportProgress(cb: (p: number) => void): () => void;
   saveProject(project: Project, file?: string | null): Promise<string | null>;
   openProject(file?: string): Promise<{ project: Project; path: string } | null>;

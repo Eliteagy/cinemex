@@ -12,7 +12,7 @@ const MODEL_BYTES = 14975696;
 const SCRIPT = path.join(__dirname, '..', 'engine', 'matte.py');
 const { PYTHON, WIN, venvPython } = require('./bin.cjs');
 // DirectML only exists on Windows; elsewhere the plain onnxruntime (CPU) runs the same model.
-const PY_PACKAGES = [WIN ? 'onnxruntime-directml' : 'onnxruntime', 'numpy', 'opencv-python-headless'];
+const PY_PACKAGES = [WIN ? 'onnxruntime-directml' : 'onnxruntime', 'numpy', 'opencv-python-headless>=4.8,<5']; // <5: reframe.py needs HOGDescriptor, same venv
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {

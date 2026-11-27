@@ -37,20 +37,39 @@ async function findHotclips(words, o = {}) {
   return ai.parseHotclips(found, words, { min, max, count });
 }
 
+const shortSize = (preset) => ({ '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350], '16:9': [1920, 1080] })[preset] || [1080, 1920];
+
+/** Following the face only makes sense when the source is wider than the short (16:9 -> 9:16, 1:1, 4:5). */
+function canFollowFace(media, preset) {
+  const [w, h] = shortSize(preset || '9:16');
+  return media?.width > 0 && media?.height > 0 && media.width / media.height > (w / h) * 1.05;
+}
+
 /**
  * One short as a Cinemex project.
  * @param {{path:string,name?:string,duration?:number,width?:number,height?:number,fps?:number,hasAudio?:boolean,transcript:object[]}} media
  * @param {{start:number,end:number,hook?:string,outro?:string,title?:string}} c
- * @param {{style?:string,reframe?:'cover'|'fit',cards?:boolean,preset?:string}} o
+ * @param {{style?:string,reframe?:'cover'|'fit'|'face',cards?:boolean,preset?:string,framed?:{path:string,width:number,height:number}}} o
+ *   framed = the segment already cropped to follow the speaker (electron/reframe.cjs): the short then
+ *   plays that file from 0 and its transcript is moved to the segment's own time.
  */
 function shortProject(media, c, o = {}) {
   const preset = o.preset || '9:16';
-  const size = { '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350], '16:9': [1920, 1080] }[preset] || [1080, 1920];
+  const size = shortSize(preset);
   const mediaId = uid('m');
   const len = r3(c.end - c.start);
   const video = { id: uid('c'), mediaId, start: 0, in: r3(c.start), out: r3(c.end), fit: o.reframe === 'fit' ? 'fit' : 'fill', volume: 1, speed: 1 };
   const words = media.transcript || [];
   const caps = captionClipsFor(video, words, { style: o.style || 'felipe', stripPunct: true }).map((x) => ({ id: uid('c'), auto: true, ...x }));
+  let mediaEntry = { id: mediaId, path: media.path, name: media.name || path.basename(media.path), kind: 'video', duration: media.duration || c.end, width: media.width, height: media.height, fps: media.fps || 30, hasAudio: media.hasAudio !== false, thumb: null, transcript: words };
+  if (o.framed?.path) {
+    // Captions were placed from the source window above; the clip now plays the cropped file from 0.
+    video.in = 0;
+    video.out = len;
+    video.fit = 'fill';
+    const moved = words.filter((w) => w.s >= c.start - 0.05 && w.e <= c.end + 0.05).map((w) => ({ ...w, s: r3(Math.max(0, w.s - c.start)), e: r3(Math.max(0, w.e - c.start)) }));
+    mediaEntry = { ...mediaEntry, path: o.framed.path, name: path.basename(o.framed.path), duration: len, width: o.framed.width, height: o.framed.height, fps: 30, transcript: moved };
+  }
   const cards = [];
   if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: 0.22 } });
   if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: 0.22 } });
@@ -59,7 +78,7 @@ function shortProject(media, c, o = {}) {
     name: c.title || c.hook || 'Short',
     canvas: { w: size[0], h: size[1], fps: 30, preset },
     audio: { normalize: true },
-    media: [{ id: mediaId, path: media.path, name: media.name || path.basename(media.path), kind: 'video', duration: media.duration || c.end, width: media.width, height: media.height, fps: media.fps || 30, hasAudio: media.hasAudio !== false, thumb: null, transcript: words }],
+    media: [mediaEntry],
     tracks: [
       { id: 'v1', kind: 'video', name: 'V1', clips: [video] },
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
@@ -83,7 +102,16 @@ async function buildShorts(media, clips, outDir, o = {}) {
     if (o.signal?.aborted) throw new Error('Cancelado');
     const c = clips[i];
     const base = `clip_${String(i + 1).padStart(2, '0')}_${ai.slug(c.title || c.hook)}`;
-    const project = shortProject(media, c, o);
+    let framed = null;
+    if (o.reframe === 'face' && o.reframer && canFollowFace(media, o.preset)) {
+      const [outW, outH] = shortSize(o.preset || '9:16');
+      const r = await o.reframer.reframe(
+        { file: media.path, tin: c.start, tout: c.end, srcW: media.width, srcH: media.height, outW, outH, encoder: o.encoder || 'libx264' },
+        { signal: o.signal, onStatus: (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0, name: base, status }), onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: p * 0.5, name: base, status: 'A seguir a cara…' }) },
+      );
+      framed = { path: r.file, width: outW, height: outH };
+    }
+    const project = shortProject(media, c, { ...o, framed });
     const proj = path.join(outDir, 'Projetos Cinemex', `${base}.ecproj`);
     fs.writeFileSync(proj, JSON.stringify(project, null, 1), 'utf8');
     const mp4 = path.join(outDir, `${base}.mp4`);
@@ -91,7 +119,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       encoder: o.encoder || 'libx264',
       quality: o.quality || 'alta',
       signal: o.signal,
-      onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: p, name: base }),
+      onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
     done.push({ ...c, file: mp4, project: proj, name: base });
@@ -101,4 +129,4 @@ async function buildShorts(media, clips, outDir, o = {}) {
   return done;
 }
 
-module.exports = { findHotclips, shortProject, buildShorts };
+module.exports = { findHotclips, shortProject, buildShorts, canFollowFace, shortSize };

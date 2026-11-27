@@ -91,6 +91,23 @@ test('short project: 9:16, source window, captions and cards', () => {
   assert.equal(shortProject({ path: 'v.mp4', transcript: words }, c, { cards: false, reframe: 'fit' }).tracks[0].clips[0].fit, 'fit');
 });
 
+test('short project following the face: plays the cropped file from 0, words moved to its time', () => {
+  const { shortProject, canFollowFace } = require('../electron/shorts.cjs');
+  const c = ai.parseHotclips({ clips: [{ start: '00:00:10', end: '00:00:40', hook: 'Gancho', score: 8 }] }, words)[0];
+  const media = { path: 'C:/x/video.mp4', duration: 120, width: 1920, height: 1080, transcript: words };
+  const plain = shortProject(media, c, { style: 'felipe' });
+  const p = shortProject(media, c, { style: 'felipe', framed: { path: 'C:/cache/abc.mp4', width: 1080, height: 1920 } });
+  const v = p.tracks[0].clips[0];
+  assert.deepEqual([v.in, v.out, v.fit], [0, c.duration, 'fill']);
+  assert.equal(p.media[0].path, 'C:/cache/abc.mp4');
+  assert.deepEqual([p.media[0].width, p.media[0].height], [1080, 1920]);
+  assert.ok(p.media[0].transcript.length > 0 && p.media[0].transcript.every((w) => w.s >= 0 && w.e <= c.duration + 0.1), 'transcript on the segment time');
+  assert.deepEqual(p.tracks[2].clips.map((x) => [x.start, x.text]), plain.tracks[2].clips.map((x) => [x.start, x.text]), 'same captions as the centre crop');
+  assert.equal(canFollowFace(media, '9:16'), true);
+  assert.equal(canFollowFace(media, '16:9'), false, '16:9 short from 16:9 source: nothing to follow');
+  assert.equal(canFollowFace({ width: 1080, height: 1920 }, '9:16'), false, 'already vertical');
+});
+
 test('dub fitting: speed only when a line does not fit before the next caption', () => {
   const { fitPlan, atempo } = require('../electron/dub.cjs');
   const cues = [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 10, end: 11 }];

@@ -39,3 +39,5 @@ export function parseSpellFixes(json: unknown): { wrong: string; right: string }
 export function applySpellFixes<W extends { w: string; s: number; e: number }>(words: W[], fixes: { wrong: string; right: string }[]): { words: W[]; applied: { wrong: string; right: string; s: number }[] };
 export function keywordPrompt(blocks: string[][], opts?: { learned?: { block: string; word: string }[] }): string;
 export function parseKeywordPicks(json: unknown, blocks: string[][]): (number | null)[];
+export const UPLOAD_URLS: { instagram: string; tiktok: string; youtube: string };
+export function publishPosts(c: unknown): { instagram: string; tiktok: string; youtube: { title: string; description: string }; warnings: string[] };

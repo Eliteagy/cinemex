@@ -186,3 +186,15 @@ test('short project: AI keyword picks choose the big word of each block', () => 
   assert.deepEqual(picked.tracks.find((t) => t.id === 'tx').clips.map((x) => x.text), ['CASA', 'DOIS']);
   assert.deepEqual(picked.tracks.find((t) => t.id === 'tf').clips.map((x) => x.text), ['a vendida', 'em semanas']);
 });
+
+test('publish pack: one text per network, YouTube title short, #shorts, warnings by length', () => {
+  const long = 'x'.repeat(120);
+  const p = ai.publishPosts({ title: long, hook: 'Gancho', outro: 'Segue', hashtags: ['#a', '#b', '#c', '#d', '#e', '#f'], duration: 200 });
+  assert.ok(p.youtube.title.length <= 95);
+  assert.match(p.youtube.description, /#shorts$/);
+  assert.equal(p.instagram.split('\n').pop(), '#a #b #c #d #e', 'five hashtags');
+  assert.equal(p.tiktok.split(' ').filter((w) => w.startsWith('#')).length, 4);
+  assert.equal(p.warnings.length, 2);
+  assert.deepEqual(ai.publishPosts({ title: 'T', duration: 40 }).warnings, []);
+  assert.match(ai.publishText({ title: 'T', hook: 'H', outro: 'O', why: 'W', text: 'x', hashtags: [], duration: 30, score: 8 }), /## TikTok/);
+});

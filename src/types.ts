@@ -310,6 +310,14 @@ export interface EffectResult {
   ms: number;
 }
 
+/** Ready-to-paste texts per network (src/lib/aivideo.js publishPosts). */
+export interface PublishPosts {
+  instagram: string;
+  tiktok: string;
+  youtube: { title: string; description: string };
+  warnings: string[];
+}
+
 /** Edit pack ("Pacotes de edição", src/lib/editpacks.js). */
 export interface EditPack {
   id?: string;
@@ -574,6 +582,7 @@ export interface EcBridge {
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
   musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
+  openUpload(network: 'instagram' | 'tiktok' | 'youtube'): Promise<boolean>;
   listEditPacks(): Promise<(EditPack & { id: string; builtin: boolean; thumb?: string })[]>;
   saveEditPack(id: string | null, pack: EditPack, thumb?: string | null): Promise<{ id: string; pack: EditPack }>;
   deleteEditPack(id: string): Promise<boolean>;
@@ -596,7 +605,7 @@ export interface EcBridge {
   dubVoices(): Promise<{ id: string; name: string; labels: Record<string, string> }[]>;
   dub(cues: { start: number; end: number; text: string }[], opts: { total: number; voiceId?: string; maxSpeed?: number }): Promise<{ file: string; lines: number; sped: number; overflow: number }>;
   onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
-  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string | CaptionModel; pack?: string; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
+  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string | CaptionModel; pack?: string; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string; cover?: string | null; posts?: PublishPosts })[] | null>;
   onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string; status?: string }) => void): () => void;
   onExportProgress(cb: (p: number) => void): () => void;
   saveProject(project: Project, file?: string | null): Promise<string | null>;

@@ -198,7 +198,8 @@ export function parseHotclips(json, words, { min = 20, max = 60, count = 8 } = {
 
 /** Publish text for one short (title, what is said, hashtags, outro). */
 export function publishText(c) {
-  return [`# ${c.title || c.hook}`, '', `Duração: ${Math.round(c.duration)} s · pontuação ${c.score}/10`, '', `**Gancho:** ${c.hook}`, `**Final:** ${c.outro}`, `**Porque resulta:** ${c.why}`, '', '## Legenda para publicar', '', `${c.title}`, '', c.text, '', c.hashtags.join(' '), ''].join('\n');
+  const posts = publishPosts(c);
+  return [`# ${c.title || c.hook}`, '', `Duração: ${Math.round(c.duration)} s · pontuação ${c.score}/10`, '', `**Gancho:** ${c.hook}`, `**Final:** ${c.outro}`, `**Porque resulta:** ${c.why}`, '', '## Legenda para publicar', '', `${c.title}`, '', c.text, '', c.hashtags.join(' '), ''].join('\n') + ['', '## Instagram', '', posts.instagram, '', '## TikTok', '', posts.tiktok, '', '## YouTube Shorts', '', `**Título:** ${posts.youtube.title}`, '', posts.youtube.description, '', ...(posts.warnings.length ? ['## Atenção', '', ...posts.warnings.map((w) => `- ${w}`), ''] : [])].join('\n');
 }
 
 /** File-name-safe slug (accents kept off, max 40 chars). */
@@ -417,4 +418,34 @@ export function parseKeywordPicks(json, blocks) {
     const v = Number(raw[i]);
     return Number.isInteger(v) && v >= -1 && v < b.length ? v : null;
   });
+}
+
+// ------------------------------------------------------------------ publishing pack
+/** Where each network takes uploads (opened in the browser; the Gui posts himself). */
+export const UPLOAD_URLS = {
+  instagram: 'https://www.instagram.com/',
+  tiktok: 'https://www.tiktok.com/tiktokstudio/upload',
+  youtube: 'https://studio.youtube.com/',
+};
+
+/**
+ * Ready-to-paste texts per network for one short: Instagram (title, hook line, 5 hashtags), TikTok
+ * (short, hashtags), YouTube Shorts (title up to 100 characters + description with #shorts). Plus
+ * warnings when the short is long for a network.
+ */
+export function publishPosts(c) {
+  const title = String(c.title || c.hook || '').trim();
+  const tags = (c.hashtags || []).slice(0, 5);
+  const hook = String(c.hook || '').trim();
+  const outro = String(c.outro || '').trim();
+  const d = Number(c.duration) || 0;
+  const warnings = [];
+  if (d > 90) warnings.push(`${Math.round(d)} s: nos Reels e no TikTok os vídeos até 60-90 s costumam reter melhor`);
+  if (d > 180) warnings.push('Mais de 3 minutos: o YouTube não o aceita como Short');
+  return {
+    instagram: [title, '', hook && hook !== title ? hook : null, outro || null, '', tags.join(' ')].filter((x) => x !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+    tiktok: [title, tags.slice(0, 4).join(' ')].filter(Boolean).join(' ').slice(0, 2200),
+    youtube: { title: (title.length > 95 ? `${title.slice(0, 94)}…` : title) || 'Short', description: [hook, outro, '', [...tags, '#shorts'].join(' ')].filter((x) => x !== undefined).join('\n').trim() },
+    warnings,
+  };
 }

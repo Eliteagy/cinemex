@@ -4,8 +4,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../store';
 import { addWatermark, dubCaptions, aiChapters, checkCaptionTrack, findHotclips, fixCaptionTrack, hotclipState, makeShorts, translateCaptions } from '../aiActions';
-import { fmtShort } from '../lib/project';
-import type { Hotclip } from '../types';
+import { fmtShort, mediaUrl } from '../lib/project';
+import type { Hotclip, PublishPosts } from '../types';
 
 const STYLES = [
   ['felipe', 'Felipe'],
@@ -40,7 +40,7 @@ export function ShortsPanel() {
   const behind = Boolean(model);
   const [gpu, setGpu] = useState(true);
   const [progress, setProgress] = useState<string | null>(null);
-  const [done, setDone] = useState<string[]>([]);
+  const [done, setDone] = useState<{ file: string; name: string; title: string; cover?: string | null; posts?: PublishPosts }[]>([]);
   const [lang, setLang] = useState('inglês');
   const [bilingual, setBilingual] = useState(true);
   const [note, setNote] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export function ShortsPanel() {
     run('make', async () => {
       const chosen = clips.filter((_, i) => pick.has(i));
       const out = await makeShorts(chosen, { mediaId: src, style, reframe, model: model || undefined, pack: pack || undefined, cards, gpu });
-      if (out) setDone(out.map((o) => o.file));
+      if (out) setDone(out.map((o) => ({ file: o.file, name: o.name, title: o.title || o.hook, cover: o.cover, posts: o.posts })));
     });
 
   if (!videos.length)
@@ -221,10 +221,50 @@ export function ShortsPanel() {
             </button>
             {done.length > 0 && (
               <div className="sh-done">
-                <p>{done.length} shorts prontos, cada um com o projeto Cinemex e o texto para publicar.</p>
-                <button className="btn sm" onClick={() => void window.ec.reveal(done[0]!)}>
+                <p>{done.length} shorts prontos para publicar (vídeo, capa e texto de cada rede).</p>
+                <button className="btn sm" onClick={() => void window.ec.reveal(done[0]!.file)}>
                   Abrir pasta
                 </button>
+                {done.map((d) => (
+                  <div key={d.file} className="sh-pub">
+                    {d.cover ? <img src={mediaUrl(d.cover)} alt="" /> : null}
+                    <div className="sh-pub-body">
+                      <b>{d.title}</b>
+                      {d.posts?.warnings.map((w) => (
+                        <span key={w} className="panel-sub">
+                          ⚠ {w}
+                        </span>
+                      ))}
+                      {d.posts && (
+                        <div className="row">
+                          {(
+                            [
+                              ['instagram', 'Instagram', d.posts.instagram],
+                              ['tiktok', 'TikTok', d.posts.tiktok],
+                              ['youtube', 'YouTube', `${d.posts.youtube.title}\n\n${d.posts.youtube.description}`],
+                            ] as const
+                          ).map(([k, l, text]) => (
+                            <button
+                              key={k}
+                              className="btn sm"
+                              title={`Copia o texto para ${l} e abre a página de upload`}
+                              onClick={() => {
+                                void navigator.clipboard.writeText(text);
+                                void window.ec.openUpload(k);
+                                setNote(`Texto do ${l} copiado. Na página que abriu, carrega o vídeo ${d.name}.mp4 e cola o texto.`);
+                              }}
+                            >
+                              {l}
+                            </button>
+                          ))}
+                          <button className="btn sm" onClick={() => void window.ec.reveal(d.file)}>
+                            Ficheiro
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </>

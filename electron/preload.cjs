@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('ec', {
   matte: (req) => ipcRenderer.invoke('matte:run', req),
   detectFace: (req) => ipcRenderer.invoke('face:detect', req),
   musicLibrary: () => ipcRenderer.invoke('music:library'),
+  openUpload: (network) => ipcRenderer.invoke('publish:open', network),
   listEditPacks: () => ipcRenderer.invoke('packs:list'),
   saveEditPack: (id, pack, thumb) => ipcRenderer.invoke('packs:save', id, pack, thumb),
   deleteEditPack: (id) => ipcRenderer.invoke('packs:delete', id),

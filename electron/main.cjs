@@ -377,6 +377,14 @@ function handlers() {
     return t;
   });
   ipcMain.handle('music:open', () => shell.openPath(musicLib.folder));
+  ipcMain.handle('publish:open', (_e, network) => {
+    const url = { instagram: 'https://www.instagram.com/', tiktok: 'https://www.tiktok.com/tiktokstudio/upload', youtube: 'https://studio.youtube.com/' }[String(network)];
+    if (!url) return false;
+    const brave = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe');
+    if (process.platform === 'win32' && fs.existsSync(brave)) require('node:child_process').spawn(brave, [url], { detached: true, stdio: 'ignore' }).unref();
+    else shell.openExternal(url);
+    return true;
+  });
   const brollSrc = createBroll({ folder: path.join(app.getPath('videos'), 'B-roll'), cacheDir: path.join(app.getPath('userData')), keyFile: path.join(app.getPath('userData'), 'pexels.key') });
   ipcMain.handle('broll:open', () => shell.openPath(brollSrc.folder));
   ipcMain.handle('broll:status', () => ({ folder: brollSrc.folder, pexels: brollSrc.hasPexels() }));

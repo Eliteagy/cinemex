@@ -1286,3 +1286,6 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .learned ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12px; }
 .learned li { display: flex; align-items: center; gap: 6px; }
 .learned li s { color: var(--text-3); }
+.sh-pub { display: flex; gap: 8px; padding: 6px; border-radius: var(--r-md); background: var(--bg-2); margin-top: 6px; }
+.sh-pub img { width: 54px; height: 96px; object-fit: cover; border-radius: var(--r-xs, 4px); flex: none; }
+.sh-pub-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

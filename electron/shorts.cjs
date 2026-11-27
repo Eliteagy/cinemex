@@ -4,6 +4,8 @@
 // project (9:16, captions, hook and closing cards) saved as .ecproj and exported as MP4, with a
 // publish note per short and an index.
 const fs = require('node:fs');
+const { execFile } = require('node:child_process');
+const { FFMPEG } = require('./bin.cjs');
 const path = require('node:path');
 const { askJson } = require('./llm.cjs');
 const { captionClipsFor } = require('./captions.cjs');
@@ -275,7 +277,10 @@ async function buildShorts(media, clips, outDir, o = {}) {
       onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: personMatte ? 0.7 + p * 0.3 : framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
-    done.push({ ...c, file: mp4, project: proj, name: base, fixed, music: musicTrack?.name ?? null, musicNote, broll: brolls.map((b) => b.name) });
+    // Cover: a frame where the hook card is on screen (the networks let you pick it as the cover).
+    const cover = path.join(outDir, `${base}.capa.jpg`);
+    await new Promise((res) => execFile(FFMPEG, ['-v', 'error', '-ss', String(Math.min(1.2, (c.end - c.start) / 3)), '-i', mp4, '-frames:v', '1', '-q:v', '3', '-y', cover], { windowsHide: true, timeout: 60_000 }, () => res()));
+    done.push({ ...c, file: mp4, project: proj, name: base, cover: fs.existsSync(cover) ? cover : null, posts: ai.publishPosts(c), fixed, music: musicTrack?.name ?? null, musicNote, broll: brolls.map((b) => b.name) });
   }
   const index = ['# Shorts', '', '| # | Ficheiro | Duração | Pontuação | Gancho |', '|---|---|---|---|---|', ...done.map((d, i) => `| ${i + 1} | ${d.name}.mp4 | ${Math.round(d.duration)} s | ${d.score}/10 | ${String(d.hook).replace(/\|/g, '/')} |`), ''].join('\n');
   fs.writeFileSync(path.join(outDir, 'index.md'), index, 'utf8');

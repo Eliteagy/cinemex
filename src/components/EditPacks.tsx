@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react';
 import { useEditor } from '../store';
 import { applyEditPack } from '../packs';
 import { Icon } from './Icon';
+import { viewerShot } from '../lib/viewerShot';
+import { mediaUrl } from '../lib/project';
 import type { CaptionModel, EditPack, EffectRecipe } from '../types';
 
-type Listed = EditPack & { id: string; builtin: boolean };
+type Listed = EditPack & { id: string; builtin: boolean; thumb?: string };
 const MUSIC: [EditPack['music'], string][] = [
   ['off', 'Sem música'],
   ['auto', 'Pelo que é dito'],
@@ -24,6 +26,7 @@ export function EditPacksPanel() {
   const [pick, setPick] = useState('vitor');
   const [draft, setDraft] = useState<EditPack | null>(null);
   const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(false);
   const [folders, setFolders] = useState<{ music: number; broll: string; pexels: boolean } | null>(null);
 
   const load = async () => {
@@ -57,7 +60,7 @@ export function EditPacksPanel() {
   const save = () =>
     run(async () => {
       if (!draft) return;
-      const r = await window.ec.saveEditPack(current?.builtin ? null : pick, current?.builtin && draft.label === current.label ? { ...draft, label: `${draft.label} (meu)` } : draft);
+      const r = await window.ec.saveEditPack(current?.builtin ? null : pick, current?.builtin && draft.label === current.label ? { ...draft, label: `${draft.label} (meu)` } : draft, applied ? viewerShot() : null);
       await load();
       setPick(r.id);
       setStatus(`Pacote «${r.pack.label}» guardado`);
@@ -70,6 +73,7 @@ export function EditPacksPanel() {
         <div className="ep-list" role="listbox" aria-label="Pacotes">
           {packs.map((p) => (
             <button key={p.id} role="option" aria-selected={p.id === pick} className={`ep-card${p.id === pick ? ' on' : ''}`} onClick={() => setPick(p.id)}>
+              {p.thumb ? <img className="ep-thumb" src={mediaUrl(p.thumb)} alt="" /> : null}
               <b>{p.label}</b>
               <span className="panel-sub">
                 {models.find((m) => m.id === p.captionModel)?.label ?? p.captionModel}
@@ -84,7 +88,10 @@ export function EditPacksPanel() {
             </button>
           ))}
         </div>
-        <button className="btn primary" disabled={busy || !draft} onClick={() => void run(() => applyEditPack(draft!))}>
+        <button className="btn primary" disabled={busy || !draft} onClick={() => void run(async () => {
+          await applyEditPack(draft!);
+          setApplied(true);
+        })}>
           <Icon name="spark" /> {busy ? 'A editar…' : 'Aplicar ao vídeo'}
         </button>
         {folders && (

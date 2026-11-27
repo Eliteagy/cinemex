@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('ec', {
   detectFace: (req) => ipcRenderer.invoke('face:detect', req),
   musicLibrary: () => ipcRenderer.invoke('music:library'),
   listEditPacks: () => ipcRenderer.invoke('packs:list'),
-  saveEditPack: (id, pack) => ipcRenderer.invoke('packs:save', id, pack),
+  saveEditPack: (id, pack, thumb) => ipcRenderer.invoke('packs:save', id, pack, thumb),
   deleteEditPack: (id) => ipcRenderer.invoke('packs:delete', id),
   brollStatus: () => ipcRenderer.invoke('broll:status'),
   openBrollFolder: () => ipcRenderer.invoke('broll:open'),
@@ -38,11 +38,11 @@ contextBridge.exposeInMainWorld('ec', {
     return () => ipcRenderer.removeListener('effects:result', f);
   },
   listEffects: () => ipcRenderer.invoke('effects:list'),
-  saveEffect: (recipe, name) => ipcRenderer.invoke('effects:save', recipe, name),
+  saveEffect: (recipe, name, thumb) => ipcRenderer.invoke('effects:save', recipe, name, thumb),
   renameEffect: (id, name) => ipcRenderer.invoke('effects:rename', id, name),
   deleteEffect: (id) => ipcRenderer.invoke('effects:delete', id),
   listCaptionModels: () => ipcRenderer.invoke('capmodels:list'),
-  saveCaptionModel: (id, model) => ipcRenderer.invoke('capmodels:save', id, model),
+  saveCaptionModel: (id, model, thumb) => ipcRenderer.invoke('capmodels:save', id, model, thumb),
   deleteCaptionModel: (id) => ipcRenderer.invoke('capmodels:delete', id),
   onMatteProgress: (cb) => {
     const f = (_e, m) => cb(m);

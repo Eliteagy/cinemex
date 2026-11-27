@@ -7,9 +7,11 @@ import { applyCaptionModel } from '../actions';
 import { useEditor } from '../store';
 import { ColorField, FontPicker } from './CaptionStyleEditor';
 import { Icon } from './Icon';
+import { viewerShot } from '../lib/viewerShot';
+import { mediaUrl } from '../lib/project';
 import type { CaptionModel } from '../types';
 
-type Listed = CaptionModel & { id: string; builtin: boolean };
+type Listed = CaptionModel & { id: string; builtin: boolean; thumb?: string };
 
 const KINDS: [CaptionModel['kind'], string][] = [
   ['atras-frente', 'Atrás + frente'],
@@ -60,11 +62,15 @@ export function CaptionModels() {
       setBusy(false);
     }
   };
-  const apply = () => run(() => applyCaptionModel(draft ?? pick));
+  const [applied, setApplied] = useState(false);
+  const apply = () => run(async () => {
+    await applyCaptionModel(draft ?? pick);
+    setApplied(true);
+  });
   const save = (asNew: boolean) =>
     run(async () => {
       if (!draft) return;
-      const r = await window.ec.saveCaptionModel(asNew || current?.builtin ? null : pick, { ...draft, label: name.trim() || draft.label });
+      const r = await window.ec.saveCaptionModel(asNew || current?.builtin ? null : pick, { ...draft, label: name.trim() || draft.label }, applied ? viewerShot() : null);
       await load();
       setPick(r.id);
       setStatus(`Modelo «${r.model.label}» guardado`);
@@ -91,7 +97,8 @@ export function CaptionModels() {
       <div className="cm-grid" role="listbox" aria-label="Modelos de legendas">
         {models.map((m) => (
           <button key={m.id} role="option" aria-selected={m.id === pick} className={`cm-card${m.id === pick ? ' on' : ''}`} onClick={() => setPick(m.id)} title={m.label}>
-            <span className="cm-demo" data-kind={m.kind}>
+            {m.thumb ? <img className="cm-thumb" src={mediaUrl(m.thumb)} alt="" /> : null}
+            <span className="cm-demo" data-kind={m.kind} hidden={Boolean(m.thumb)}>
               <b style={{ color: m.accent ? m.accent.color : m.back.color }}>{m.kind === 'duas-linhas' ? 'DUAS' : 'CASA'}</b>
               {m.kind === 'duas-linhas' && <b className="cm-l2">LINHAS</b>}
               {m.kind === 'atras-frente' && <i style={{ color: m.front?.color }}>a tua nova</i>}

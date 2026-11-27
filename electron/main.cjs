@@ -324,10 +324,33 @@ function handlers() {
     });
   });
   ipcMain.handle('effects:cancel', () => effectAbort?.abort());
-  ipcMain.handle('effects:list', () => effectLib.list());
-  ipcMain.handle('effects:save', (_e, recipe, name) => effectLib.save(recipe, typeof name === 'string' ? name : undefined));
+  const thumbDir = path.join(app.getPath('userData'), 'thumbs');
+  /** Saves a viewer snapshot (data:image/jpeg;base64, max 400 KB) as thumbs/<id>.jpg. */
+  const saveThumb = (id, dataUrl) => {
+    const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!m || !/^[a-z0-9-]{1,60}$/.test(id)) return;
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length > 400_000 || buf[0] !== 0xff || buf[1] !== 0xd8) return;
+    fs.mkdirSync(thumbDir, { recursive: true });
+    fs.writeFileSync(path.join(thumbDir, `${id}.jpg`), buf);
+  };
+  const withThumb = (x) => {
+    const f = path.join(thumbDir, `${x.id}.jpg`);
+    if (!fs.existsSync(f)) return x;
+    allow(f);
+    return { ...x, thumb: f };
+  };
+  ipcMain.handle('effects:list', () => effectLib.list().map(withThumb));
+  ipcMain.handle('effects:save', (_e, recipe, name, thumb) => {
+    const r = effectLib.save(recipe, typeof name === 'string' ? name : undefined);
+    if (thumb) saveThumb(r.id, thumb);
+    return withThumb(r);
+  });
   ipcMain.handle('effects:rename', (_e, id, name) => effectLib.rename(String(id), String(name)));
-  ipcMain.handle('effects:delete', (_e, id) => effectLib.delete(String(id)));
+  ipcMain.handle('effects:delete', (_e, id) => {
+    fs.rmSync(path.join(thumbDir, `${String(id).replace(/[^a-z0-9-]/g, '')}.jpg`), { force: true });
+    return effectLib.delete(String(id));
+  });
   const learn = createLearnStore(path.join(app.getPath('userData'), 'learned.json'));
   const musicLib = createMusic({ folder: path.join(app.getPath('music'), 'Cinemex'), cacheDir: path.join(app.getPath('userData'), 'music') });
   ipcMain.handle('music:library', async () => {
@@ -355,11 +378,19 @@ function handlers() {
   ipcMain.handle('learn:remove', (_e, kind, i) => learn.remove(String(kind), Number(i)));
   ipcMain.handle('learn:clear', () => learn.clear());
   const packs = createPackStore(path.join(app.getPath('userData'), 'edit-packs.json'));
-  ipcMain.handle('packs:list', () => packs.list());
-  ipcMain.handle('packs:save', (_e, id, pack) => packs.save(id ?? null, pack));
+  ipcMain.handle('packs:list', () => packs.list().map(withThumb));
+  ipcMain.handle('packs:save', (_e, id, pack, thumb) => {
+    const r = packs.save(id ?? null, pack);
+    if (thumb) saveThumb(r.id, thumb);
+    return r;
+  });
   ipcMain.handle('packs:delete', (_e, id) => packs.delete(String(id)));
-  ipcMain.handle('capmodels:list', () => capmodels.list());
-  ipcMain.handle('capmodels:save', (_e, id, model) => capmodels.save(id ?? null, model));
+  ipcMain.handle('capmodels:list', () => capmodels.list().map(withThumb));
+  ipcMain.handle('capmodels:save', (_e, id, model, thumb) => {
+    const r = capmodels.save(id ?? null, model);
+    if (thumb) saveThumb(r.id, thumb);
+    return r;
+  });
   ipcMain.handle('capmodels:delete', (_e, id) => capmodels.delete(String(id)));
   ipcMain.handle('face:detect', async (e, req = {}) => {
     const file = String(req.file || '');

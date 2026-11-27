@@ -5,6 +5,8 @@ import { useEditor } from '../store';
 import { keepTry, runRecipe, tryRecipe, undoTry } from '../effectRecipes';
 import { findClip } from '../lib/project';
 import { Icon } from './Icon';
+import { viewerShot } from '../lib/viewerShot';
+import { mediaUrl } from '../lib/project';
 import type { EffectCategory, EffectProvider, EffectRecipe, EffectResult } from '../types';
 
 const CATS: [EffectCategory, string, string][] = [
@@ -20,7 +22,7 @@ const PROVIDERS: [EffectProvider, string][] = [
 ];
 const CAT_LABEL = Object.fromEntries(CATS.map(([k, l]) => [k, l])) as Record<EffectCategory, string>;
 
-type Lib = EffectRecipe & { id: string; created: string };
+type Lib = EffectRecipe & { id: string; created: string; thumb?: string };
 
 export function EffectGenPanel() {
   const canvas = useEditor((s) => s.project.canvas);
@@ -71,9 +73,9 @@ export function EffectGenPanel() {
       setStatus((e as Error).message);
     }
   };
-  const save = async (r: EffectRecipe) => {
+  const save = async (r: EffectRecipe, onScreen: boolean) => {
     try {
-      const s = await window.ec.saveEffect(r);
+      const s = await window.ec.saveEffect(r, undefined, onScreen ? viewerShot() : null);
       await loadLib();
       setStatus(`«${s.name}» guardado na biblioteca`);
     } catch (e) {
@@ -169,7 +171,7 @@ export function EffectGenPanel() {
                         <button className={`btn sm${trying === p ? ' primary' : ''}`} onClick={() => void tryOne(p, r.recipe!)} title="Põe este efeito no vídeo (ver outro tira este)">
                           {trying === p ? 'A ver' : 'Ver'}
                         </button>
-                        <button className="btn sm" onClick={() => void save(r.recipe!)} title="Guardar na biblioteca de efeitos">
+                        <button className="btn sm" onClick={() => void save(r.recipe!, trying === p)} title="Guardar na biblioteca de efeitos (com miniatura se estiver a ver este)">
                           <Icon name="save" /> Guardar
                         </button>
                       </div>
@@ -223,6 +225,7 @@ export function EffectGenPanel() {
           <div className="eg-lib">
             {shown.map((e) => (
               <div key={e.id} className="eg-item" title={e.prompt ? `Pedido: ${e.prompt}` : undefined}>
+                {e.thumb ? <img className="eg-thumb" src={mediaUrl(e.thumb)} alt="" /> : <span className="eg-thumb" />}
                 <div className="eg-item-text">
                   <b>{e.name}</b>
                   <span className="panel-sub">

@@ -561,8 +561,8 @@ export interface EcBridge {
   generateEffects(category: EffectCategory, request: string, opts?: { providers?: EffectProvider[]; canvas?: { w: number; h: number }; clipDuration?: number }): Promise<EffectResult[]>;
   cancelEffects(): Promise<void>;
   onEffectResult(cb: (r: EffectResult) => void): () => void;
-  listEffects(): Promise<(EffectRecipe & { id: string; created: string })[]>;
-  saveEffect(recipe: EffectRecipe, name?: string): Promise<EffectRecipe & { id: string }>;
+  listEffects(): Promise<(EffectRecipe & { id: string; created: string; thumb?: string })[]>;
+  saveEffect(recipe: EffectRecipe, name?: string, thumb?: string | null): Promise<EffectRecipe & { id: string }>;
   renameEffect(id: string, name: string): Promise<boolean>;
   deleteEffect(id: string): Promise<boolean>;
   learned(): Promise<Learned>;
@@ -571,8 +571,8 @@ export interface EcBridge {
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
   musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
-  listEditPacks(): Promise<(EditPack & { id: string; builtin: boolean })[]>;
-  saveEditPack(id: string | null, pack: EditPack): Promise<{ id: string; pack: EditPack }>;
+  listEditPacks(): Promise<(EditPack & { id: string; builtin: boolean; thumb?: string })[]>;
+  saveEditPack(id: string | null, pack: EditPack, thumb?: string | null): Promise<{ id: string; pack: EditPack }>;
   deleteEditPack(id: string): Promise<boolean>;
   brollStatus(): Promise<{ folder: string; pexels: boolean }>;
   openBrollFolder(): Promise<string>;
@@ -580,8 +580,8 @@ export interface EcBridge {
   pickMusic(mood: string, seed?: string): Promise<MusicTrack | null>;
   openMusicFolder(): Promise<string>;
   detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;
-  listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean })[]>;
-  saveCaptionModel(id: string | null, model: CaptionModel): Promise<{ id: string; model: CaptionModel }>;
+  listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean; thumb?: string })[]>;
+  saveCaptionModel(id: string | null, model: CaptionModel, thumb?: string | null): Promise<{ id: string; model: CaptionModel }>;
   deleteCaptionModel(id: string): Promise<boolean>;
   onMatteProgress(cb: (m: { id?: string; progress?: number; status?: string }) => void): () => void;
   exportVideo(project: Project, opts: { path?: string; gpu?: boolean; ask?: boolean; quality?: 'alta' | 'media' | 'leve' }): Promise<string | null>;

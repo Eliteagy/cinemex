@@ -37,6 +37,9 @@ async function findHotclips(words, o = {}) {
   return ai.parseHotclips(found, words, { min, max, count });
 }
 
+// Hook/closing cards: high in the frame, above the speaker's head in a 9:16 crop (0.22 covered the face)
+// and still below the top bar of Reels/TikTok.
+const CARD_Y = 0.11;
 const shortSize = (preset) => ({ '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350], '16:9': [1920, 1080] })[preset] || [1080, 1920];
 
 /** Following the face only makes sense when the source is wider than the short (16:9 -> 9:16, 1:1, 4:5). */
@@ -71,8 +74,8 @@ function shortProject(media, c, o = {}) {
     mediaEntry = { ...mediaEntry, path: o.framed.path, name: path.basename(o.framed.path), duration: len, width: o.framed.width, height: o.framed.height, fps: 30, transcript: moved };
   }
   const cards = [];
-  if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: 0.22 } });
-  if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: 0.22 } });
+  if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: CARD_Y } });
+  if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: CARD_Y } });
   return {
     version: 1,
     name: c.title || c.hook || 'Short',

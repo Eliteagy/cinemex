@@ -122,3 +122,12 @@ test('ASS: one-line layout puts every word in one event per pass; line gap and a
   assert.ok(Math.abs(st.emphasis.pitch - STYLES.felipe.emphasis.pitch * 2) < 1e-9);
   assert.equal(st.emphasis.keyword.anim, 'rise');
 });
+
+test('clitics split off by Whisper are glued back onto the verb', () => {
+  const { glueClitics, captionClipsFor } = require('../electron/captions.cjs');
+  const g = glueClitics([{ w: 'levam', s: 0, e: 0.4 }, { w: '-te', s: 0.4, e: 0.5 }, { w: 'ensinaram,', s: 1, e: 1.4 }, { w: '-te.', s: 1.4, e: 1.5 }, { w: '-', s: 2, e: 2.1 }]);
+  assert.deepEqual(g.map((x) => x.w), ['levam-te', 'ensinaram-te.', '-']);
+  assert.deepEqual([g[0].s, g[0].e], [0, 0.5]);
+  const caps = captionClipsFor({ start: 0, in: 0, out: 3 }, [{ w: 'ensinaram', s: 0, e: 0.5 }, { w: '-te', s: 0.5, e: 0.6 }, { w: 'tudo', s: 0.7, e: 1 }], { style: 'clean' });
+  assert.ok(caps.every((c) => !/^-/.test(c.text)), 'no caption starts with a lone clitic');
+});

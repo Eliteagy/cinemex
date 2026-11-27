@@ -25,12 +25,32 @@ function transcribe(file, opts = {}) {
     execFile(PYTHON, args, { encoding: 'utf8', timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) return reject(new Error(err.code === 'ENOENT' ? 'Python não encontrado' : String(stderr || err.message).split('\n').filter(Boolean).slice(-2).join(' ')));
       try {
-        resolve(JSON.parse(stdout));
+        const r = JSON.parse(stdout);
+        if (Array.isArray(r?.words)) r.words = glueClitics(r.words);
+        resolve(r);
       } catch {
         reject(new Error('Resposta inválida do transcritor'));
       }
     });
   });
+}
+
+/**
+ * Whisper splits Portuguese clitics off their verb ("levam" + "-te", "pergunto" + "-lhe"), which
+ * leaves a lone "-te" caption. Glue a word that starts with "-" + letter onto the previous one
+ * (dropping the previous word's trailing punctuation). Timings: start of the verb, end of the clitic.
+ * @param {{w:string,s:number,e:number}[]} words
+ */
+function glueClitics(words) {
+  const out = [];
+  for (const w of words || []) {
+    const t = String(w.w ?? '').trim();
+    const prev = out[out.length - 1];
+    if (prev && /^-\p{L}/u.test(t) && w.s - prev.e < 1.5) {
+      out[out.length - 1] = { ...prev, w: String(prev.w).trim().replace(/[.,;:…]+$/, '') + t, e: Math.max(prev.e, w.e) };
+    } else out.push(w);
+  }
+  return out;
 }
 
 /** Characters per line for each AutoSubs-style density. */
@@ -146,7 +166,7 @@ function captionClipsFor(clip, words, opts = {}) {
   const style = opts.style || 'elite';
   const em = STYLES[style]?.emphasis;
   const speed = Math.max(0.25, Math.min(4, clip.speed ?? 1));
-  const inside = words.filter((w) => w.s >= clip.in - 0.05 && w.e <= clip.out + 0.05);
+  const inside = glueClitics(words).filter((w) => w.s >= clip.in - 0.05 && w.e <= clip.out + 0.05);
   const moved = inside.map((w) => ({ w: w.w, s: clip.start + (w.s - clip.in) / speed, e: clip.start + (w.e - clip.in) / speed }));
   const group = { ...opts, maxWords: opts.maxWords ?? em?.maxWords ?? 3 };
   if (em) {
@@ -171,4 +191,4 @@ function captionClipsFor(clip, words, opts = {}) {
   });
 }
 
-module.exports = { transcribe, groupWords, captionClipsFor, keywordSplit, DENSITY, MODELS };
+module.exports = { transcribe, glueClitics, groupWords, captionClipsFor, keywordSplit, DENSITY, MODELS };

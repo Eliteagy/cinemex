@@ -555,6 +555,9 @@ export interface EcBridge {
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
   musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
+  brollStatus(): Promise<{ folder: string; pexels: boolean }>;
+  openBrollFolder(): Promise<string>;
+  planBroll(words: Word[], from: number, to: number): Promise<{ at: number; len: number; path: string; name: string; duration: number; source: string }[]>;
   pickMusic(mood: string, seed?: string): Promise<MusicTrack | null>;
   openMusicFolder(): Promise<string>;
   detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;

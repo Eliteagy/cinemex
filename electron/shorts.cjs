@@ -9,7 +9,8 @@ const { askJson } = require('./llm.cjs');
 const { captionClipsFor } = require('./captions.cjs');
 const capmodels = require('../src/lib/capmodels.js');
 const polish = require('../src/lib/polish.js');
-const { musicClips, moodFromText } = require('./music.cjs');
+const { musicClips, moodFromText } = polish;
+const brollLib = require('../src/lib/broll.js');
 const { runExport } = require('./render.cjs');
 const ai = require('../src/lib/aivideo.js');
 
@@ -127,14 +128,27 @@ function shortProject(media, c, o = {}) {
   if (cta) cards.push({ id: uid('c'), ...cta });
   if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: cardY } });
   if (o.cards !== false && !cta && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: cardY } });
+  // B-roll cut-aways (o.brolls, short time): their own track over V1; V1 is split around them so
+  // the person mask is not drawn over the B-roll.
+  const brMedia = [];
+  const brClips = [];
+  for (const b of o.brolls || []) {
+    const mid = uid('m');
+    brMedia.push({ id: mid, path: b.path, name: b.name || path.basename(b.path), kind: 'video', duration: b.duration || b.len, width: b.width, height: b.height, fps: 30, hasAudio: false, thumb: null });
+    const d = Math.max(0.5, Math.min(b.len, (b.duration || b.len) - 0.1));
+    const inn = r3(Math.min(0.4, Math.max(0, (b.duration || d) - d)));
+    brClips.push({ id: uid('c'), mediaId: mid, start: r3(b.at), in: inn, out: r3(inn + d), fit: 'fill', volume: 0, speed: 1 });
+  }
+  const v1 = brClips.length && video.masks?.length ? brollLib.splitAround(video, brClips.map((x) => ({ start: x.start, end: x.start + (x.out - x.in) }))).map((x) => ({ id: uid('c'), ...x })) : [video];
   return {
     version: 1,
     name: c.title || c.hook || 'Short',
     canvas: { w: size[0], h: size[1], fps: 30, preset },
     audio: { normalize: true, ...(musicPieces.length ? { duck: true } : {}) },
-    media: [mediaEntry, ...sfxMedia, ...musicMedia],
+    media: [mediaEntry, ...sfxMedia, ...musicMedia, ...brMedia],
     tracks: [
-      { id: 'v1', kind: 'video', name: 'V1', clips: [video] },
+      { id: 'v1', kind: 'video', name: 'V1', clips: v1 },
+      ...(brClips.length ? [{ id: 'br', kind: 'video', name: 'B-roll', clips: brClips }] : []),
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
       { id: 'tx', kind: 'text', name: behind ? 'Legendas atrás' : 'Legendas', clips: caps },
       ...(behind && behind.front.length ? [{ id: 'tf', kind: 'text', name: 'Legendas à frente', front: true, clips: behind.front }] : []),
@@ -143,6 +157,30 @@ function shortProject(media, c, o = {}) {
       ...(sfxClips.length ? [{ id: 'sx', kind: 'audio', name: 'Efeitos', clips: sfxClips }] : []),
     ],
   };
+}
+
+/**
+ * B-roll for the range [from, to] of the source (seconds): the AI proposes inserts, each one is
+ * matched to the folder library or searched on Pexels. Returns inserts in clip time (0 = from).
+ */
+async function planBroll(words, from, to, o, onStatus = () => {}) {
+  const lib = await o.brollSrc.library({ onStatus });
+  const lines = ai.transcriptLines(words, from, to).replace(/\[(\d+):(\d+):(\d+)\]/g, (_, h, m, s) => `[${Number(h) * 3600 + Number(m) * 60 + Number(s)}]`);
+  const json = await o.ask(brollLib.brollPrompt(lines, { max: Math.min(4, Math.max(1, Math.round((to - from) / 15))), library: lib.map((l) => `${l.name}${l.desc ? ` (${l.desc})` : ''}`) }), 'haiku');
+  const inserts = brollLib.parseInserts(json, { from, to });
+  const used = new Set();
+  const out = [];
+  for (const ins of inserts) {
+    let src = brollLib.matchLibrary(ins, lib, { used });
+    if (!src && o.brollSrc.hasPexels()) src = await o.brollSrc.pexels(ins.en || ins.pt).catch(() => null);
+    if (!src) continue;
+    used.add(src.path);
+    // The lines carry whole seconds: start on the nearest word.
+    const w = words.filter((x) => x.s >= from && x.s <= to).reduce((b, x) => (Math.abs(x.s - ins.at) < Math.abs((b?.s ?? Infinity) - ins.at) ? x : b), null);
+    if (w && Math.abs(w.s - ins.at) <= 1.2) ins.at = w.s;
+    out.push({ at: Math.round((ins.at - from) * 1000) / 1000, len: ins.len, path: src.path, name: src.name, duration: src.duration, width: src.width, height: src.height, source: src.source });
+  }
+  return out;
 }
 
 /**
@@ -217,7 +255,16 @@ async function buildShorts(media, clips, outDir, o = {}) {
         musicNote = String(e?.message || e);
       }
     }
-    const project = shortProject(clipMedia, c, { ...o, framed, face, personMatte, keywords, musicTrack });
+    // B-roll: Claude picks 2-4 concrete moments, each matched to the Gui's folder or Pexels.
+    let brolls = [];
+    if (o.broll && o.brollSrc && o.ask) {
+      try {
+        brolls = await planBroll(clipMedia.transcript || [], c.start, c.end, o, (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0.75, name: base, status }));
+      } catch {
+        brolls = [];
+      }
+    }
+    const project = shortProject(clipMedia, c, { ...o, framed, face, personMatte, keywords, musicTrack, brolls });
     const proj = path.join(outDir, 'Projetos Cinemex', `${base}.ecproj`);
     fs.writeFileSync(proj, JSON.stringify(project, null, 1), 'utf8');
     const mp4 = path.join(outDir, `${base}.mp4`);
@@ -228,11 +275,11 @@ async function buildShorts(media, clips, outDir, o = {}) {
       onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: personMatte ? 0.7 + p * 0.3 : framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
-    done.push({ ...c, file: mp4, project: proj, name: base, fixed, music: musicTrack?.name ?? null, musicNote });
+    done.push({ ...c, file: mp4, project: proj, name: base, fixed, music: musicTrack?.name ?? null, musicNote, broll: brolls.map((b) => b.name) });
   }
   const index = ['# Shorts', '', '| # | Ficheiro | Duração | Pontuação | Gancho |', '|---|---|---|---|---|', ...done.map((d, i) => `| ${i + 1} | ${d.name}.mp4 | ${Math.round(d.duration)} s | ${d.score}/10 | ${String(d.hook).replace(/\|/g, '/')} |`), ''].join('\n');
   fs.writeFileSync(path.join(outDir, 'index.md'), index, 'utf8');
   return done;
 }
 
-module.exports = { findHotclips, shortProject, buildShorts, canFollowFace, shortSize, behindCaptions };
+module.exports = { planBroll, findHotclips, shortProject, buildShorts, canFollowFace, shortSize, behindCaptions };

@@ -3,10 +3,11 @@
 import { useEditor } from './store';
 import type { CaptionModel, CaptionOptions, CaptionOverride, Clip, Media, Project, Track, TranscribeOptions } from './types';
 import { cleanOverride } from './lib/capstyle.js';
-import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips, uid } from './lib/project';
+import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, r3, speedOf, srcTime, textClips, uid } from './lib/project';
 import { detectBeats as findBeats } from './lib/fx.js';
 import { groupingFor, modelCaptions, validateModel } from './lib/capmodels.js';
 import { beatsFromCaptions, ctaClip, moodFromText, musicClips, progressClip, punchKeyframes, sfxPlan } from './lib/polish.js';
+import { splitAround } from './lib/broll.js';
 import { applySpellFixes, keywordPrompt, parseKeywordPicks, parseSpellFixes, spellPrompt, textBetween, transcriptLines } from './lib/aivideo.js';
 
 /** The project with every saved caption style its captions use embedded (renders the same on another PC). */
@@ -101,7 +102,7 @@ export async function autoCaptions(opts: AutoCaptionOptions = {}) {
  * place the words, cuts the person out (person "front" mask, reused when the clip has one) and puts
  * the captions on two tracks, "Legendas atrás" and "Legendas à frente" (marked front). One undo step.
  */
-export type PolishOptions = { punch?: boolean | number; sfx?: boolean; progress?: boolean; cta?: string; music?: 'auto' | 'calma' | 'media' | 'forte' | false; clipId?: string };
+export type PolishOptions = { punch?: boolean | number; sfx?: boolean; progress?: boolean; cta?: string; music?: 'auto' | 'calma' | 'media' | 'forte' | false; broll?: boolean; clipId?: string };
 
 /**
  * "Short editado": zoom punches and sound effects on the big words (the "Legendas atrás" track, or
@@ -120,7 +121,7 @@ export async function polishEdit(opts: PolishOptions = {}) {
   const back = p0.tracks.find((t) => t.id === 'cm-back')?.clips ?? textClips(p0).filter((c) => !c.graphic);
   const beats = beatsFromCaptions(back.map((c) => ({ start: c.start, text: c.text, override: c.override })), { duration: total, tail: opts.cta ? 2.5 : 0.8 });
   const front = p0.tracks.some((t) => t.clips.some((c) => c.masks?.some((m) => m.mode === 'front')));
-  const added: { punches: number; sfx: number; progress: boolean; cta: boolean; music?: string } = { punches: 0, sfx: 0, progress: false, cta: false };
+  const added: { punches: number; sfx: number; progress: boolean; cta: boolean; music?: string; broll?: number } = { punches: 0, sfx: 0, progress: false, cta: false };
   S().commit((p) => {
     const f = findClip(p, clip.id);
     if (!f) return;
@@ -168,13 +169,47 @@ export async function polishEdit(opts: PolishOptions = {}) {
       }
     }
   }
+  if (opts.broll) {
+    const m0 = p0.media.find((m) => m.id === clip.mediaId);
+    const plan = await window.ec.planBroll(m0?.transcript ?? [], clip.in, clip.out);
+    if (plan.length) {
+      const imp = await importPaths(plan.map((b) => b.path));
+      const byPath = new Map(imp.media.map((m) => [m.path.replace(/\\/g, '/').toLowerCase(), m]));
+      S().commit((p) => {
+        const f = findClip(p, clip.id);
+        if (!f) return;
+        const sp = speedOf(f.clip);
+        const items = plan
+          .map((b) => ({ b, m: byPath.get(b.path.replace(/\\/g, '/').toLowerCase()) }))
+          .filter((x) => x.m)
+          .map(({ b, m }) => {
+            const d = Math.max(0.5, Math.min(b.len, (m!.duration || b.len) - 0.1));
+            const inn = Math.min(0.4, Math.max(0, (m!.duration || d) - d));
+            return { id: uid('c'), mediaId: m!.id, start: r3(f.clip.start + b.at / sp), in: r3(inn), out: r3(inn + d), fit: 'fill' as const, volume: 0, speed: 1 };
+          });
+        if (!items.length) return;
+        // The person mask must not draw the speaker over the B-roll: split the main clip around it.
+        if (f.clip.masks?.some((mk) => mk.mode === 'front')) {
+          const pieces = splitAround(f.clip, items.map((x) => ({ start: x.start, end: x.start + (x.out - x.in) }))).map((x, k) => ({ ...x, id: k === 0 ? f.clip.id : uid('c') }) as Clip);
+          f.track.clips.splice(f.index, 1, ...pieces);
+        }
+        let t = p.tracks.find((x) => x.id === 'pl-broll');
+        if (!t) {
+          t = { id: 'pl-broll', kind: 'video', name: 'B-roll', clips: [] };
+          p.tracks.splice(p.tracks.indexOf(f.track) + 1, 0, t);
+        }
+        t.clips = [...t.clips.filter((c) => c.start >= end(f.clip) || c.start + (c.out - c.in) <= f.clip.start), ...items].sort((a, b) => a.start - b.start);
+        added.broll = items.length;
+      });
+    }
+  }
   if (opts.sfx) {
     for (const s of sfxPlan(beats)) {
       await addSfx(s.id, s.at, s.volume);
       added.sfx++;
     }
   }
-  S().setStatus(`Edição: ${added.punches} zooms, ${added.sfx} sons${added.progress ? ', barra' : ''}${added.cta ? ', CTA' : ''}${added.music ? `, música ${added.music}` : ''}`);
+  S().setStatus(`Edição: ${added.punches} zooms, ${added.sfx} sons${added.progress ? ', barra' : ''}${added.cta ? ', CTA' : ''}${added.music ? `, música ${added.music}` : ''}${added.broll ? `, ${added.broll} B-roll` : ''}`);
   return added;
 }
 

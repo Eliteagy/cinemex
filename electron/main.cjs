@@ -15,6 +15,7 @@ const { createReframeEngine } = require('./reframe.cjs');
 const { createModelStore } = require('./capmodels.cjs');
 const { createLearnStore } = require('./learn.cjs');
 const { createMusic } = require('./music.cjs');
+const { createBroll } = require('./broll.cjs');
 const effectgen = require('./effectgen.cjs');
 const { createEffectLibrary } = require('./effectlib.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
@@ -338,6 +339,14 @@ function handlers() {
     return t;
   });
   ipcMain.handle('music:open', () => shell.openPath(musicLib.folder));
+  const brollSrc = createBroll({ folder: path.join(app.getPath('videos'), 'B-roll'), cacheDir: path.join(app.getPath('userData')), keyFile: path.join(app.getPath('userData'), 'pexels.key') });
+  ipcMain.handle('broll:open', () => shell.openPath(brollSrc.folder));
+  ipcMain.handle('broll:status', () => ({ folder: brollSrc.folder, pexels: brollSrc.hasPexels() }));
+  ipcMain.handle('broll:plan', async (e, words, from, to) => {
+    const list = await shorts.planBroll(Array.isArray(words) ? words : [], Number(from) || 0, Number(to) || 0, { brollSrc, ask: (prompt, model) => askJson(String(prompt).slice(0, 200_000), { model }) }, (status) => !e.sender.isDestroyed() && e.sender.send('matte:progress', { status }));
+    list.forEach((x) => allow(x.path));
+    return list;
+  });
   ipcMain.handle('learn:get', () => learn.get());
   ipcMain.handle('learn:word', (_e, from, to) => learn.addWord(from, to));
   ipcMain.handle('learn:keyword', (_e, block, word) => learn.addKeyword(String(block), String(word)));
@@ -374,6 +383,8 @@ function handlers() {
         sfx: opts.sfx === true,
         music: ['auto', 'calma', 'media', 'forte'].includes(opts.music) ? opts.music : false,
         musicLib,
+        broll: opts.broll === true,
+        brollSrc,
         sfxList: opts.sfx === true ? ensureSfx(path.join(app.getPath('userData'), 'sfx')) : undefined,
         progress: opts.progress === true,
         cta: typeof opts.cta === 'string' ? opts.cta.slice(0, 80) : undefined,

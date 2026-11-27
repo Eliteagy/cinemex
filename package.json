@@ -11,7 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
     "app": "vite build && electron .",
-    "test": "node --test test/backend.test.mjs test/fusion.test.mjs test/captions.test.mjs test/capstyle.test.mjs test/capanim.test.mjs test/claude.test.mjs test/fx.test.mjs test/ae.test.mjs test/ai.test.mjs test/apple.test.mjs test/collab.test.mjs test/crop.test.mjs test/links.test.mjs test/generators.test.mjs test/frame.test.mjs test/develop.test.mjs test/blend.test.mjs test/detail.test.mjs test/pslayer.test.mjs test/aivideo.test.mjs test/edit.test.mjs test/autoedit.test.mjs test/capmodels.test.mjs test/effects.test.mjs test/learn.test.mjs test/polish.test.mjs test/music.test.mjs"
+    "test": "node --test test/backend.test.mjs test/fusion.test.mjs test/captions.test.mjs test/capstyle.test.mjs test/capanim.test.mjs test/claude.test.mjs test/fx.test.mjs test/ae.test.mjs test/ai.test.mjs test/apple.test.mjs test/collab.test.mjs test/crop.test.mjs test/links.test.mjs test/generators.test.mjs test/frame.test.mjs test/develop.test.mjs test/blend.test.mjs test/detail.test.mjs test/pslayer.test.mjs test/aivideo.test.mjs test/edit.test.mjs test/autoedit.test.mjs test/capmodels.test.mjs test/effects.test.mjs test/learn.test.mjs test/polish.test.mjs test/music.test.mjs test/broll.test.mjs"
   },
   "dependencies": {
     "dockview-react": "8.9.0",

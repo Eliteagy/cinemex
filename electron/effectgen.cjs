@@ -137,13 +137,14 @@ function geminiKey(env = process.env) {
 const GEMINI_URL = 'http://127.0.0.1:20128/v1/chat/completions';
 const GEMINI_MODELS = ['gemini/gemini-3-flash-preview', 'gemini/gemini-flash-latest', 'gemini/gemini-2.5-flash'];
 
-async function askGemini(prompt, { fetchFn = fetch, signal } = {}) {
+/** One JSON answer from Gemini (OmniRoute). image: a JPEG/PNG Buffer sent with the prompt (vision). */
+async function askGemini(prompt, { fetchFn = fetch, signal, image } = {}) {
   const key = geminiKey();
   if (!key) throw new Error('O Gemini precisa do OmniRoute ligado (chave em ~/.claude-omniroute/omniroute.key)');
   let last = null;
   for (const model of GEMINI_MODELS) {
     try {
-      const r = await fetchFn(GEMINI_URL, { method: 'POST', signal, headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } }) });
+      const r = await fetchFn(GEMINI_URL, { method: 'POST', signal, headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ model, messages: [{ role: 'user', content: image ? [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${image[0] === 0x89 ? 'image/png' : 'image/jpeg'};base64,${image.toString('base64')}` } }] : prompt }], response_format: { type: 'json_object' } }) });
       const body = await r.json().catch(() => null);
       if (!r.ok) {
         last = new Error(`Gemini ${r.status}: ${String(body?.error?.message || '').slice(0, 200)}`);

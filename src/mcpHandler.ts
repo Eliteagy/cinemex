@@ -485,7 +485,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       if (!a.recipe || typeof a.recipe !== 'object') throw new Error('Falta a receita');
       return window.ec.saveEffect(a.recipe as EffectRecipe, s(a.name));
     case 'polish_edit':
-      return asOneStep(() => polishEdit({ punch: typeof a.punch === 'number' ? a.punch : a.punch === true, sfx: a.sfx === true, progress: a.progress === true, cta: s(a.cta), music: (['auto', 'calma', 'media', 'forte'].includes(String(a.music)) ? a.music : false) as PolishOptions['music'], clipId: s(a.clip_id) }));
+      return asOneStep(() => polishEdit({ punch: typeof a.punch === 'number' ? a.punch : a.punch === true, sfx: a.sfx === true, progress: a.progress === true, cta: s(a.cta), music: (['auto', 'calma', 'media', 'forte'].includes(String(a.music)) ? a.music : false) as PolishOptions['music'], broll: a.broll === true, clipId: s(a.clip_id) }));
     case 'review_captions':
       return reviewCaptions({ clipId: s(a.clip_id), context: s(a.context) });
     case 'list_caption_models':

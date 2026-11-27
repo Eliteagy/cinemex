@@ -315,6 +315,8 @@ function handlers() {
         style: typeof opts.style === 'string' ? opts.style : 'felipe',
         reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
         reframer: reframeEngine,
+        layout: opts.layout === 'atras' ? 'atras' : undefined,
+        matter: matteEngine,
         cards: opts.cards !== false,
         preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',
         encoder: opts.gpu ? (process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_nvenc') : 'libx264',

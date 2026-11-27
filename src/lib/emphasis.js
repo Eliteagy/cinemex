@@ -112,6 +112,7 @@ export function roleOrder(em, role) {
 /** Vertical font metrics (win ascent/descent, the ones libass uses for the line height). */
 export const FONT_METRICS = {
   'Inter Black': { upem: 2048, a: 2269, d: 660 },
+  'Inter Bold': { upem: 2048, a: 2269, d: 660 },
   'Great Vibes': { upem: 1000, a: 851, d: 401 },
   'Birds of Paradise': { upem: 1000, a: 1001, d: 335 },
   // Other bundled fonts (public/fonts), for keyword styles and per-caption font changes.

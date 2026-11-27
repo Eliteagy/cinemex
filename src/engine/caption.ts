@@ -26,6 +26,7 @@ export const BUNDLED_FONTS: Record<string, string> = {
   'DM Serif Display': 'DMSerifDisplay-Regular.ttf',
   'Great Vibes': 'GreatVibes-Regular.ttf',
   'Inter Black': 'Inter-Black.ttf',
+  'Inter Bold': 'Inter-Bold.ttf',
   'Lilita One': 'LilitaOne-Regular.ttf',
   'Luckiest Guy': 'LuckiestGuy-Regular.ttf',
   Monoton: 'Monoton-Regular.ttf',

@@ -614,13 +614,16 @@ export class Player {
     }
 
     // Texts (titles, captions, graphics) are clips on the video tracks, drawn over the picture.
-    for (const track of project.tracks) if (track.kind !== 'audio' && !track.hidden) this.drawText(track, t, cw, ch, project);
+    // Tracks marked `front` go over the person cut out by "front" masks (same order as the export).
+    const split = fronts.length > 0;
+    for (const track of project.tracks) if (track.kind !== 'audio' && !track.hidden && !(split && track.front)) this.drawText(track, t, cw, ch, project);
     for (const f of fronts) {
       ctx.save();
       ctx.globalAlpha = f.alpha;
       ctx.drawImage(f.canvas, f.slide * cw, 0);
       ctx.restore();
     }
+    if (split) for (const track of project.tracks) if (track.kind !== 'audio' && !track.hidden && track.front) this.drawText(track, t, cw, ch, project);
   }
 
   private drawText(track: Track, t: number, cw: number, ch: number, project: Project) {

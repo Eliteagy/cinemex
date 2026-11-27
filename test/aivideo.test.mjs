@@ -118,3 +118,30 @@ test('dub fitting: speed only when a line does not fit before the next caption',
   assert.equal(q[0].overflow, true);
   assert.equal(atempo(3), 'atempo=2,atempo=1.5000');
 });
+
+test('legendas atrás: main word big behind the person, the rest in front on the chest', () => {
+  const { shortProject, behindCaptions } = require('../electron/shorts.cjs');
+  const { buildExport } = require('../electron/render.cjs');
+  const c = ai.parseHotclips({ clips: [{ start: '00:00:10', end: '00:00:40', hook: 'Gancho', score: 8 }] }, words)[0];
+  const media = { path: 'C:/x/video.mp4', duration: 120, width: 1920, height: 1080, transcript: words };
+  const p = shortProject(media, c, { layout: 'atras', personMatte: 'C:/m/matte.mp4', face: { y: 0.3, h: 0.08 }, framed: { path: 'C:/cache/abc.mp4', width: 1080, height: 1920 } });
+  const back = p.tracks.find((t) => t.id === 'tx');
+  const front = p.tracks.find((t) => t.id === 'tf');
+  assert.ok(back.clips.length > 3 && back.clips.every((x) => x.style === 'atras-grande' && x.text === x.text.toUpperCase() && !/\s/.test(x.text)));
+  assert.ok(back.clips.every((x) => x.size >= 0.06 && x.size <= 0.2 && x.y < 0.3), 'big, above the face centre');
+  assert.equal(front.front, true);
+  assert.ok(front.clips.every((x) => x.style === 'frente-peito' && x.y > 0.3), 'small words below the face');
+  const mk = p.tracks[0].clips[0].masks[0];
+  assert.deepEqual([mk.shape, mk.mode, mk.matte.file], ['person', 'front', 'C:/m/matte.mp4']);
+  assert.equal(p.tracks.find((t) => t.id === 'gx').front, true, 'cards over the person too');
+  // Longer words get smaller so they stay inside 85 % of the width.
+  const v = { start: 0, in: 0, out: 3 };
+  const two = behindCaptions(v, [{ w: 'casa', s: 0, e: 1 }, { w: 'extraordinariamente', s: 1.2, e: 2 }], 1080, 1920, null);
+  const long = two.back.find((x) => x.text === 'EXTRAORDINARIAMENTE');
+  const short = two.back.find((x) => x.text === 'CASA');
+  assert.ok(long && short && long.size < 0.1 && short.size > long.size * 2);
+  // Export: only the front masks' layer separates the two caption files (needs the matte on disk, so
+  // without it the person mask is not ready and everything stays in one file).
+  const ex = buildExport(p, 'C:/x/out.mp4');
+  assert.ok(ex.ass && !ex.extraFiles.some((f) => f.name === 'capsf.ass'));
+});

@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { askJson } = require('./llm.cjs');
 const { captionClipsFor } = require('./captions.cjs');
+const { pickKeyword, cleanWord } = require('../src/lib/emphasis.js');
 const { runExport } = require('./render.cjs');
 const ai = require('../src/lib/aivideo.js');
 
@@ -42,6 +43,39 @@ async function findHotclips(words, o = {}) {
 const CARD_Y = 0.11;
 const shortSize = (preset) => ({ '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350], '16:9': [1920, 1080] })[preset] || [1080, 1920];
 
+/**
+ * "Legendas atrás" (Vitor / real-estate look): in each caption block the main word goes BIG behind
+ * the person (Inter Black, up to 85 % of the width, the head covering the bottom of the word) and the
+ * other words go small in front, on the chest. The person is cut out by a "front" person mask; the
+ * small words sit on a track marked `front`, drawn over the person.
+ * face: { y, h } of the speaker's face in the short (fractions of its height), from the reframe.
+ */
+function behindCaptions(video, words, W, H, face) {
+  const fy = face?.y > 0.05 && face.y < 0.8 ? face.y : 0.3;
+  const fh = face?.h > 0.01 && face.h < 0.4 ? face.h : 0.07;
+  const groups = captionClipsFor(video, words, { style: 'frente-peito', stripPunct: true, maxWords: 3 });
+  const back = [];
+  const front = [];
+  const r = r3;
+  for (const g of groups) {
+    const ws = g.words?.length ? g.words : g.text.split(/\s+/).map((w) => ({ w, s: 0, e: g.out }));
+    const k = pickKeyword(ws.map((w) => w.w));
+    if (k >= 0) {
+      const word = cleanWord(ws[k].w).toUpperCase();
+      // Caption size is the libass line height (ascent + descent = 1.43 em for Inter Black, so
+      // em = 0.699 x size). Capitals average ~0.70 em; 0.74 keeps the word inside 85 % of the width.
+      const size = r(Math.max(0.06, Math.min(0.2, (0.85 * W) / (0.74 * 0.699 * Math.max(4, [...word].length) * H))));
+      // Word centre at the top of the head: the head covers the bottom half of the word.
+      back.push({ id: uid('c'), auto: true, text: word, style: 'atras-grande', start: g.start, in: 0, out: g.out, size, y: r(Math.max(size * 0.6, fy - fh * 0.55)), words: [{ w: word, s: 0, e: g.out }] });
+    }
+    const rest = ws.filter((_, i) => i !== k);
+    if (rest.length) {
+      front.push({ id: uid('c'), auto: true, text: rest.map((w) => w.w).join(' '), style: 'frente-peito', start: g.start, in: 0, out: g.out, y: r(Math.min(0.8, fy + Math.max(fh * 2.6, 0.09))), words: rest });
+    }
+  }
+  return { back, front };
+}
+
 /** Following the face only makes sense when the source is wider than the short (16:9 -> 9:16, 1:1, 4:5). */
 function canFollowFace(media, preset) {
   const [w, h] = shortSize(preset || '9:16');
@@ -52,7 +86,9 @@ function canFollowFace(media, preset) {
  * One short as a Cinemex project.
  * @param {{path:string,name?:string,duration?:number,width?:number,height?:number,fps?:number,hasAudio?:boolean,transcript:object[]}} media
  * @param {{start:number,end:number,hook?:string,outro?:string,title?:string}} c
- * @param {{style?:string,reframe?:'cover'|'fit'|'face',cards?:boolean,preset?:string,framed?:{path:string,width:number,height:number}}} o
+ * @param {{style?:string,reframe?:'cover'|'fit'|'face',cards?:boolean,preset?:string,framed?:{path:string,width:number,height:number},layout?:'atras',face?:{y:number,h:number},personMatte?:string}} o
+ *   layout 'atras' = big main word behind the person, small words in front (needs personMatte, the
+ *   grey matte video of the clip's source range)
  *   framed = the segment already cropped to follow the speaker (electron/reframe.cjs): the short then
  *   plays that file from 0 and its transcript is moved to the segment's own time.
  */
@@ -63,7 +99,8 @@ function shortProject(media, c, o = {}) {
   const len = r3(c.end - c.start);
   const video = { id: uid('c'), mediaId, start: 0, in: r3(c.start), out: r3(c.end), fit: o.reframe === 'fit' ? 'fit' : 'fill', volume: 1, speed: 1 };
   const words = media.transcript || [];
-  const caps = captionClipsFor(video, words, { style: o.style || 'felipe', stripPunct: true }).map((x) => ({ id: uid('c'), auto: true, ...x }));
+  const behind = o.layout === 'atras' && o.personMatte ? behindCaptions(video, words, size[0], size[1], o.face) : null;
+  const caps = behind ? behind.back : captionClipsFor(video, words, { style: o.style || 'felipe', stripPunct: true }).map((x) => ({ id: uid('c'), auto: true, ...x }));
   let mediaEntry = { id: mediaId, path: media.path, name: media.name || path.basename(media.path), kind: 'video', duration: media.duration || c.end, width: media.width, height: media.height, fps: media.fps || 30, hasAudio: media.hasAudio !== false, thumb: null, transcript: words };
   if (o.framed?.path) {
     // Captions were placed from the source window above; the clip now plays the cropped file from 0.
@@ -73,9 +110,15 @@ function shortProject(media, c, o = {}) {
     const moved = words.filter((w) => w.s >= c.start - 0.05 && w.e <= c.end + 0.05).map((w) => ({ ...w, s: r3(Math.max(0, w.s - c.start)), e: r3(Math.max(0, w.e - c.start)) }));
     mediaEntry = { ...mediaEntry, path: o.framed.path, name: path.basename(o.framed.path), duration: len, width: o.framed.width, height: o.framed.height, fps: 30, transcript: moved };
   }
+  if (behind) {
+    // The person (everyone in the shot) drawn again over the big words.
+    video.masks = [{ id: uid('mk'), shape: 'person', matte: { file: o.personMatte, in: video.in, out: video.out, px: -1, py: -1 }, x: 0.5, y: 0.5, w: 1, h: 1, feather: 0, invert: false, mode: 'front', amount: 1 }];
+  }
   const cards = [];
-  if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: CARD_Y } });
-  if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: CARD_Y } });
+  // With the big words behind the head the top is taken: the cards go low, over the legs.
+  const cardY = behind ? 0.8 : CARD_Y;
+  if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: cardY } });
+  if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: cardY } });
   return {
     version: 1,
     name: c.title || c.hook || 'Short',
@@ -85,8 +128,9 @@ function shortProject(media, c, o = {}) {
     tracks: [
       { id: 'v1', kind: 'video', name: 'V1', clips: [video] },
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
-      { id: 'tx', kind: 'text', name: 'Legendas', clips: caps },
-      { id: 'gx', kind: 'text', name: 'Grafismos', clips: cards },
+      { id: 'tx', kind: 'text', name: behind ? 'Legendas atrás' : 'Legendas', clips: caps },
+      ...(behind ? [{ id: 'tf', kind: 'text', name: 'Legendas à frente', front: true, clips: behind.front }] : []),
+      { id: 'gx', kind: 'text', name: 'Grafismos', front: behind ? true : undefined, clips: cards },
       { id: 'a1', kind: 'audio', name: 'Música', clips: [] },
     ],
   };
@@ -106,6 +150,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
     const c = clips[i];
     const base = `clip_${String(i + 1).padStart(2, '0')}_${ai.slug(c.title || c.hook)}`;
     let framed = null;
+    let face = null;
     if (o.reframe === 'face' && o.reframer && canFollowFace(media, o.preset)) {
       const [outW, outH] = shortSize(o.preset || '9:16');
       const r = await o.reframer.reframe(
@@ -113,8 +158,17 @@ async function buildShorts(media, clips, outDir, o = {}) {
         { signal: o.signal, onStatus: (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0, name: base, status }), onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: p * 0.5, name: base, status: 'A seguir a cara…' }) },
       );
       framed = { path: r.file, width: outW, height: outH };
+      if (r.faceY) face = { y: r.faceY, h: r.faceH };
     }
-    const project = shortProject(media, c, { ...o, framed });
+    let personMatte = null;
+    if (o.layout === 'atras' && o.matter) {
+      const len = c.end - c.start;
+      personMatte = await o.matter.matte(
+        { file: framed ? framed.path : media.path, tin: framed ? 0 : c.start, tout: framed ? len : c.end, x: null, y: null },
+        { signal: o.signal, onStatus: (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0.5, name: base, status }), onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: 0.5 + p * 0.2, name: base, status: 'A recortar a pessoa…' }) },
+      );
+    }
+    const project = shortProject(media, c, { ...o, framed, face, personMatte });
     const proj = path.join(outDir, 'Projetos Cinemex', `${base}.ecproj`);
     fs.writeFileSync(proj, JSON.stringify(project, null, 1), 'utf8');
     const mp4 = path.join(outDir, `${base}.mp4`);
@@ -122,7 +176,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       encoder: o.encoder || 'libx264',
       quality: o.quality || 'alta',
       signal: o.signal,
-      onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: framed ? 0.5 + p * 0.5 : p, name: base }),
+      onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: personMatte ? 0.7 + p * 0.3 : framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
     done.push({ ...c, file: mp4, project: proj, name: base });
@@ -132,4 +186,4 @@ async function buildShorts(media, clips, outDir, o = {}) {
   return done;
 }
 
-module.exports = { findHotclips, shortProject, buildShorts, canFollowFace, shortSize };
+module.exports = { findHotclips, shortProject, buildShorts, canFollowFace, shortSize, behindCaptions };

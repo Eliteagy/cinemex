@@ -76,7 +76,15 @@ function createReframeEngine(userData, { python = PYTHON, ffmpeg = FFMPEG } = {}
       .digest('hex')
       .slice(0, 16);
     const dest = path.join(dir, `${key}.mp4`);
-    if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return { file: dest, cached: true };
+    const info = dest.replace(/\.mp4$/, '.json');
+    const readInfo = () => {
+      try {
+        return JSON.parse(fs.readFileSync(info, 'utf8'));
+      } catch {
+        return {};
+      }
+    };
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 0 && fs.existsSync(info)) return { file: dest, cached: true, ...readInfo() };
     const tmp = path.join(dir, `${key}.part.mp4`);
     const args = [SCRIPT, file, String(tin), String(tout), tmp, '--model', model, '--size', `${srcW}x${srcH}`, '--out-size', `${outW}x${outH}`, '--ffmpeg', ffmpeg, '--encoder', encoder];
     onStatus('A seguir a cara de quem fala…');
@@ -123,7 +131,9 @@ function createReframeEngine(userData, { python = PYTHON, ffmpeg = FFMPEG } = {}
       });
     });
     fs.renameSync(tmp, dest);
-    return { file: dest, found: result.found, samples: result.samples };
+    const meta = { found: result.found, samples: result.samples, faceY: result.faceY ?? null, faceH: result.faceH ?? null };
+    fs.writeFileSync(info, JSON.stringify(meta));
+    return { file: dest, ...meta };
   }
 
   return { ensure, reframe, dir };

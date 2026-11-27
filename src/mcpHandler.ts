@@ -467,7 +467,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         clips = idx.map((i) => hotclipState.clips[i]).filter((c): c is Hotclip => Boolean(c));
       }
       const preset = s(a.preset) as CanvasPreset | undefined;
-      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', cards: a.cards !== false, preset, gpu: a.gpu === true });
+      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', layout: s(a.layout) === 'atras' ? 'atras' : undefined, cards: a.cards !== false, preset, gpu: a.gpu === true });
       return out ? out.map((o) => ({ file: o.file, project: o.project, title: o.title })) : { cancelled: true };
     }
     case 'ai_chapters':

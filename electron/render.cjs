@@ -794,7 +794,11 @@ function graphicAss(c, W, H, events, styles, files, userFonts) {
  * highlight, glow, shadow and spacing. Intros are \t, \move and \fade tags; stepped effects (shake,
  * glitch) and the typewriter are one event per step / letter.
  */
-function buildAss(project, { files, userFonts = true } = {}) {
+/**
+ * `only`: 'back' = tracks behind the person (no `front` flag), 'front' = tracks marked `front`
+ * (drawn over the person cut out by "front" masks). Unset = every text track.
+ */
+function buildAss(project, { files, userFonts = true, only } = {}) {
   const { w: W, h: H } = project.canvas;
   // Style lines by name; a caption with its own override gets its own style line (name_oN).
   const used = new Map();
@@ -804,6 +808,8 @@ function buildAss(project, { files, userFonts = true } = {}) {
   for (const track of project.tracks) {
     // Texts are clips on video tracks (older projects: on tracks of kind 'text').
     if (track.kind === 'audio' || track.hidden) continue;
+    if (only === 'back' && track.front) continue;
+    if (only === 'front' && !track.front) continue;
     for (const c of track.clips) {
       if (c.graphic) {
         graphicAss(c, W, H, events, gfxStyles, files, userFonts);
@@ -1284,18 +1290,27 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
   }
 
   const fonts = new Set();
-  const ass = buildAss(project, { files: fonts });
-  // Captions, then the front layers over them (the captions pass behind the person).
+  // Captions, then the front layers over them (the captions pass behind the person), then the
+  // tracks marked `front` (captions over the person: Vitor's small words on the chest).
+  const split = fronts.length > 0 && project.tracks.some((t) => t.front && !t.hidden && t.kind !== 'audio');
+  const backAss = buildAss(project, { files: fonts, only: split ? 'back' : undefined });
+  const frontAss = split ? buildAss(project, { files: fonts, only: 'front' }) : null;
+  const ass = backAss || frontAss;
   let top = base;
-  if (ass) {
+  if (backAss) {
     filters.push(`[${base}]subtitles=caps.ass:fontsdir=fonts[${fronts.length ? 'subs' : 'vout'}]`);
     top = 'subs';
   }
   fronts.forEach((f, i) => {
-    const next = i === fronts.length - 1 ? 'vout' : `top${i}`;
+    const next = i === fronts.length - 1 && !frontAss ? 'vout' : `top${i}`;
     filters.push(`[${top}][${f.label}]overlay=x=${f.x}:y=(main_h-overlay_h)/2:eof_action=pass:enable='between(t,${f.start},${f.end})'[${next}]`);
     top = next;
   });
+  if (frontAss) {
+    const name = backAss ? 'capsf.ass' : 'caps.ass';
+    if (backAss) extraFiles.push({ name, content: frontAss });
+    filters.push(`[${top}]subtitles=${name}:fontsdir=fonts[vout]`);
+  }
   if (!ass && !fronts.length) filters.push(`[${base}]null[vout]`);
   const settings = project.audio || {};
   const mix = (list, out) => filters.push(list.length === 1 ? `[${list[0]}]anull[${out}]` : `${list.map((a) => `[${a}]`).join('')}amix=inputs=${list.length}:normalize=0:dropout_transition=0[${out}]`);

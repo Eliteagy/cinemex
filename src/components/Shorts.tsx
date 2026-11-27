@@ -29,6 +29,7 @@ export function ShortsPanel() {
   const [style, setStyle] = useState('felipe');
   const [reframe, setReframe] = useState<'cover' | 'fit' | 'face'>('face');
   const [cards, setCards] = useState(true);
+  const [behind, setBehind] = useState(true);
   const [gpu, setGpu] = useState(true);
   const [progress, setProgress] = useState<string | null>(null);
   const [done, setDone] = useState<string[]>([]);
@@ -69,7 +70,7 @@ export function ShortsPanel() {
   const make = () =>
     run('make', async () => {
       const chosen = clips.filter((_, i) => pick.has(i));
-      const out = await makeShorts(chosen, { mediaId: src, style, reframe, cards, gpu });
+      const out = await makeShorts(chosen, { mediaId: src, style, reframe, layout: behind ? 'atras' : undefined, cards, gpu });
       if (out) setDone(out.map((o) => o.file));
     });
 
@@ -159,7 +160,7 @@ export function ShortsPanel() {
             <div className="sh-opts">
               <label>
                 Legendas
-                <select className="select" value={style} onChange={(e) => setStyle(e.target.value)}>
+                <select className="select" value={style} disabled={behind} title={behind ? "Com legendas atrás o estilo é fixo (palavra grande atrás, pequenas à frente)" : undefined} onChange={(e) => setStyle(e.target.value)}>
                   {STYLES.map(([k, l]) => (
                     <option key={k} value={k}>
                       {l}
@@ -178,6 +179,9 @@ export function ShortsPanel() {
                   Com barras
                 </button>
               </div>
+              <label className="sh-check" title="Palavra principal grande atrás da pessoa, as outras pequenas à frente, no peito (como nos vídeos de imobiliário)">
+                <input type="checkbox" checked={behind} onChange={(e) => setBehind(e.target.checked)} /> Legendas atrás da pessoa
+              </label>
               <label className="sh-check">
                 <input type="checkbox" checked={cards} onChange={(e) => setCards(e.target.checked)} /> Cartões de gancho e final
               </label>

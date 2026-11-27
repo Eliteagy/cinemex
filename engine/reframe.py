@@ -60,6 +60,7 @@ proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 fsize = PW * PH * 3
 cx_raw, cuts = [], [0]
+face_y, face_h = [], []  # face centre / height in source pixels (for placing captions)
 prev_hist, prev_cx = None, None
 hog_hits = 0
 i = 0
@@ -94,6 +95,8 @@ while True:
         if cand:
             best = max(cand, key=score)
             prev_cx = (best[0] + best[2] / 2) / PW
+            face_y.append((best[1] + best[3] / 2) * SH / PH)
+            face_h.append(best[3] * SH / PH)
     cx = None if best is None else (best[0] + best[2] / 2) * SW / PW
     if cx is None and hog is not None:
         # Speaker in profile / turned away: look for a standing person instead (HOG, half size).
@@ -177,4 +180,7 @@ err = p.stderr.read()
 if p.wait() != 0:
     sys.stderr.write(err[-1500:])
     sys.exit(3)
-say(done=True, samples=n, found=sum(v is not None for v in cx_raw), hog=hog_hits, cuts=len(cuts) - 2)
+# Where the face sits in the output (fractions of its height): captions go behind the head / on the chest.
+fy = round(float((np.median(face_y) - y0) / CH), 3) if face_y else None
+fh = round(float(np.median(face_h) / CH), 3) if face_h else None
+say(done=True, samples=n, found=sum(v is not None for v in cx_raw), hog=hog_hits, cuts=len(cuts) - 2, faceY=fy, faceH=fh)

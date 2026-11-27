@@ -121,7 +121,7 @@ export async function polishEdit(opts: PolishOptions = {}) {
   const back = p0.tracks.find((t) => t.id === 'cm-back')?.clips ?? textClips(p0).filter((c) => !c.graphic);
   const beats = beatsFromCaptions(back.map((c) => ({ start: c.start, text: c.text, override: c.override })), { duration: total, tail: opts.cta ? 2.5 : 0.8 });
   const front = p0.tracks.some((t) => t.clips.some((c) => c.masks?.some((m) => m.mode === 'front')));
-  const added: { punches: number; sfx: number; progress: boolean; cta: boolean; music?: string; broll?: number } = { punches: 0, sfx: 0, progress: false, cta: false };
+  const added: { punches: number; sfx: number; progress: boolean; cta: boolean; music?: string; broll?: number; notes?: string[] } = { punches: 0, sfx: 0, progress: false, cta: false };
   S().commit((p) => {
     const f = findClip(p, clip.id);
     if (!f) return;
@@ -143,15 +143,23 @@ export async function polishEdit(opts: PolishOptions = {}) {
       }
       const c = opts.cta ? ctaClip(opts.cta, total) : null;
       if (c) {
+        // The CTA replaces closing cards (titles in the last 3 s) so the two never stack.
+        for (const tr of p.tracks) if (tr !== t) tr.clips = tr.clips.filter((x) => !(x.graphic && x.graphic.kind !== 'progress' && x.start >= total - 3));
         t.clips.push({ id: uid('c'), ...c } as Clip);
         added.cta = true;
       }
     }
   });
+  // Music and B-roll depend on the Gui's folders and services: when they fail, the rest of the edit
+  // still happens and the reason goes into the result (notes).
+  const notes: string[] = [];
   if (opts.music) {
     const m0 = p0.media.find((m) => m.id === clip.mediaId);
     const mood = opts.music === 'auto' ? moodFromText(textBetween(m0?.transcript ?? [], clip.in, clip.out)) : opts.music;
-    const track = await window.ec.pickMusic(mood, p0.name);
+    const track = await window.ec.pickMusic(mood, p0.name).catch((e: Error) => {
+      notes.push(`Música: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+      return null;
+    });
     if (track) {
       const imp = await importPaths([track.path]);
       const mm = imp.media[0];
@@ -171,7 +179,11 @@ export async function polishEdit(opts: PolishOptions = {}) {
   }
   if (opts.broll) {
     const m0 = p0.media.find((m) => m.id === clip.mediaId);
-    const plan = await window.ec.planBroll(m0?.transcript ?? [], clip.in, clip.out);
+    const plan = await window.ec.planBroll(m0?.transcript ?? [], clip.in, clip.out).catch((e: Error) => {
+      notes.push(`B-roll: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+      return [];
+    });
+    if (!plan.length && !notes.some((n) => n.startsWith('B-roll'))) notes.push('B-roll: nenhum plano da pasta Vídeos\\B-roll serviu (e sem chave do Pexels)');
     if (plan.length) {
       const imp = await importPaths(plan.map((b) => b.path));
       const byPath = new Map(imp.media.map((m) => [m.path.replace(/\\/g, '/').toLowerCase(), m]));
@@ -209,7 +221,8 @@ export async function polishEdit(opts: PolishOptions = {}) {
       added.sfx++;
     }
   }
-  S().setStatus(`Edição: ${added.punches} zooms, ${added.sfx} sons${added.progress ? ', barra' : ''}${added.cta ? ', CTA' : ''}${added.music ? `, música ${added.music}` : ''}${added.broll ? `, ${added.broll} B-roll` : ''}`);
+  if (notes.length) added.notes = notes;
+  S().setStatus(`Edição: ${added.punches} zooms, ${added.sfx} sons${added.progress ? ', barra' : ''}${added.cta ? ', CTA' : ''}${added.music ? `, música ${added.music}` : ''}${added.broll ? `, ${added.broll} B-roll` : ''}${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
   return added;
 }
 

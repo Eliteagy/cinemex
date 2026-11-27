@@ -30,9 +30,12 @@ export function ShortsPanel() {
   const [reframe, setReframe] = useState<'cover' | 'fit' | 'face'>('face');
   const [cards, setCards] = useState(true);
   const [model, setModel] = useState('vitor');
+  const [pack, setPack] = useState('vitor');
+  const [packs, setPacks] = useState<{ id: string; label: string }[]>([]);
   const [models, setModels] = useState<{ id: string; label: string }[]>([]);
   useEffect(() => {
     void window.ec.listCaptionModels().then(setModels);
+    void window.ec.listEditPacks().then(setPacks);
   }, []);
   const behind = Boolean(model);
   const [gpu, setGpu] = useState(true);
@@ -75,7 +78,7 @@ export function ShortsPanel() {
   const make = () =>
     run('make', async () => {
       const chosen = clips.filter((_, i) => pick.has(i));
-      const out = await makeShorts(chosen, { mediaId: src, style, reframe, model: model || undefined, cards, gpu });
+      const out = await makeShorts(chosen, { mediaId: src, style, reframe, model: model || undefined, pack: pack || undefined, cards, gpu });
       if (out) setDone(out.map((o) => o.file));
     });
 
@@ -184,9 +187,20 @@ export function ShortsPanel() {
                   Com barras
                 </button>
               </div>
-              <label title="Modelo de legendas: palavras grandes atrás da pessoa (recorta a pessoa). Sem modelo = o estilo de cima.">
+              <label title="Pacote de edição: legendas, palavra pela IA, zoom, sons, música, B-roll, barra e CTA em cada short (página Edit, aba Pacotes, para os mudar)">
+                Pacote
+                <select className="select" value={pack} onChange={(e) => setPack(e.target.value)}>
+                  <option value="">Sem pacote (só legendas)</option>
+                  {packs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label title="Modelo de legendas: palavras grandes atrás da pessoa (recorta a pessoa). Sem modelo = o estilo de cima. Com pacote, manda o do pacote.">
                 Modelo
-                <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
+                <select className="select" value={model} disabled={Boolean(pack)} onChange={(e) => setModel(e.target.value)}>
                   <option value="">Sem modelo (estilo normal)</option>
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>

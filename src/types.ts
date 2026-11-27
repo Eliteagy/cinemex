@@ -308,6 +308,22 @@ export interface EffectResult {
   ms: number;
 }
 
+/** Edit pack ("Pacotes de edição", src/lib/editpacks.js). */
+export interface EditPack {
+  id?: string;
+  builtin?: boolean;
+  label: string;
+  captionModel: string;
+  keywordAI: boolean;
+  punch: number;
+  sfx: boolean;
+  music: 'off' | 'auto' | 'calma' | 'media' | 'forte';
+  broll: boolean;
+  progress: boolean;
+  cta: string;
+  effects: string[];
+}
+
 /** A background music track (electron/music.cjs). */
 export interface MusicTrack {
   path: string;
@@ -555,6 +571,9 @@ export interface EcBridge {
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
   musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
+  listEditPacks(): Promise<(EditPack & { id: string; builtin: boolean })[]>;
+  saveEditPack(id: string | null, pack: EditPack): Promise<{ id: string; pack: EditPack }>;
+  deleteEditPack(id: string): Promise<boolean>;
   brollStatus(): Promise<{ folder: string; pexels: boolean }>;
   openBrollFolder(): Promise<string>;
   planBroll(words: Word[], from: number, to: number): Promise<{ at: number; len: number; path: string; name: string; duration: number; source: string }[]>;
@@ -574,7 +593,7 @@ export interface EcBridge {
   dubVoices(): Promise<{ id: string; name: string; labels: Record<string, string> }[]>;
   dub(cues: { start: number; end: number; text: string }[], opts: { total: number; voiceId?: string; maxSpeed?: number }): Promise<{ file: string; lines: number; sped: number; overflow: number }>;
   onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
-  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string | CaptionModel; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
+  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string | CaptionModel; pack?: string; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
   onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string; status?: string }) => void): () => void;
   onExportProgress(cb: (p: number) => void): () => void;
   saveProject(project: Project, file?: string | null): Promise<string | null>;

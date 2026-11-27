@@ -6,11 +6,12 @@ import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
 import { runRecipe } from './effectRecipes';
+import { applyEditPack } from './packs';
 import { addSfx, applyCaptionModel, polishEdit, reviewCaptions, type PolishOptions, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
 import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
-import type { CaptionModel, EffectCategory, EffectProvider, EffectRecipe, Graphic, GraphicKind, TransitionType } from './types';
+import type { CaptionModel, EditPack, EffectCategory, EffectProvider, EffectRecipe, Graphic, GraphicKind, TransitionType } from './types';
 import { projectDuration } from './lib/project';
 import { cropOf, setCrop } from './lib/crop.js';
 import { BG_KINDS, FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from './lib/frame.js';
@@ -484,6 +485,13 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     case 'save_effect':
       if (!a.recipe || typeof a.recipe !== 'object') throw new Error('Falta a receita');
       return window.ec.saveEffect(a.recipe as EffectRecipe, s(a.name));
+    case 'list_edit_packs':
+      return window.ec.listEditPacks();
+    case 'apply_edit_pack':
+      return applyEditPack(String(a.pack), { clipId: s(a.clip_id) });
+    case 'save_edit_pack':
+      if (!a.pack || typeof a.pack !== 'object') throw new Error('Falta o pacote');
+      return window.ec.saveEditPack(s(a.id) ?? null, a.pack as EditPack);
     case 'polish_edit':
       return asOneStep(() => polishEdit({ punch: typeof a.punch === 'number' ? a.punch : a.punch === true, sfx: a.sfx === true, progress: a.progress === true, cta: s(a.cta), music: (['auto', 'calma', 'media', 'forte'].includes(String(a.music)) ? a.music : false) as PolishOptions['music'], broll: a.broll === true, clipId: s(a.clip_id) }));
     case 'review_captions':
@@ -510,7 +518,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         clips = idx.map((i) => hotclipState.clips[i]).filter((c): c is Hotclip => Boolean(c));
       }
       const preset = s(a.preset) as CanvasPreset | undefined;
-      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', layout: s(a.layout) === 'atras' ? 'atras' : undefined, model: s(a.model) || undefined, cards: a.cards !== false, preset, gpu: a.gpu === true });
+      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', layout: s(a.layout) === 'atras' ? 'atras' : undefined, model: s(a.model) || undefined, pack: s(a.pack) || undefined, cards: a.cards !== false, preset, gpu: a.gpu === true });
       return out ? out.map((o) => ({ file: o.file, project: o.project, title: o.title })) : { cancelled: true };
     }
     case 'ai_chapters':

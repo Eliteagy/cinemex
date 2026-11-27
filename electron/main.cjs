@@ -16,6 +16,8 @@ const { createModelStore } = require('./capmodels.cjs');
 const { createLearnStore } = require('./learn.cjs');
 const { createMusic } = require('./music.cjs');
 const { createBroll } = require('./broll.cjs');
+const { createPackStore } = require('./editpacks.cjs');
+const { packShortOptions } = require('../src/lib/editpacks.js');
 const effectgen = require('./effectgen.cjs');
 const { createEffectLibrary } = require('./effectlib.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
@@ -352,6 +354,10 @@ function handlers() {
   ipcMain.handle('learn:keyword', (_e, block, word) => learn.addKeyword(String(block), String(word)));
   ipcMain.handle('learn:remove', (_e, kind, i) => learn.remove(String(kind), Number(i)));
   ipcMain.handle('learn:clear', () => learn.clear());
+  const packs = createPackStore(path.join(app.getPath('userData'), 'edit-packs.json'));
+  ipcMain.handle('packs:list', () => packs.list());
+  ipcMain.handle('packs:save', (_e, id, pack) => packs.save(id ?? null, pack));
+  ipcMain.handle('packs:delete', (_e, id) => packs.delete(String(id)));
   ipcMain.handle('capmodels:list', () => capmodels.list());
   ipcMain.handle('capmodels:save', (_e, id, model) => capmodels.save(id ?? null, model));
   ipcMain.handle('capmodels:delete', (_e, id) => capmodels.delete(String(id)));
@@ -372,6 +378,8 @@ function handlers() {
       outDir = r.filePaths[0];
     }
     exportAbort = new AbortController();
+    const fromPack = opts.pack ? packShortOptions(packs.resolve(opts.pack)) : null;
+    if (fromPack) opts = { ...opts, ...fromPack, layout: undefined };
     try {
       return await shorts.buildShorts(media, clips, path.resolve(String(outDir)), {
         style: typeof opts.style === 'string' ? opts.style : 'felipe',

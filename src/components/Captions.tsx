@@ -12,6 +12,8 @@ import type { Clip } from '../types';
 import { CaptionBlocks } from './CaptionBlocks';
 import { Icon } from './Icon';
 import { CaptionModels } from './CaptionModels';
+import { learnFromEdit, learnKeyword } from '../learn';
+import { LearnedPanel } from './Learned';
 import { reviewCaptions, reviewState } from '../actions';
 
 export function CaptionList() {
@@ -69,6 +71,7 @@ export function CaptionList() {
         <button className="btn sm" disabled={reviewing} onClick={() => void review()} title="O Claude lê o que foi dito e corrige o que o Whisper ouviu mal (ex.: «tios» em vez de «planos»)">
           <Icon name="spark" /> {reviewing ? 'A rever…' : 'Rever com IA'}
         </button>
+        <LearnedPanel />
         {fixed.length > 0 && (
           <details className="cap-fixed" open>
             <summary className="panel-sub">{fixed.length} palavras corrigidas</summary>
@@ -110,7 +113,8 @@ export function CaptionList() {
                 rows={2}
                 value={c.text ?? ''}
                 onClick={(e) => e.stopPropagation()}
-                onFocus={() => (s().select(c.id), s().seek(c.start + 0.001))}
+                onFocus={(e) => (s().select(c.id), s().seek(c.start + 0.001), (e.currentTarget.dataset.before = c.text ?? ''))}
+                onBlur={(e) => learnFromEdit(e.currentTarget.dataset.before, e.currentTarget.value)}
                 onChange={(e) => s().updateClip(c.id, { text: e.target.value, words: undefined })}
               />
               <button className="btn icon sm" title="Apagar" onClick={(e) => (e.stopPropagation(), s().deleteClip(c.id))}>
@@ -135,7 +139,10 @@ function KeywordPicker({ clip }: { clip: Clip }) {
   const words = clip.words?.length ? clip.words.map((w) => w.w) : (clip.text ?? '').split(/\s+/).filter(Boolean);
   const kw = keywordOf(clip, words);
   const auto = !Number.isInteger(clip.keyword);
-  const set = (k: number | undefined) => useEditor.getState().updateClip(clip.id, { keyword: k });
+  const set = (k: number | undefined) => {
+    useEditor.getState().updateClip(clip.id, { keyword: k });
+    learnKeyword(clip.text, k);
+  };
   return (
     <div className="kw-pick" onClick={(e) => e.stopPropagation()}>
       <span className="panel-sub">Palavra em destaque</span>

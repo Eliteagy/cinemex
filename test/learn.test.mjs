@@ -23,3 +23,12 @@ test('learn store: word fixes count up, keywords need the word in the block, bad
   assert.equal(l.remove('words', 0).words.length, 0);
   assert.deepEqual(l.clear(), { version: 1, words: [], keywords: [] });
 });
+
+test('word fixes from an edited caption: same word count, at most 2 words changed', async () => {
+  const { wordFixes } = await import('../src/lib/wordfix.js');
+  assert.deepEqual(wordFixes('os teus tios para', 'os teus planos para'), [{ from: 'tios', to: 'planos' }]);
+  assert.deepEqual(wordFixes('TIVONE,', 'T-bone,'), [{ from: 'tivone', to: 'T-bone' }]);
+  assert.deepEqual(wordFixes('a b c', 'a b'), [], 'words added or removed: not a fix');
+  assert.deepEqual(wordFixes('um dois três', 'quatro cinco seis'), [], 'rewritten caption: not a fix');
+  assert.deepEqual(wordFixes('Casa', 'casa.'), [], 'only case/punctuation');
+});

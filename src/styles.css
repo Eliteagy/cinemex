@@ -1283,3 +1283,6 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .ep-thumb { width: 100%; max-height: 90px; object-fit: cover; border-radius: var(--r-sm); margin-bottom: 4px; }
 .eg-ref { display: inline-flex; align-items: center; gap: 6px; }
 .eg-ref img { height: 48px; border-radius: var(--r-xs, 4px); }
+.learned ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.learned li { display: flex; align-items: center; gap: 6px; }
+.learned li s { color: var(--text-3); }

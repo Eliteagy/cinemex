@@ -11,6 +11,7 @@ import { keywordOf, pickKeyword } from '../lib/emphasis.js';
 import type { Clip } from '../types';
 import { CaptionBlocks } from './CaptionBlocks';
 import { Icon } from './Icon';
+import { CaptionModels } from './CaptionModels';
 
 export function CaptionList() {
   const tracks = useEditor((s) => s.project.tracks);
@@ -174,6 +175,7 @@ export function CaptionStylePanel() {
             }}
           />
         )}
+        {!editing && <CaptionModels />}
         {!editing && sel && <CaptionLook clip={sel} />}
         <div className="field" style={{ marginTop: 16 }}>
           <label className="row-label">

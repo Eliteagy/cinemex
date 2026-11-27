@@ -136,7 +136,20 @@ function createReframeEngine(userData, { python = PYTHON, ffmpeg = FFMPEG } = {}
     return { file: dest, ...meta };
   }
 
-  return { ensure, reframe, dir };
+  /** Where the speaker's face is in `file` between tin and tout: { faceX, faceY, faceH } (fractions of the source). */
+  async function detect({ file, tin, tout, srcW, srcH }, { onStatus = () => {}, signal } = {}) {
+    if (!(srcW > 0 && srcH > 0)) throw new Error('Não sei o tamanho do vídeo');
+    await ensure(onStatus);
+    // A sample of at most 90 s is enough to know where the face usually is.
+    const t1 = Math.min(tout, tin + 90);
+    fs.mkdirSync(dir, { recursive: true });
+    onStatus('A procurar a cara…');
+    const out = await run(venvPy, ['-I', SCRIPT, file, String(tin), String(t1), path.join(dir, 'detect.mp4'), '--model', model, '--size', `${srcW}x${srcH}`, '--out-size', `${srcW}x${srcH}`, '--ffmpeg', ffmpeg, '--detect-only'], { signal });
+    const last = String(out).trim().split(/\r?\n/).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((m) => m?.done).pop();
+    return { faceX: last?.faceX ?? null, faceY: last?.faceY ?? null, faceH: last?.faceH ?? null };
+  }
+
+  return { ensure, reframe, detect, dir };
 }
 
 module.exports = { createReframeEngine, MODEL_SHA256 };

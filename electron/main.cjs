@@ -12,6 +12,7 @@ const { listDrafts, convertDraft, DRAFTS } = require('./capcut.cjs');
 const { transcribe, captionClipsFor } = require('./captions.cjs');
 const { createMatteEngine } = require('./matte.cjs');
 const { createReframeEngine } = require('./reframe.cjs');
+const { createModelStore } = require('./capmodels.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
 const { createStyleStore } = require('./styles.cjs');
 const { USER_FONTS } = require('../src/lib/emphasis.js');
@@ -301,6 +302,18 @@ function handlers() {
     }
   });
   const reframeEngine = createReframeEngine(app.getPath('userData'));
+  const capmodels = createModelStore(path.join(app.getPath('userData'), 'caption-models.json'));
+  ipcMain.handle('capmodels:list', () => capmodels.list());
+  ipcMain.handle('capmodels:save', (_e, id, model) => capmodels.save(id ?? null, model));
+  ipcMain.handle('capmodels:delete', (_e, id) => capmodels.delete(String(id)));
+  ipcMain.handle('face:detect', async (e, req = {}) => {
+    const file = String(req.file || '');
+    if (!allowed.has(norm(file))) throw new Error('Media não importada');
+    const tin = Math.max(0, Number(req.tin) || 0);
+    const tout = Number(req.tout);
+    if (!(tout > tin)) throw new Error('Intervalo do clip inválido');
+    return reframeEngine.detect({ file, tin, tout, srcW: Number(req.w), srcH: Number(req.h) }, { onStatus: (status) => !e.sender.isDestroyed() && e.sender.send('matte:progress', { id: req.id, status }) });
+  });
   ipcMain.handle('shorts:build', async (e, media, clips, opts = {}) => {
     if (!media?.path || !allowed.has(norm(media.path))) throw new Error('Vídeo não autorizado: importa-o no projeto primeiro');
     let outDir = opts.outDir;
@@ -316,6 +329,7 @@ function handlers() {
         reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
         reframer: reframeEngine,
         layout: opts.layout === 'atras' ? 'atras' : undefined,
+        model: opts.model ? capmodels.resolve(opts.model) : undefined,
         matter: matteEngine,
         cards: opts.cards !== false,
         preset: ['9:16', '1:1', '4:5', '16:9'].includes(opts.preset) ? opts.preset : '9:16',

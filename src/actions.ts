@@ -1,10 +1,11 @@
 // Editor actions that touch the PC (import, transcribe, export, save). Used by the buttons and
 // by the MCP server, so Claude and the Gui do exactly the same things.
 import { useEditor } from './store';
-import type { CaptionOptions, CaptionOverride, Clip, Media, Project, TranscribeOptions } from './types';
+import type { CaptionModel, CaptionOptions, CaptionOverride, Clip, Media, Project, Track, TranscribeOptions } from './types';
 import { cleanOverride } from './lib/capstyle.js';
-import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips } from './lib/project';
+import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips, uid } from './lib/project';
 import { detectBeats as findBeats } from './lib/fx.js';
+import { groupingFor, modelCaptions, validateModel } from './lib/capmodels.js';
 
 /** The project with every saved caption style its captions use embedded (renders the same on another PC). */
 function withStyles(): Project {
@@ -89,6 +90,86 @@ export async function autoCaptions(opts: AutoCaptionOptions = {}) {
   } catch (e) {
     S().setStatus(`Legendas: ${(e as Error).message}`);
     throw e;
+  }
+}
+
+/**
+ * "Modelos de legendas": captions in a model's look (big words behind the person, small words in
+ * front) for the clip with speech (given, selected, or the longest one). Finds the speaker's face to
+ * place the words, cuts the person out (person "front" mask, reused when the clip has one) and puts
+ * the captions on two tracks, "Legendas atrás" and "Legendas à frente" (marked front). One undo step.
+ */
+/** Face position per clip source range, so editing a model and applying it again is quick. */
+const faceCache = new Map<string, { faceX: number | null; faceY: number | null; faceH: number | null }>();
+
+export async function applyCaptionModel(ref: string | CaptionModel, opts: { clipId?: string } = {}) {
+  const p0 = S().project;
+  const sel = S().selected;
+  const clipId = opts.clipId ?? (sel && findClip(p0, sel)?.clip.mediaId ? sel : undefined);
+  const cands = speechClips(clipId).filter((c) => p0.media.find((m) => m.id === c.mediaId)?.kind === 'video');
+  const clip = cands.sort((a, b) => dur(b) - dur(a))[0];
+  if (!clip) throw new Error('Põe um vídeo com fala na timeline (ou seleciona-o)');
+  const m = p0.media.find((x) => x.id === clip.mediaId)!;
+  const model = typeof ref === 'string' ? (await window.ec.listCaptionModels()).find((x) => x.id === ref) : validateModel(ref);
+  if (!model) throw new Error(`Modelo de legendas desconhecido: ${String(ref)}`);
+  const off = window.ec.onMatteProgress((pr) => {
+    if (pr.status) S().setStatus(pr.status, true);
+    if (typeof pr.progress === 'number') S().setStatus(`A recortar a pessoa… ${Math.round(pr.progress * 100)}%`, true);
+  });
+  try {
+    const words = await ensureTranscript(m);
+    const groups = await window.ec.captionClips(clip, words, groupingFor(model));
+    if (!groups.length) throw new Error('Não encontrei fala neste clip');
+    // Face in the source frame -> on the canvas (fill crops the source, fit shows it whole).
+    const { w: W, h: H } = p0.canvas;
+    const sw = m.width || W;
+    const sh = m.height || H;
+    const k = clip.fit === 'fit' ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh);
+    let face: { y: number; h: number } | null = null;
+    try {
+      const key = `${m.path}|${clip.in}|${clip.out}`;
+      const f = faceCache.get(key) ?? (await window.ec.detectFace({ file: m.path, tin: clip.in, tout: clip.out, w: sw, h: sh }));
+      faceCache.set(key, f);
+      if (f.faceY != null && f.faceH != null) face = { y: 0.5 + ((f.faceY - 0.5) * sh * k) / H, h: (f.faceH * sh * k) / H };
+    } catch {
+      /* no face engine: default positions */
+    }
+    const old = (clip.masks ?? []).find((mk) => mk.shape === 'person' && mk.mode === 'front' && mk.matte && mk.matte.in <= clip.in + 0.01 && mk.matte.out >= clip.out - 0.01);
+    const matte = old?.matte ?? { file: await window.ec.matte({ file: m.path, tin: clip.in, tout: clip.out }), in: clip.in, out: clip.out, px: -1, py: -1 };
+    const { back, front } = modelCaptions(model, groups, W, H, face);
+    const range = { start: clip.start, end: end(clip) };
+    S().commit((p) => {
+      const f = findClip(p, clip.id);
+      if (!f) throw new Error('O clip mudou entretanto');
+      if (!old) f.clip.masks = [...(f.clip.masks ?? []).filter((mk) => !(mk.shape === 'person' && mk.mode === 'front')), { id: uid('mk'), shape: 'person', matte, x: 0.5, y: 0.5, w: 1, h: 1, feather: 0, invert: false, mode: 'front', amount: 1 }];
+      // Earlier automatic captions over this clip go away (the model replaces them).
+      for (const t of p.tracks) t.clips = t.clips.filter((c) => !(c.auto && c.text !== undefined && !c.graphic && c.start < range.end && end(c) > range.start));
+      const track = (id: string, name: string, isFront: boolean) => {
+        let t = p.tracks.find((x) => x.id === id);
+        if (!t) {
+          t = { id, kind: 'video', name, clips: [], ...(isFront ? { front: true } : {}) };
+          p.tracks.splice(p.tracks.map((x) => x.kind).lastIndexOf('video') + 1, 0, t);
+        }
+        return t;
+      };
+      const add = (t: Track, list: Omit<Clip, 'id'>[]) => {
+        for (const c of list) t.clips.push({ ...c, id: uid('c'), auto: true });
+        t.clips.sort((a, b) => a.start - b.start);
+      };
+      add(track('cm-back', 'Legendas atrás', false), back as Omit<Clip, 'id'>[]);
+      if (front.length) add(track('cm-front', 'Legendas à frente', true), front as Omit<Clip, 'id'>[]);
+      // Cards high in the frame would sit on the big words: they move down, over the legs.
+      for (const t of p.tracks) for (const c of t.clips) if (c.graphic && c.graphic.kind === 'title' && (c.graphic.y ?? 0.5) < 0.35) c.graphic = { ...c.graphic, y: 0.8 };
+      // Graphics (titles, cards) stay readable over the person.
+      for (const t of p.tracks) if (t.id !== 'cm-back' && t.kind === 'video' && t.clips.length && t.clips.every((c) => c.graphic)) t.front = true;
+    });
+    S().setStatus(`Modelo "${model.label}": ${back.length + front.length} legendas`);
+    return { model: model.label, back: back.length, front: front.length, face };
+  } catch (e) {
+    S().setStatus(`Modelo de legendas: ${(e as Error).message}`);
+    throw e;
+  } finally {
+    off();
   }
 }
 

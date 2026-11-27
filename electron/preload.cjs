@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('ec', {
   deleteCaptionStyle: (id) => ipcRenderer.invoke('styles:delete', id),
   captionClips: (clip, words, opts) => ipcRenderer.invoke('captions:clips', clip, words, opts),
   matte: (req) => ipcRenderer.invoke('matte:run', req),
+  detectFace: (req) => ipcRenderer.invoke('face:detect', req),
+  listCaptionModels: () => ipcRenderer.invoke('capmodels:list'),
+  saveCaptionModel: (id, model) => ipcRenderer.invoke('capmodels:save', id, model),
+  deleteCaptionModel: (id) => ipcRenderer.invoke('capmodels:delete', id),
   onMatteProgress: (cb) => {
     const f = (_e, m) => cb(m);
     ipcRenderer.on('matte:progress', f);

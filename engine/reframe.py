@@ -28,6 +28,7 @@ ap.add_argument("--size", required=True, help="source WxH")
 ap.add_argument("--out-size", required=True, help="output WxH")
 ap.add_argument("--ffmpeg", default="ffmpeg")
 ap.add_argument("--encoder", default="libx264")
+ap.add_argument("--detect-only", action="store_true", help="only report where the face is (faceY/faceH of the source), no video")
 a = ap.parse_args()
 
 
@@ -152,6 +153,13 @@ for s0, s1 in zip(cuts[:-1], cuts[1:]):
     for j in range(s0, s1):
         fx = filled[j - s0]
         path[j] = min(max(path[j], fx - lim), fx + lim)
+
+if a.detect_only:
+    fy = round(float(np.median(face_y) / SH), 3) if face_y else None
+    fh = round(float(np.median(face_h) / SH), 3) if face_h else None
+    fx = [v for v in cx_raw if v is not None]
+    say(done=True, samples=n, found=len(fx), faceY=fy, faceH=fh, faceX=round(float(np.median(fx) / SW), 3) if fx else None)
+    sys.exit(0)
 
 x = np.clip(path - CW / 2, 0, SW - CW)
 y0 = (SH - CH) // 2

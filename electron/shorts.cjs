@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { askJson } = require('./llm.cjs');
 const { captionClipsFor } = require('./captions.cjs');
-const { pickKeyword, cleanWord } = require('../src/lib/emphasis.js');
+const capmodels = require('../src/lib/capmodels.js');
 const { runExport } = require('./render.cjs');
 const ai = require('../src/lib/aivideo.js');
 
@@ -44,36 +44,15 @@ const CARD_Y = 0.11;
 const shortSize = (preset) => ({ '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350], '16:9': [1920, 1080] })[preset] || [1080, 1920];
 
 /**
- * "Legendas atrás" (Vitor / real-estate look): in each caption block the main word goes BIG behind
- * the person (Inter Black, up to 85 % of the width, the head covering the bottom of the word) and the
- * other words go small in front, on the chest. The person is cut out by a "front" person mask; the
- * small words sit on a track marked `front`, drawn over the person.
+ * "Legendas atrás" (real-estate look) through a caption model (src/lib/capmodels.js): big words
+ * behind the person (cut out by a person "front" mask), small words on a track marked `front`.
  * face: { y, h } of the speaker's face in the short (fractions of its height), from the reframe.
  */
-function behindCaptions(video, words, W, H, face) {
-  const fy = face?.y > 0.05 && face.y < 0.8 ? face.y : 0.3;
-  const fh = face?.h > 0.01 && face.h < 0.4 ? face.h : 0.07;
-  const groups = captionClipsFor(video, words, { style: 'frente-peito', stripPunct: true, maxWords: 3 });
-  const back = [];
-  const front = [];
-  const r = r3;
-  for (const g of groups) {
-    const ws = g.words?.length ? g.words : g.text.split(/\s+/).map((w) => ({ w, s: 0, e: g.out }));
-    const k = pickKeyword(ws.map((w) => w.w));
-    if (k >= 0) {
-      const word = cleanWord(ws[k].w).toUpperCase();
-      // Caption size is the libass line height (ascent + descent = 1.43 em for Inter Black, so
-      // em = 0.699 x size). Capitals average ~0.70 em; 0.74 keeps the word inside 85 % of the width.
-      const size = r(Math.max(0.06, Math.min(0.2, (0.85 * W) / (0.74 * 0.699 * Math.max(4, [...word].length) * H))));
-      // Word centre at the top of the head: the head covers the bottom half of the word.
-      back.push({ id: uid('c'), auto: true, text: word, style: 'atras-grande', start: g.start, in: 0, out: g.out, size, y: r(Math.max(size * 0.6, fy - fh * 0.55)), words: [{ w: word, s: 0, e: g.out }] });
-    }
-    const rest = ws.filter((_, i) => i !== k);
-    if (rest.length) {
-      front.push({ id: uid('c'), auto: true, text: rest.map((w) => w.w).join(' '), style: 'frente-peito', start: g.start, in: 0, out: g.out, y: r(Math.min(0.8, fy + Math.max(fh * 2.6, 0.09))), words: rest });
-    }
-  }
-  return { back, front };
+function behindCaptions(video, words, W, H, face, model = capmodels.BUILTIN_MODELS.vitor) {
+  const groups = captionClipsFor(video, words, capmodels.groupingFor(model));
+  const { back, front } = capmodels.modelCaptions(model, groups, W, H, face);
+  const withId = (x) => ({ id: uid('c'), auto: true, ...x });
+  return { back: back.map(withId), front: front.map(withId) };
 }
 
 /** Following the face only makes sense when the source is wider than the short (16:9 -> 9:16, 1:1, 4:5). */
@@ -86,7 +65,7 @@ function canFollowFace(media, preset) {
  * One short as a Cinemex project.
  * @param {{path:string,name?:string,duration?:number,width?:number,height?:number,fps?:number,hasAudio?:boolean,transcript:object[]}} media
  * @param {{start:number,end:number,hook?:string,outro?:string,title?:string}} c
- * @param {{style?:string,reframe?:'cover'|'fit'|'face',cards?:boolean,preset?:string,framed?:{path:string,width:number,height:number},layout?:'atras',face?:{y:number,h:number},personMatte?:string}} o
+ * @param {{style?:string,reframe?:'cover'|'fit'|'face',cards?:boolean,preset?:string,framed?:{path:string,width:number,height:number},layout?:'atras',model?:object,face?:{y:number,h:number},personMatte?:string}} o
  *   layout 'atras' = big main word behind the person, small words in front (needs personMatte, the
  *   grey matte video of the clip's source range)
  *   framed = the segment already cropped to follow the speaker (electron/reframe.cjs): the short then
@@ -99,7 +78,8 @@ function shortProject(media, c, o = {}) {
   const len = r3(c.end - c.start);
   const video = { id: uid('c'), mediaId, start: 0, in: r3(c.start), out: r3(c.end), fit: o.reframe === 'fit' ? 'fit' : 'fill', volume: 1, speed: 1 };
   const words = media.transcript || [];
-  const behind = o.layout === 'atras' && o.personMatte ? behindCaptions(video, words, size[0], size[1], o.face) : null;
+  const model = o.model || (o.layout === 'atras' ? capmodels.BUILTIN_MODELS.vitor : null);
+  const behind = model && o.personMatte ? behindCaptions(video, words, size[0], size[1], o.face, model) : null;
   const caps = behind ? behind.back : captionClipsFor(video, words, { style: o.style || 'felipe', stripPunct: true }).map((x) => ({ id: uid('c'), auto: true, ...x }));
   let mediaEntry = { id: mediaId, path: media.path, name: media.name || path.basename(media.path), kind: 'video', duration: media.duration || c.end, width: media.width, height: media.height, fps: media.fps || 30, hasAudio: media.hasAudio !== false, thumb: null, transcript: words };
   if (o.framed?.path) {
@@ -129,7 +109,7 @@ function shortProject(media, c, o = {}) {
       { id: 'v1', kind: 'video', name: 'V1', clips: [video] },
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
       { id: 'tx', kind: 'text', name: behind ? 'Legendas atrás' : 'Legendas', clips: caps },
-      ...(behind ? [{ id: 'tf', kind: 'text', name: 'Legendas à frente', front: true, clips: behind.front }] : []),
+      ...(behind && behind.front.length ? [{ id: 'tf', kind: 'text', name: 'Legendas à frente', front: true, clips: behind.front }] : []),
       { id: 'gx', kind: 'text', name: 'Grafismos', front: behind ? true : undefined, clips: cards },
       { id: 'a1', kind: 'audio', name: 'Música', clips: [] },
     ],
@@ -161,7 +141,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       if (r.faceY) face = { y: r.faceY, h: r.faceH };
     }
     let personMatte = null;
-    if (o.layout === 'atras' && o.matter) {
+    if ((o.model || o.layout === 'atras') && o.matter) {
       const len = c.end - c.start;
       personMatte = await o.matter.matte(
         { file: framed ? framed.path : media.path, tin: framed ? 0 : c.start, tout: framed ? len : c.end, x: null, y: null },

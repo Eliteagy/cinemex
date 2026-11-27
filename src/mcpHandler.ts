@@ -5,11 +5,11 @@ import { CUT_PACES } from './lib/autoedit.js';
 import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
-import { addSfx, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
+import { addSfx, applyCaptionModel, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
 import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
-import type { Graphic, GraphicKind, TransitionType } from './types';
+import type { CaptionModel, Graphic, GraphicKind, TransitionType } from './types';
 import { projectDuration } from './lib/project';
 import { cropOf, setCrop } from './lib/crop.js';
 import { BG_KINDS, FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from './lib/frame.js';
@@ -456,6 +456,17 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     }
     case 'find_hotclips':
       return (await findHotclips({ mediaId: s(a.media_id), count: n(a.count), min: n(a.min), max: n(a.max), context: s(a.context) })).map((c, i) => ({ index: i, ...c }));
+    case 'list_caption_models':
+      return (await window.ec.listCaptionModels()).map((m) => ({ id: m.id, label: m.label, kind: m.kind, builtin: m.builtin, maxWords: m.maxWords, back: m.back, front: m.front, accent: m.accent }));
+    case 'apply_caption_model': {
+      const model = typeof a.model === 'object' && a.model ? (a.model as CaptionModel) : s(a.model);
+      if (!model) throw new Error('Diz o modelo (id de list_caption_models ou o objeto)');
+      return applyCaptionModel(model, { clipId: s(a.clip_id) });
+    }
+    case 'save_caption_model': {
+      if (!a.model || typeof a.model !== 'object') throw new Error('Falta o modelo');
+      return window.ec.saveCaptionModel(s(a.id) ?? null, a.model as CaptionModel);
+    }
     case 'make_shorts': {
       let clips: Hotclip[];
       if (Array.isArray(a.clips) && a.clips.length) {
@@ -467,7 +478,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
         clips = idx.map((i) => hotclipState.clips[i]).filter((c): c is Hotclip => Boolean(c));
       }
       const preset = s(a.preset) as CanvasPreset | undefined;
-      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', layout: s(a.layout) === 'atras' ? 'atras' : undefined, cards: a.cards !== false, preset, gpu: a.gpu === true });
+      const out = await makeShorts(clips, { outDir: s(a.out_dir), style: s(a.style), reframe: s(a.reframe) === 'fit' ? 'fit' : s(a.reframe) === 'face' ? 'face' : 'cover', layout: s(a.layout) === 'atras' ? 'atras' : undefined, model: s(a.model) || undefined, cards: a.cards !== false, preset, gpu: a.gpu === true });
       return out ? out.map((o) => ({ file: o.file, project: o.project, title: o.title })) : { cancelled: true };
     }
     case 'ai_chapters':

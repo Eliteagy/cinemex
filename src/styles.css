@@ -1227,3 +1227,23 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 @keyframes ai-warm { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @keyframes ai-zoom { 0%, 100% { transform: scale(0.85); } 50% { transform: scale(1.15); } }
 @keyframes ai-dash { to { stroke-dashoffset: -14; } }
+
+/* Modelos de legendas (src/components/CaptionModels.tsx) */
+.cm { display: flex; flex-direction: column; gap: 8px; }
+.cm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cm-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--r-md); background: var(--bg-2); border: 1px solid var(--stroke-1); color: var(--text); text-align: left; cursor: pointer; }
+.cm-card:hover { border-color: var(--stroke-3); }
+.cm-card.on { border-color: var(--text); box-shadow: 0 0 0 1px var(--text) inset; }
+.cm-demo { position: relative; height: 64px; border-radius: var(--r-sm); background: linear-gradient(180deg, #2a2f38, #14161b); overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.cm-demo b { font: 900 26px/1 'Inter Black', 'Segoe UI Variable', sans-serif; letter-spacing: -0.02em; }
+.cm-demo .cm-l2 { font-size: 18px; }
+.cm-demo::after { content: ''; position: absolute; left: 50%; bottom: -14px; width: 30px; height: 46px; margin-left: -15px; border-radius: 15px 15px 0 0; background: #0b0c0f; box-shadow: 0 -18px 0 -4px #0b0c0f; }
+.cm-demo i { position: absolute; bottom: 6px; z-index: 1; font: 700 9px/1 'Inter Bold', 'Segoe UI Variable', sans-serif; font-style: normal; }
+.cm-name { font-size: 11.5px; color: var(--text-2); }
+.cm-name em { color: var(--accent); font-style: normal; }
+.cm-edit { display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: var(--r-md); background: var(--bg-2); }
+.cm-edit[open] > :not(summary) { margin-top: 8px; }
+.cm-edit summary { cursor: pointer; font-weight: 600; }
+.cm-slider { display: grid; grid-template-columns: 1fr 1.4fr 48px; align-items: center; gap: 8px; font-size: 12px; }
+.cm-val { text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.cm-words { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

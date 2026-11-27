@@ -29,7 +29,12 @@ export function ShortsPanel() {
   const [style, setStyle] = useState('felipe');
   const [reframe, setReframe] = useState<'cover' | 'fit' | 'face'>('face');
   const [cards, setCards] = useState(true);
-  const [behind, setBehind] = useState(true);
+  const [model, setModel] = useState('vitor');
+  const [models, setModels] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    void window.ec.listCaptionModels().then(setModels);
+  }, []);
+  const behind = Boolean(model);
   const [gpu, setGpu] = useState(true);
   const [progress, setProgress] = useState<string | null>(null);
   const [done, setDone] = useState<string[]>([]);
@@ -70,7 +75,7 @@ export function ShortsPanel() {
   const make = () =>
     run('make', async () => {
       const chosen = clips.filter((_, i) => pick.has(i));
-      const out = await makeShorts(chosen, { mediaId: src, style, reframe, layout: behind ? 'atras' : undefined, cards, gpu });
+      const out = await makeShorts(chosen, { mediaId: src, style, reframe, model: model || undefined, cards, gpu });
       if (out) setDone(out.map((o) => o.file));
     });
 
@@ -179,8 +184,16 @@ export function ShortsPanel() {
                   Com barras
                 </button>
               </div>
-              <label className="sh-check" title="Palavra principal grande atrás da pessoa, as outras pequenas à frente, no peito (como nos vídeos de imobiliário)">
-                <input type="checkbox" checked={behind} onChange={(e) => setBehind(e.target.checked)} /> Legendas atrás da pessoa
+              <label title="Modelo de legendas: palavras grandes atrás da pessoa (recorta a pessoa). Sem modelo = o estilo de cima.">
+                Modelo
+                <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option value="">Sem modelo (estilo normal)</option>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="sh-check">
                 <input type="checkbox" checked={cards} onChange={(e) => setCards(e.target.checked)} /> Cartões de gancho e final

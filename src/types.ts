@@ -286,6 +286,18 @@ export interface Marker {
   beat?: boolean;
 }
 
+/** Caption model ("Modelos de legendas", src/lib/capmodels.js). */
+export interface CaptionModel {
+  id?: string;
+  builtin?: boolean;
+  label: string;
+  kind: 'atras-frente' | 'gigante' | 'duas-linhas';
+  maxWords: number;
+  back: { font: string; color: string; width: number; maxSize: number; lift: number };
+  front?: { font: string; color: string; size: number; drop: number };
+  accent?: { color: string; numbers: boolean; words: string[] };
+}
+
 export interface Track {
   id: string;
   kind: TrackKind;
@@ -493,6 +505,10 @@ export interface EcBridge {
   captionClips(clip: Clip, words: Word[], opts: CaptionOptions): Promise<Omit<Clip, 'id'>[]>;
   /** Person matte for a clip's source range (x/y: keep only the person under that point). Resolves with the matte file. */
   matte(req: { id?: string; file: string; tin: number; tout: number; x?: number; y?: number }): Promise<string>;
+  detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;
+  listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean })[]>;
+  saveCaptionModel(id: string | null, model: CaptionModel): Promise<{ id: string; model: CaptionModel }>;
+  deleteCaptionModel(id: string): Promise<boolean>;
   onMatteProgress(cb: (m: { id?: string; progress?: number; status?: string }) => void): () => void;
   exportVideo(project: Project, opts: { path?: string; gpu?: boolean; ask?: boolean; quality?: 'alta' | 'media' | 'leve' }): Promise<string | null>;
   cancelExport(): Promise<void>;
@@ -503,7 +519,7 @@ export interface EcBridge {
   dubVoices(): Promise<{ id: string; name: string; labels: Record<string, string> }[]>;
   dub(cues: { start: number; end: number; text: string }[], opts: { total: number; voiceId?: string; maxSpeed?: number }): Promise<{ file: string; lines: number; sped: number; overflow: number }>;
   onAiProgress(cb: (p: { step: number; of: number }) => void): () => void;
-  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
+  buildShorts(media: Media, clips: Hotclip[], opts?: { outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string | CaptionModel; cards?: boolean; preset?: CanvasPreset; gpu?: boolean }): Promise<(Hotclip & { file: string; project: string; name: string })[] | null>;
   onShortsProgress(cb: (p: { index: number; of: number; progress: number; name: string; status?: string }) => void): () => void;
   onExportProgress(cb: (p: number) => void): () => void;
   saveProject(project: Project, file?: string | null): Promise<string | null>;

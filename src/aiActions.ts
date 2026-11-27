@@ -42,7 +42,7 @@ export async function findHotclips(opts: { mediaId?: string; count?: number; min
   }
 }
 
-export async function makeShorts(clips: Hotclip[], opts: { mediaId?: string; outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; cards?: boolean; preset?: CanvasPreset; gpu?: boolean } = {}) {
+export async function makeShorts(clips: Hotclip[], opts: { mediaId?: string; outDir?: string; style?: string; reframe?: 'cover' | 'fit' | 'face'; layout?: 'atras'; model?: string; cards?: boolean; preset?: CanvasPreset; gpu?: boolean } = {}) {
   const m = sourceMedia(opts.mediaId ?? hotclipState.mediaId ?? undefined);
   const words = await ensureTranscript(m);
   S().setStatus(`A criar ${clips.length} shorts…`, true);

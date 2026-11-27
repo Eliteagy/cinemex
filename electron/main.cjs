@@ -14,6 +14,7 @@ const { createMatteEngine } = require('./matte.cjs');
 const { createReframeEngine } = require('./reframe.cjs');
 const { createModelStore } = require('./capmodels.cjs');
 const { createLearnStore } = require('./learn.cjs');
+const { createMusic } = require('./music.cjs');
 const effectgen = require('./effectgen.cjs');
 const { createEffectLibrary } = require('./effectlib.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
@@ -325,6 +326,18 @@ function handlers() {
   ipcMain.handle('effects:rename', (_e, id, name) => effectLib.rename(String(id), String(name)));
   ipcMain.handle('effects:delete', (_e, id) => effectLib.delete(String(id)));
   const learn = createLearnStore(path.join(app.getPath('userData'), 'learned.json'));
+  const musicLib = createMusic({ folder: path.join(app.getPath('music'), 'Cinemex'), cacheDir: path.join(app.getPath('userData'), 'music') });
+  ipcMain.handle('music:library', async () => {
+    const list = await musicLib.library();
+    list.forEach((x) => allow(x.path));
+    return { folder: musicLib.folder, tracks: list };
+  });
+  ipcMain.handle('music:pick', async (e, mood, seed) => {
+    const t = await musicLib.pick(String(mood || 'media'), { seed: String(seed || ''), onStatus: (s) => !e.sender.isDestroyed() && e.sender.send('matte:progress', { status: s }) });
+    if (t) allow(t.path);
+    return t;
+  });
+  ipcMain.handle('music:open', () => shell.openPath(musicLib.folder));
   ipcMain.handle('learn:get', () => learn.get());
   ipcMain.handle('learn:word', (_e, from, to) => learn.addWord(from, to));
   ipcMain.handle('learn:keyword', (_e, block, word) => learn.addKeyword(String(block), String(word)));
@@ -357,6 +370,13 @@ function handlers() {
         reframer: reframeEngine,
         ask: (prompt, model) => askJson(String(prompt).slice(0, 200_000), { model, signal: exportAbort?.signal }),
         review: opts.review !== false,
+        punch: opts.punch === true || (typeof opts.punch === 'number' && opts.punch > 0 && opts.punch <= 0.4) ? opts.punch : false,
+        sfx: opts.sfx === true,
+        music: ['auto', 'calma', 'media', 'forte'].includes(opts.music) ? opts.music : false,
+        musicLib,
+        sfxList: opts.sfx === true ? ensureSfx(path.join(app.getPath('userData'), 'sfx')) : undefined,
+        progress: opts.progress === true,
+        cta: typeof opts.cta === 'string' ? opts.cta.slice(0, 80) : undefined,
         learned: learn.get(),
         keywordAI: opts.keywordAI !== false,
         layout: opts.layout === 'atras' ? 'atras' : undefined,

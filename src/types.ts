@@ -308,6 +308,15 @@ export interface EffectResult {
   ms: number;
 }
 
+/** A background music track (electron/music.cjs). */
+export interface MusicTrack {
+  path: string;
+  name: string;
+  mood: 'calma' | 'media' | 'forte' | null;
+  duration: number;
+  source: 'pasta' | 'elevenlabs';
+}
+
 /** What the app learned from the Gui's corrections (electron/learn.cjs). */
 export interface Learned {
   words: { from: string; to: string; n: number }[];
@@ -545,6 +554,9 @@ export interface EcBridge {
   learnKeyword(block: string, word: string): Promise<Learned>;
   forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
   forgetAll(): Promise<Learned>;
+  musicLibrary(): Promise<{ folder: string; tracks: MusicTrack[] }>;
+  pickMusic(mood: string, seed?: string): Promise<MusicTrack | null>;
+  openMusicFolder(): Promise<string>;
   detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;
   listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean })[]>;
   saveCaptionModel(id: string | null, model: CaptionModel): Promise<{ id: string; model: CaptionModel }>;

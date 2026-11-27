@@ -8,6 +8,8 @@ const path = require('node:path');
 const { askJson } = require('./llm.cjs');
 const { captionClipsFor } = require('./captions.cjs');
 const capmodels = require('../src/lib/capmodels.js');
+const polish = require('../src/lib/polish.js');
+const { musicClips, moodFromText } = require('./music.cjs');
 const { runExport } = require('./render.cjs');
 const ai = require('../src/lib/aivideo.js');
 
@@ -97,21 +99,48 @@ function shortProject(media, c, o = {}) {
   const cards = [];
   // With the big words behind the head the top is taken: the cards go low, over the legs.
   const cardY = behind ? 0.8 : CARD_Y;
+  // Edited-short touches (src/lib/polish.js): punches and sound effects on the big words, progress
+  // bar, call to action at the end (it replaces the closing card).
+  const cta = o.cta ? polish.ctaClip(o.cta, len, { y: behind ? 0.8 : 0.82 }) : null;
+  const beats = polish.beatsFromCaptions(caps, { duration: len, tail: cta ? 2.5 : 0.8 });
+  if (o.punch) video.keyframes = { zoom: polish.punchKeyframes(beats, video, { amount: typeof o.punch === 'number' ? o.punch : 0.12 }) };
+  const sfxClips = [];
+  const sfxMedia = [];
+  if (o.sfx && Array.isArray(o.sfxList)) {
+    for (const s of polish.sfxPlan(beats, { volume: 0.35 })) {
+      const fx = o.sfxList.find((x) => x.id === s.id);
+      if (!fx) continue;
+      let m = sfxMedia.find((x) => x.path === fx.path);
+      if (!m) sfxMedia.push((m = { id: uid('m'), path: fx.path, name: fx.label, kind: 'audio', duration: fx.duration, hasAudio: true, thumb: null }));
+      const lead = s.id === 'whoosh' || s.id === 'swoosh' ? fx.duration / 2 : 0;
+      sfxClips.push({ id: uid('c'), mediaId: m.id, start: r3(Math.max(0, s.at - lead)), in: 0, out: fx.duration, volume: s.volume, speed: 1 });
+    }
+  }
+  const musicMedia = [];
+  let musicPieces = [];
+  if (o.musicTrack?.path) {
+    const mid = uid('m');
+    musicMedia.push({ id: mid, path: o.musicTrack.path, name: o.musicTrack.name || path.basename(o.musicTrack.path), kind: 'audio', duration: o.musicTrack.duration || len, hasAudio: true, thumb: null });
+    musicPieces = musicClips(o.musicTrack, len, { mediaId: mid, volume: 0.16 }).map((x) => ({ id: uid('c'), ...x }));
+  }
+  if (o.progress) cards.push({ id: uid('c'), ...polish.progressClip(len) });
+  if (cta) cards.push({ id: uid('c'), ...cta });
   if (o.cards !== false && c.hook) cards.push({ id: uid('c'), start: 0, in: 0, out: Math.min(2.6, len / 3), text: c.hook, graphic: { kind: 'title', title: c.hook, y: cardY } });
-  if (o.cards !== false && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: cardY } });
+  if (o.cards !== false && !cta && c.outro && len > 8) cards.push({ id: uid('c'), start: r3(Math.max(0, len - 2.6)), in: 0, out: 2.6, text: c.outro, graphic: { kind: 'title', title: c.outro, y: cardY } });
   return {
     version: 1,
     name: c.title || c.hook || 'Short',
     canvas: { w: size[0], h: size[1], fps: 30, preset },
-    audio: { normalize: true },
-    media: [mediaEntry],
+    audio: { normalize: true, ...(musicPieces.length ? { duck: true } : {}) },
+    media: [mediaEntry, ...sfxMedia, ...musicMedia],
     tracks: [
       { id: 'v1', kind: 'video', name: 'V1', clips: [video] },
       { id: 'v2', kind: 'video', name: 'V2', clips: [] },
       { id: 'tx', kind: 'text', name: behind ? 'Legendas atrás' : 'Legendas', clips: caps },
       ...(behind && behind.front.length ? [{ id: 'tf', kind: 'text', name: 'Legendas à frente', front: true, clips: behind.front }] : []),
       { id: 'gx', kind: 'text', name: 'Grafismos', front: behind ? true : undefined, clips: cards },
-      { id: 'a1', kind: 'audio', name: 'Música', clips: [] },
+      { id: 'a1', kind: 'audio', name: 'Música', clips: musicPieces },
+      ...(sfxClips.length ? [{ id: 'sx', kind: 'audio', name: 'Efeitos', clips: sfxClips }] : []),
     ],
   };
 }
@@ -177,7 +206,18 @@ async function buildShorts(media, clips, outDir, o = {}) {
         keywords = undefined;
       }
     }
-    const project = shortProject(clipMedia, c, { ...o, framed, face, personMatte, keywords });
+    // Music: the Gui's folder first (mood from what is said, or the pack's), ElevenLabs once per mood.
+    let musicTrack = null;
+    let musicNote = null;
+    if (o.music && o.musicLib) {
+      try {
+        const mood = o.music === 'auto' ? moodFromText(ai.textBetween(clipMedia.transcript || [], c.start, c.end)) : o.music;
+        musicTrack = await o.musicLib.pick(mood, { seed: base, onStatus: (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0.7, name: base, status }) });
+      } catch (e) {
+        musicNote = String(e?.message || e);
+      }
+    }
+    const project = shortProject(clipMedia, c, { ...o, framed, face, personMatte, keywords, musicTrack });
     const proj = path.join(outDir, 'Projetos Cinemex', `${base}.ecproj`);
     fs.writeFileSync(proj, JSON.stringify(project, null, 1), 'utf8');
     const mp4 = path.join(outDir, `${base}.mp4`);
@@ -188,7 +228,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: personMatte ? 0.7 + p * 0.3 : framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
-    done.push({ ...c, file: mp4, project: proj, name: base, fixed });
+    done.push({ ...c, file: mp4, project: proj, name: base, fixed, music: musicTrack?.name ?? null, musicNote });
   }
   const index = ['# Shorts', '', '| # | Ficheiro | Duração | Pontuação | Gancho |', '|---|---|---|---|---|', ...done.map((d, i) => `| ${i + 1} | ${d.name}.mp4 | ${Math.round(d.duration)} s | ${d.score}/10 | ${String(d.hook).replace(/\|/g, '/')} |`), ''].join('\n');
   fs.writeFileSync(path.join(outDir, 'index.md'), index, 'utf8');

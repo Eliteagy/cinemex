@@ -1,12 +1,12 @@
 // What each MCP tool does in the editor (electron/mcp.cjs lists the tools and their schemas).
-import { AUTO_STEPS, applySuggestions, autoColor, autoEdit, cutBreaths, splitScreen, suggestEdits, voiceCommand } from './aiTools';
+import { AUTO_STEPS, asOneStep, applySuggestions, autoColor, autoEdit, cutBreaths, splitScreen, suggestEdits, voiceCommand } from './aiTools';
 import type { AutoStep, Pace } from './aiTools';
 import { CUT_PACES } from './lib/autoedit.js';
 import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
 import { runRecipe } from './effectRecipes';
-import { addSfx, applyCaptionModel, reviewCaptions, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
+import { addSfx, applyCaptionModel, polishEdit, reviewCaptions, type PolishOptions, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
 import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
@@ -484,6 +484,8 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     case 'save_effect':
       if (!a.recipe || typeof a.recipe !== 'object') throw new Error('Falta a receita');
       return window.ec.saveEffect(a.recipe as EffectRecipe, s(a.name));
+    case 'polish_edit':
+      return asOneStep(() => polishEdit({ punch: typeof a.punch === 'number' ? a.punch : a.punch === true, sfx: a.sfx === true, progress: a.progress === true, cta: s(a.cta), music: (['auto', 'calma', 'media', 'forte'].includes(String(a.music)) ? a.music : false) as PolishOptions['music'], clipId: s(a.clip_id) }));
     case 'review_captions':
       return reviewCaptions({ clipId: s(a.clip_id), context: s(a.context) });
     case 'list_caption_models':

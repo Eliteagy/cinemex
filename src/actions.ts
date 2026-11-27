@@ -6,7 +6,8 @@ import { cleanOverride } from './lib/capstyle.js';
 import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips, uid } from './lib/project';
 import { detectBeats as findBeats } from './lib/fx.js';
 import { groupingFor, modelCaptions, validateModel } from './lib/capmodels.js';
-import { applySpellFixes, keywordPrompt, parseKeywordPicks, parseSpellFixes, spellPrompt, transcriptLines } from './lib/aivideo.js';
+import { beatsFromCaptions, ctaClip, moodFromText, musicClips, progressClip, punchKeyframes, sfxPlan } from './lib/polish.js';
+import { applySpellFixes, keywordPrompt, parseKeywordPicks, parseSpellFixes, spellPrompt, textBetween, transcriptLines } from './lib/aivideo.js';
 
 /** The project with every saved caption style its captions use embedded (renders the same on another PC). */
 function withStyles(): Project {
@@ -100,6 +101,83 @@ export async function autoCaptions(opts: AutoCaptionOptions = {}) {
  * place the words, cuts the person out (person "front" mask, reused when the clip has one) and puts
  * the captions on two tracks, "Legendas atrás" and "Legendas à frente" (marked front). One undo step.
  */
+export type PolishOptions = { punch?: boolean | number; sfx?: boolean; progress?: boolean; cta?: string; music?: 'auto' | 'calma' | 'media' | 'forte' | false; clipId?: string };
+
+/**
+ * "Short editado": zoom punches and sound effects on the big words (the "Legendas atrás" track, or
+ * the long words of the captions), a progress bar and a call to action at the end. Old punches,
+ * bars and CTAs made by this action are replaced. Several steps, one undo (the caller wraps it).
+ */
+export async function polishEdit(opts: PolishOptions = {}) {
+  const p0 = S().project;
+  const sel = S().selected;
+  const clipId = opts.clipId ?? (sel && findClip(p0, sel)?.clip.mediaId ? sel : undefined);
+  const clip = speechClips(clipId)
+    .filter((c) => p0.media.find((m) => m.id === c.mediaId)?.kind === 'video')
+    .sort((a, b) => dur(b) - dur(a))[0];
+  if (!clip) throw new Error('Põe um vídeo com fala na timeline (ou seleciona-o)');
+  const total = projectDuration(p0);
+  const back = p0.tracks.find((t) => t.id === 'cm-back')?.clips ?? textClips(p0).filter((c) => !c.graphic);
+  const beats = beatsFromCaptions(back.map((c) => ({ start: c.start, text: c.text, override: c.override })), { duration: total, tail: opts.cta ? 2.5 : 0.8 });
+  const front = p0.tracks.some((t) => t.clips.some((c) => c.masks?.some((m) => m.mode === 'front')));
+  const added: { punches: number; sfx: number; progress: boolean; cta: boolean; music?: string } = { punches: 0, sfx: 0, progress: false, cta: false };
+  S().commit((p) => {
+    const f = findClip(p, clip.id);
+    if (!f) return;
+    if (opts.punch) {
+      const keys = punchKeyframes(beats, f.clip, { amount: typeof opts.punch === 'number' ? opts.punch : 0.12 });
+      f.clip.keyframes = { ...(f.clip.keyframes ?? {}), zoom: keys };
+      added.punches = keys.length / 4;
+    }
+    if (opts.progress || opts.cta) {
+      let t = p.tracks.find((x) => x.id === 'pl-gx');
+      if (!t) {
+        t = { id: 'pl-gx', kind: 'video', name: 'Barra e CTA', clips: [], ...(front ? { front: true } : {}) };
+        p.tracks.splice(p.tracks.map((x) => x.kind).lastIndexOf('video') + 1, 0, t);
+      }
+      t.clips = [];
+      if (opts.progress) {
+        t.clips.push({ id: uid('c'), ...progressClip(total) } as Clip);
+        added.progress = true;
+      }
+      const c = opts.cta ? ctaClip(opts.cta, total) : null;
+      if (c) {
+        t.clips.push({ id: uid('c'), ...c } as Clip);
+        added.cta = true;
+      }
+    }
+  });
+  if (opts.music) {
+    const m0 = p0.media.find((m) => m.id === clip.mediaId);
+    const mood = opts.music === 'auto' ? moodFromText(textBetween(m0?.transcript ?? [], clip.in, clip.out)) : opts.music;
+    const track = await window.ec.pickMusic(mood, p0.name);
+    if (track) {
+      const imp = await importPaths([track.path]);
+      const mm = imp.media[0];
+      if (mm) {
+        S().commit((p) => {
+          let t = p.tracks.find((x) => x.id === 'pl-music');
+          if (!t) {
+            t = { id: 'pl-music', kind: 'audio', name: 'Música', clips: [] };
+            p.tracks.push(t);
+          }
+          t.clips = musicClips(track, total, { mediaId: mm.id, volume: 0.16 }).map((x) => ({ id: uid('c'), ...x }) as Clip);
+          p.audio = { ...(p.audio ?? {}), duck: true, normalize: true };
+        });
+        added.music = track.name;
+      }
+    }
+  }
+  if (opts.sfx) {
+    for (const s of sfxPlan(beats)) {
+      await addSfx(s.id, s.at, s.volume);
+      added.sfx++;
+    }
+  }
+  S().setStatus(`Edição: ${added.punches} zooms, ${added.sfx} sons${added.progress ? ', barra' : ''}${added.cta ? ', CTA' : ''}${added.music ? `, música ${added.music}` : ''}`);
+  return added;
+}
+
 /** Last AI review (the Captions page lists what changed). */
 export const reviewState: { applied: { wrong: string; right: string; s: number }[] } = { applied: [] };
 

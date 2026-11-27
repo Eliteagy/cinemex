@@ -16,7 +16,7 @@ const S = () => useEditor.getState();
 export type Pace = keyof typeof CUT_PACES;
 
 /** Several steps, one undo: the history keeps only the state from before the first step. */
-async function asOneStep<T>(fn: () => Promise<T>): Promise<T> {
+export async function asOneStep<T>(fn: () => Promise<T>): Promise<T> {
   const n0 = S().past.length;
   try {
     return await fn();

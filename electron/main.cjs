@@ -13,6 +13,8 @@ const { transcribe, captionClipsFor } = require('./captions.cjs');
 const { createMatteEngine } = require('./matte.cjs');
 const { createReframeEngine } = require('./reframe.cjs');
 const { createModelStore } = require('./capmodels.cjs');
+const effectgen = require('./effectgen.cjs');
+const { createEffectLibrary } = require('./effectlib.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
 const { createStyleStore } = require('./styles.cjs');
 const { USER_FONTS } = require('../src/lib/emphasis.js');
@@ -303,6 +305,24 @@ function handlers() {
   });
   const reframeEngine = createReframeEngine(app.getPath('userData'));
   const capmodels = createModelStore(path.join(app.getPath('userData'), 'caption-models.json'));
+  const effectLib = createEffectLibrary(path.join(app.getPath('userData'), 'effects-library.json'));
+  let effectAbort = null;
+  ipcMain.handle('effects:generate', async (e, category, request, opts = {}) => {
+    effectAbort?.abort();
+    effectAbort = new AbortController();
+    const providers = Array.isArray(opts.providers) ? opts.providers.filter((p) => effectgen.PROVIDERS.includes(p)) : effectgen.PROVIDERS;
+    return effectgen.generateEffects(String(category), String(request || '').slice(0, 600), {
+      providers,
+      ctx: { canvas: opts.canvas, clipDuration: Number(opts.clipDuration) || undefined },
+      signal: effectAbort.signal,
+      onResult: (r) => !e.sender.isDestroyed() && e.sender.send('effects:result', r),
+    });
+  });
+  ipcMain.handle('effects:cancel', () => effectAbort?.abort());
+  ipcMain.handle('effects:list', () => effectLib.list());
+  ipcMain.handle('effects:save', (_e, recipe, name) => effectLib.save(recipe, typeof name === 'string' ? name : undefined));
+  ipcMain.handle('effects:rename', (_e, id, name) => effectLib.rename(String(id), String(name)));
+  ipcMain.handle('effects:delete', (_e, id) => effectLib.delete(String(id)));
   ipcMain.handle('capmodels:list', () => capmodels.list());
   ipcMain.handle('capmodels:save', (_e, id, model) => capmodels.save(id ?? null, model));
   ipcMain.handle('capmodels:delete', (_e, id) => capmodels.delete(String(id)));

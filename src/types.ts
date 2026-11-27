@@ -286,6 +286,28 @@ export interface Marker {
   beat?: boolean;
 }
 
+/** Effects generator (electron/effectgen.cjs): a recipe of allow-listed editor tools. */
+export type EffectCategory = 'fusion' | 'legendas' | 'titulos' | 'movimento';
+export type EffectProvider = 'claude' | 'gemini' | 'gpt';
+export interface EffectRecipe {
+  id?: string;
+  name: string;
+  description: string;
+  category: EffectCategory;
+  steps: { tool: string; args: Record<string, unknown> }[];
+  provider?: EffectProvider | null;
+  prompt?: string;
+  created?: string;
+}
+export interface EffectResult {
+  provider: EffectProvider;
+  label: string;
+  ok: boolean;
+  recipe?: EffectRecipe;
+  error?: string;
+  ms: number;
+}
+
 /** Caption model ("Modelos de legendas", src/lib/capmodels.js). */
 export interface CaptionModel {
   id?: string;
@@ -505,6 +527,13 @@ export interface EcBridge {
   captionClips(clip: Clip, words: Word[], opts: CaptionOptions): Promise<Omit<Clip, 'id'>[]>;
   /** Person matte for a clip's source range (x/y: keep only the person under that point). Resolves with the matte file. */
   matte(req: { id?: string; file: string; tin: number; tout: number; x?: number; y?: number }): Promise<string>;
+  generateEffects(category: EffectCategory, request: string, opts?: { providers?: EffectProvider[]; canvas?: { w: number; h: number }; clipDuration?: number }): Promise<EffectResult[]>;
+  cancelEffects(): Promise<void>;
+  onEffectResult(cb: (r: EffectResult) => void): () => void;
+  listEffects(): Promise<(EffectRecipe & { id: string; created: string })[]>;
+  saveEffect(recipe: EffectRecipe, name?: string): Promise<EffectRecipe & { id: string }>;
+  renameEffect(id: string, name: string): Promise<boolean>;
+  deleteEffect(id: string): Promise<boolean>;
   detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;
   listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean })[]>;
   saveCaptionModel(id: string | null, model: CaptionModel): Promise<{ id: string; model: CaptionModel }>;

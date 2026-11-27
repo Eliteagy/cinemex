@@ -16,6 +16,17 @@ contextBridge.exposeInMainWorld('ec', {
   captionClips: (clip, words, opts) => ipcRenderer.invoke('captions:clips', clip, words, opts),
   matte: (req) => ipcRenderer.invoke('matte:run', req),
   detectFace: (req) => ipcRenderer.invoke('face:detect', req),
+  generateEffects: (category, request, opts) => ipcRenderer.invoke('effects:generate', category, request, opts),
+  cancelEffects: () => ipcRenderer.invoke('effects:cancel'),
+  onEffectResult: (cb) => {
+    const f = (_e, r) => cb(r);
+    ipcRenderer.on('effects:result', f);
+    return () => ipcRenderer.removeListener('effects:result', f);
+  },
+  listEffects: () => ipcRenderer.invoke('effects:list'),
+  saveEffect: (recipe, name) => ipcRenderer.invoke('effects:save', recipe, name),
+  renameEffect: (id, name) => ipcRenderer.invoke('effects:rename', id, name),
+  deleteEffect: (id) => ipcRenderer.invoke('effects:delete', id),
   listCaptionModels: () => ipcRenderer.invoke('capmodels:list'),
   saveCaptionModel: (id, model) => ipcRenderer.invoke('capmodels:save', id, model),
   deleteCaptionModel: (id) => ipcRenderer.invoke('capmodels:delete', id),

@@ -1247,3 +1247,20 @@ input[type="range"].range.grade-temperature::-webkit-slider-thumb { width: 4px; 
 .cm-slider { display: grid; grid-template-columns: 1fr 1.4fr 48px; align-items: center; gap: 8px; font-size: 12px; }
 .cm-val { text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .cm-words { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+
+/* Gerador de efeitos (src/components/EffectGen.tsx) */
+.eg .panel-body { display: flex; flex-direction: column; gap: 8px; }
+.eg-text { width: 100%; resize: vertical; min-height: 64px; font: inherit; }
+.eg-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eg-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.eg-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: var(--r-md); background: var(--bg-2); border: 1px solid var(--stroke-1); }
+.eg-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.eg-head { display: flex; justify-content: space-between; align-items: baseline; }
+.eg-name { font-weight: 600; }
+.eg-err { color: #ff6b6b; font-size: 12px; margin: 0; }
+.eg-steps { margin: 4px 0 0; padding-left: 18px; font-size: 11px; color: var(--text-3); word-break: break-word; }
+.eg-steps code { color: var(--text-2); }
+.eg-lib { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.eg-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-sm); background: var(--bg-2); }
+.eg-item-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.eg-item-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

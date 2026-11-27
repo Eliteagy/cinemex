@@ -17,12 +17,13 @@ import { ShortsPanel } from './Shorts';
 import { AiPanel } from './AiPanel';
 import { FusionInspector, FusionLibrary, NodeEditor } from './Fusion';
 import { CaptionList, CaptionStylePanel } from './Captions';
+import { EffectGenPanel } from './EffectGen';
 import { DeliverQueue, DeliverSettings, type DoneExport } from './Deliver';
 
 /** Finished exports of the Entregar page: its two panels live in different places of the dock. */
 export const DeliverContext = createContext<{ done: DoneExport[]; add: (d: DoneExport) => void }>({ done: [], add: () => {} });
 
-type PanelId = 'media' | 'viewer' | 'inspector' | 'timeline' | 'fusionLib' | 'fusionInspector' | 'nodes' | 'colorLooks' | 'colorPanel' | 'captionList' | 'captionStyle' | 'deliverSettings' | 'deliverQueue' | 'shorts' | 'ia';
+type PanelId = 'media' | 'viewer' | 'inspector' | 'timeline' | 'fusionLib' | 'fusionInspector' | 'nodes' | 'colorLooks' | 'colorPanel' | 'captionList' | 'captionStyle' | 'deliverSettings' | 'deliverQueue' | 'shorts' | 'ia' | 'effects';
 
 function DeliverSettingsPanel() {
   const { add } = useContext(DeliverContext);
@@ -49,13 +50,14 @@ const PANELS: Record<PanelId, { title: string; render: () => ReactNode }> = {
   deliverQueue: { title: 'Exportações', render: () => <DeliverQueuePanel /> },
   shorts: { title: 'Shorts e IA', render: () => <ShortsPanel /> },
   ia: { title: 'IA', render: () => <AiPanel /> },
+  effects: { title: 'Gerador de efeitos', render: () => <EffectGenPanel /> },
 };
 
 /** How each page comes: a panel on the left, the viewer, a panel on the right and one across the bottom. */
 /** `tabs`: more panels stacked as tabs with the right one; the last one is shown first. */
 const LAYOUTS: Record<Page, { left: PanelId; leftW: number; right?: PanelId; rightW?: number; bottom?: PanelId; tabs?: PanelId[] }> = {
   media: { left: 'media', leftW: 560, right: 'shorts', rightW: 420, tabs: ['ia'] },
-  edit: { left: 'media', leftW: 300, right: 'inspector', rightW: 440, bottom: 'timeline', tabs: ['ia'] },
+  edit: { left: 'media', leftW: 300, right: 'inspector', rightW: 440, bottom: 'timeline', tabs: ['ia', 'effects'] },
   fusion: { left: 'fusionLib', leftW: 300, right: 'fusionInspector', rightW: 320, bottom: 'nodes' },
   color: { left: 'colorLooks', leftW: 300, right: 'colorPanel', rightW: 540, bottom: 'timeline' },
   captions: { left: 'captionList', leftW: 340, right: 'captionStyle', rightW: 320, bottom: 'timeline' },

@@ -5,11 +5,12 @@ import { CUT_PACES } from './lib/autoedit.js';
 import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
+import { runRecipe } from './effectRecipes';
 import { addSfx, applyCaptionModel, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
 import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
-import type { CaptionModel, Graphic, GraphicKind, TransitionType } from './types';
+import type { CaptionModel, EffectCategory, EffectProvider, EffectRecipe, Graphic, GraphicKind, TransitionType } from './types';
 import { projectDuration } from './lib/project';
 import { cropOf, setCrop } from './lib/crop.js';
 import { BG_KINDS, FRAME_DEFAULT, GRADIENTS, GRADIENT_IDS, cleanFrame } from './lib/frame.js';
@@ -456,6 +457,33 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     }
     case 'find_hotclips':
       return (await findHotclips({ mediaId: s(a.media_id), count: n(a.count), min: n(a.min), max: n(a.max), context: s(a.context) })).map((c, i) => ({ index: i, ...c }));
+    case 'generate_effects': {
+      const cat = s(a.category) as EffectCategory | undefined;
+      if (!cat || !['fusion', 'legendas', 'titulos', 'movimento'].includes(cat)) throw new Error('category: fusion, legendas, titulos ou movimento');
+      const providers = Array.isArray(a.providers) ? (a.providers.map(String).filter((p) => ['claude', 'gemini', 'gpt'].includes(p)) as EffectProvider[]) : undefined;
+      const sel = S().selected ? findClip(S().project, S().selected!) : null;
+      return window.ec.generateEffects(cat, String(a.request ?? ''), { providers, canvas: S().project.canvas, clipDuration: sel ? sel.clip.out - sel.clip.in : undefined });
+    }
+    case 'list_effects': {
+      const list = await window.ec.listEffects();
+      return list.filter((e) => !s(a.category) || e.category === s(a.category)).map((e) => ({ id: e.id, name: e.name, category: e.category, provider: e.provider, description: e.description, steps: e.steps.length }));
+    }
+    case 'apply_effect': {
+      let recipe: EffectRecipe | undefined;
+      if (s(a.id)) recipe = (await window.ec.listEffects()).find((e) => e.id === s(a.id));
+      else if (a.recipe && typeof a.recipe === 'object') recipe = a.recipe as EffectRecipe;
+      if (!recipe || !Array.isArray(recipe.steps)) throw new Error('Diz o id da biblioteca ou a receita');
+      // A recipe from outside the library goes through the same check as the library (allow-listed tools only).
+      if (!s(a.id)) {
+        const saved = await window.ec.saveEffect(recipe, recipe.name);
+        await window.ec.deleteEffect(saved.id);
+        recipe = saved;
+      }
+      return runRecipe(recipe, { clipId: s(a.clip_id) });
+    }
+    case 'save_effect':
+      if (!a.recipe || typeof a.recipe !== 'object') throw new Error('Falta a receita');
+      return window.ec.saveEffect(a.recipe as EffectRecipe, s(a.name));
     case 'list_caption_models':
       return (await window.ec.listCaptionModels()).map((m) => ({ id: m.id, label: m.label, kind: m.kind, builtin: m.builtin, maxWords: m.maxWords, back: m.back, front: m.front, accent: m.accent }));
     case 'apply_caption_model': {

@@ -19,6 +19,10 @@ const { findCodex } = require('./ai-providers.cjs');
 const { TOOLS } = require('./mcp.cjs');
 
 const FUSION_NODES = require('../src/lib/fusion-nodes.json');
+const capmodels = require('../src/lib/capmodels.js');
+
+/** Bundled caption fonts (public/fonts): the ones a generated caption model may name. */
+const FONTS = ['Inter Black', 'Inter Bold', 'Anton', 'Archivo Black', 'Bebas Neue', 'Poppins Black', 'Poppins ExtraBold', 'Lilita One', 'Luckiest Guy', 'Russo One', 'Staatliches', 'Bungee', 'Righteous', 'Abril Fatface', 'DM Serif Display', 'Great Vibes', 'Pacifico', 'Permanent Marker', 'Bangers'];
 
 /** What each kind of effect may use. clip_id is filled in by the editor (the selected clip). */
 const CATEGORIES = {
@@ -36,6 +40,11 @@ const CATEGORIES = {
     label: 'Título / grafismo',
     tools: ['add_graphic', 'update_graphic', 'add_text', 'add_effect', 'set_keyframe', 'set_keyframe_ease'],
     brief: 'Um título ou grafismo animado posto na cabeça de leitura. add_graphic devolve clip_id: usa "$N.clip_id" para mexer nele a seguir.',
+  },
+  modelo: {
+    label: 'Modelo de legendas',
+    tools: [],
+    brief: 'Um modelo de legendas inteiro: palavras grandes atrás da pessoa (recortada) e, se quiseres, palavras pequenas à frente.',
   },
   movimento: {
     label: 'Movimento / transição',
@@ -59,6 +68,7 @@ const toolSchema = (name) => {
 function recipePrompt(category, request, ctx = {}) {
   const cat = CATEGORIES[category];
   if (!cat) throw new Error('Tipo de efeito desconhecido');
+  if (category === 'modelo') return modelPrompt(request, ctx);
   const tools = cat.tools.map(toolSchema).filter(Boolean);
   const nodes =
     category === 'fusion'
@@ -93,9 +103,37 @@ Responde APENAS com JSON:
 {"name":"nome curto em português","description":"uma frase","steps":[{"tool":"...","args":{...}}]}`;
 }
 
+/** Prompt for a whole caption model (src/lib/capmodels.js). */
+function modelPrompt(request, ctx = {}) {
+  return `És motion designer de vídeos curtos (Reels/TikTok). Cria UM modelo de legendas para o editor Cinemex.
+
+Pedido do editor: """${String(request).slice(0, 600)}"""${ctx.image ? '\nHá uma IMAGEM DE REFERÊNCIA: copia o tipo de letra, as cores, o tamanho e onde ficam as palavras.' : ''}
+
+Como funciona: a pessoa é recortada; as palavras "back" ficam GRANDES ATRÁS da pessoa (a cabeça tapa a parte de baixo), as "front" pequenas À FRENTE, no peito.
+Tipos (kind):
+- "atras-frente": a palavra principal de cada legenda atrás, as outras à frente
+- "gigante": uma palavra de cada vez, enorme, atrás
+- "duas-linhas": a legenda em duas linhas grandes atrás (a de cima maior)
+Campos (valores dentro dos limites):
+- maxWords 1-5 (palavras por legenda)
+- back: font (uma destas: ${FONTS.join(', ')}), color "#RRGGBB", width 0.4-0.98 (largura máxima, fração do ecrã), maxSize 0.06-0.32 (altura máxima da letra), lift -1..2 (quanto sobe acima da cara; 0.5 = a meio da cabeça)
+- front (só em atras-frente): font, color, size 0.025-0.1, drop 1-6 (distância abaixo da cara)
+- accent (opcional): color "#RRGGBB", numbers true/false (números e preços nessa cor), words ["palavras", "em", "destaque"]
+
+Responde APENAS com JSON:
+{"name":"nome curto em português","description":"uma frase","model":{"kind":"atras-frente","maxWords":3,"back":{"font":"Inter Black","color":"#FFFFFF","width":0.85,"maxSize":0.2,"lift":0.55},"front":{"font":"Inter Bold","color":"#FFFFFF","size":0.05,"drop":2.6},"accent":{"color":"#D4AF37","numbers":true,"words":[]}}}`;
+}
+
 /** A recipe the editor can run, or null: known tools of the category only, plain JSON args. */
 function validateRecipe(raw, category) {
   const cat = CATEGORIES[category];
+  if (category === 'modelo') {
+    const model = capmodels.validateModel(raw?.model ?? raw);
+    if (!model) return null;
+    const t = (v, n) => String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
+    const name = t(raw.name, 60) || model.label;
+    return { name, description: t(raw.description, 200), category, steps: [], model: { ...model, label: name } };
+  }
   if (!cat || !raw || typeof raw !== 'object' || !Array.isArray(raw.steps)) return null;
   const clean = (v, depth = 0) => {
     if (depth > 4) return undefined;

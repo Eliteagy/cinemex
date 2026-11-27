@@ -5,6 +5,7 @@
 import { useEditor } from './store';
 import { handleMcp } from './mcpHandler';
 import { asOneStep } from './aiTools';
+import { applyCaptionModel } from './actions';
 import { activeClip, findClip, isText } from './lib/project';
 import type { Clip, EffectCategory, EffectRecipe } from './types';
 
@@ -78,7 +79,7 @@ let lastTry: { past: number } | null = null;
 export async function tryRecipe(recipe: EffectRecipe) {
   if (lastTry && S().past.length === lastTry.past) S().undo();
   lastTry = null;
-  const r = await runRecipe(recipe);
+  const r = recipe.category === 'modelo' && recipe.model ? await applyCaptionModel(recipe.model, { keywordAI: false }) : await runRecipe(recipe);
   lastTry = { past: S().past.length };
   return r;
 }

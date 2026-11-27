@@ -20,7 +20,7 @@ function slug(s) {
 }
 
 function cleanEntry(raw) {
-  if (!raw || typeof raw !== 'object' || !CATEGORIES[raw.category]) return null;
+  if (!raw || typeof raw !== 'object' || !CATEGORIES[raw.category] || raw.category === 'modelo') return null;
   const r = validateRecipe(raw, raw.category);
   if (!r) return null;
   return {

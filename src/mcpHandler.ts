@@ -460,7 +460,7 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
       return (await findHotclips({ mediaId: s(a.media_id), count: n(a.count), min: n(a.min), max: n(a.max), context: s(a.context) })).map((c, i) => ({ index: i, ...c }));
     case 'generate_effects': {
       const cat = s(a.category) as EffectCategory | undefined;
-      if (!cat || !['fusion', 'legendas', 'titulos', 'movimento'].includes(cat)) throw new Error('category: fusion, legendas, titulos ou movimento');
+      if (!cat || !['fusion', 'legendas', 'titulos', 'movimento', 'modelo'].includes(cat)) throw new Error('category: fusion, legendas, titulos, movimento ou modelo');
       const providers = Array.isArray(a.providers) ? (a.providers.map(String).filter((p) => ['claude', 'gemini', 'gpt'].includes(p)) as EffectProvider[]) : undefined;
       const sel = S().selected ? findClip(S().project, S().selected!) : null;
       return window.ec.generateEffects(cat, String(a.request ?? ''), { providers, canvas: S().project.canvas, clipDuration: sel ? sel.clip.out - sel.clip.in : undefined, imagePath: s(a.image) });

@@ -121,3 +121,16 @@ test('reference image reaches the three providers', async () => {
   }
   await assert.rejects(gen.generateEffects('fusion', '', { ask }), /imagem de referência/);
 });
+
+test('generated caption models: validated like saved ones, never stored in the effects library', () => {
+  const r = gen.validateRecipe({ name: 'Podcast', model: { kind: 'gigante', back: { font: 'Anton', color: '#ffd60a', width: 3 } } }, 'modelo');
+  assert.equal(r.category, 'modelo');
+  assert.deepEqual(r.steps, []);
+  assert.equal(r.model.label, 'Podcast');
+  assert.equal(r.model.back.color, '#FFD60A');
+  assert.equal(r.model.back.width, 0.98);
+  assert.equal(gen.validateRecipe({ model: { kind: 'nope' } }, 'modelo'), null);
+  assert.match(gen.recipePrompt('modelo', 'amarelo'), /"kind":"atras-frente"/);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fxm-')), 'lib.json');
+  assert.throws(() => createEffectLibrary(file).save({ name: 'x', category: 'modelo', steps: [{ tool: 'set_color', args: {} }] }));
+});

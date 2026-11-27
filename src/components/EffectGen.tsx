@@ -14,6 +14,7 @@ const CATS: [EffectCategory, string, string][] = [
   ['legendas', 'Legendas', 'palavras a saltar com brilho amarelo, estilo TikTok'],
   ['titulos', 'Títulos', 'cartão de preço do imóvel a entrar de baixo com fundo escuro'],
   ['movimento', 'Movimento', 'zoom lento para dentro com um punch no fim'],
+  ['modelo', 'Modelo legendas', 'palavra gigante amarela atrás, estilo podcast americano'],
 ];
 const PROVIDERS: [EffectProvider, string][] = [
   ['claude', 'Claude'],
@@ -75,6 +76,15 @@ export function EffectGenPanel() {
     }
   };
   const save = async (r: EffectRecipe, onScreen: boolean) => {
+    if (r.category === 'modelo' && r.model) {
+      try {
+        const m = await window.ec.saveCaptionModel(null, r.model, onScreen ? viewerShot() : null);
+        setStatus(`Modelo «${m.model.label}» guardado nos Modelos de legendas`);
+      } catch (e) {
+        setStatus((e as Error).message);
+      }
+      return;
+    }
     try {
       const s = await window.ec.saveEffect(r, undefined, onScreen ? viewerShot() : null);
       await loadLib();
@@ -155,6 +165,7 @@ export function EffectGenPanel() {
           )}
         </div>
         {(cat === 'fusion' || cat === 'movimento') && <p className="panel-sub">Vai para o clip selecionado (ou o que está debaixo da cabeça de leitura).</p>}
+        {cat === 'modelo' && <p className="panel-sub">«Ver» legenda o vídeo com o modelo (recorta a pessoa). «Guardar» põe-no nos Modelos de legendas.</p>}
 
         {Object.keys(results).length > 0 && (
           <div className="eg-results">
@@ -173,7 +184,7 @@ export function EffectGenPanel() {
                       <div className="eg-name">{r.recipe.name}</div>
                       {r.recipe.description && <p className="panel-sub">{r.recipe.description}</p>}
                       <details>
-                        <summary className="panel-sub">{r.recipe.steps.length} passos</summary>
+                        <summary className="panel-sub">{r.recipe.model ? `${r.recipe.model.kind} · ${r.recipe.model.back.font} ${r.recipe.model.back.color}` : `${r.recipe.steps.length} passos`}</summary>
                         <ol className="eg-steps">
                           {r.recipe.steps.map((s, i) => (
                             <li key={i}>

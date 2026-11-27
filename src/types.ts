@@ -287,7 +287,7 @@ export interface Marker {
 }
 
 /** Effects generator (electron/effectgen.cjs): a recipe of allow-listed editor tools. */
-export type EffectCategory = 'fusion' | 'legendas' | 'titulos' | 'movimento';
+export type EffectCategory = 'fusion' | 'legendas' | 'titulos' | 'movimento' | 'modelo';
 export type EffectProvider = 'claude' | 'gemini' | 'gpt';
 export interface EffectRecipe {
   id?: string;
@@ -295,6 +295,8 @@ export interface EffectRecipe {
   description: string;
   category: EffectCategory;
   steps: { tool: string; args: Record<string, unknown> }[];
+  /** Category 'modelo': the generated caption model. */
+  model?: CaptionModel;
   provider?: EffectProvider | null;
   prompt?: string;
   created?: string;

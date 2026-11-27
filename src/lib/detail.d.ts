@@ -63,3 +63,5 @@ export function estimateAirlight(rgba: ArrayLike<number>, w: number, h: number):
 
 export function detailFilters(filters: string[], color: unknown, input: string, tag: string, ctx: { W: number; H: number }): string;
 export function grainFilters(filters: string[], color: unknown, input: string, tag: string, ctx: { W: number; H: number; FPS: number; dur: number }): string;
+export function detailFiltersFast(filters: string[], color: unknown, input: string, tag: string, ctx: { W: number; H: number }): string;
+export const FAST: Record<string, unknown>;

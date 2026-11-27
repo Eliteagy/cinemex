@@ -355,3 +355,119 @@ export function grainFilters(filters, color, input, tag, { W, H, FPS, dur }) {
   return L('out');
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// Fast export graph (same maths, native filters). blend=all_expr runs one expression per pixel
+// and ffmpeg does not spread it over the cores: 4 s of 1080x1920 took 55 s. Here every step that
+// depends on one value is a 16-bit lookup table (lut, computed once per graph), differences are
+// blend=grainextract (A-B+½), sums blend=grainmerge (A+B-½) and products blend=multiply (A·B), all
+// native and threaded. Clarity's product C(L)·(5·cd−2.5) is split as
+//   eD(H − 2.125·clar·K(L) + 4.25·clar·K(L)·cd) = t1(L) + t2(K·cd) − ½
+// and the gain lin(c)·2^d is a sum in the log domain: log2 lin(c) + d (14 stops over 16 bits).
+
+/** 16-bit lookup table: body on a = val/65535 (0..1), result clipped to 0..1 and rounded (lut truncates). */
+const lut16 = (body, planes = 1) => `lut=${Array.from({ length: planes }, (_, i) => `c${i}='st(8,val/65535);65535*clip(${body},0,1)+0.5'`).join(':')}`;
+const NB = (mode) => `blend=all_mode=${mode}`;
+/** The ½ of ffmpeg's 16-bit grainextract/grainmerge (A−B+32768, A+B−32768), as a fraction. */
+const HALF = fx(32768 / 65535);
+/** Stops held by the log plane of the gain step (linear 2^-14 is below one 8-bit level of sRGB). */
+const LOG_SPAN = 14;
+
+/** A 16-bit lut on each plane of a gbrp16le label (exact), merged back. */
+function lutPlanes(filters, input, out, body, tag) {
+  // extractplanes always outputs r, g, b; gbrp keeps g, b, r (plane 0 = g from input 1, ...).
+  filters.push(`[${input}]extractplanes=r+g+b[${tag}r][${tag}g][${tag}b]`);
+  for (const c of ['r', 'g', 'b']) filters.push(`[${tag}${c}]${lut16(body)}[${tag}${c}2]`);
+  filters.push(`[${tag}r2][${tag}g2][${tag}b2]mergeplanes=0x102000:gbrp16le[${out}]`);
+}
+
+export const FAST = {
+  /** grainextract result x = a−b+½ -> stops of difference (L_SPAN scale). */
+  diff: `((${a}-${HALF})*${L_SPAN})`,
+  clarityDetail: `(clip((${a}-${HALF})*${L_SPAN},-2.5,2.5)+2.5)/5`,
+  hsT1: (hl, sh, clar) =>
+    `st(1,${a}*${L_SPAN}+(${L_MIN}));st(2,1-${ffSmooth(-4.8, 0.3, 'ld(1)', 3)});st(4,${ffSmooth(-1.0, 2.8, 'ld(1)', 5)});` +
+    eD(`${fx(sh)}*1.7*ld(2)*sqrt(ld(2))+${fx(hl)}*1.7*ld(4)+(${fx(-2.125 * clar)})*(0.35+0.65*exp(-pow(ld(1)/3.2,2)))`),
+  hsK: `st(1,${a}*${L_SPAN}+(${L_MIN}));0.35+0.65*exp(-pow(ld(1)/3.2,2))`,
+  hsT2: (clar) => `${HALF}+(${fx((4.25 * clar) / D_SPAN)})*${a}`,
+  texture: (tex) => `st(1,(${a}-${HALF})*${L_SPAN});` + eD(`${fx(tex)}*1.1*clip(ld(1),-1,1)*(1-0.6*${ffSmooth(0.4, 1.6, 'abs(ld(1))', 2)})`),
+  sharpen: (sharp, limit, mask) =>
+    `st(1,(${a}-${HALF})*${L_SPAN});` + eD(`${fx(sharp)}*7*${mask > 0 ? ffSmooth(mask * 0.1, mask * 0.1 + 0.06, 'abs(ld(1))', 2) : '1'}*ld(1)/(1+abs(ld(1))/${fx(limit)})`),
+  /** Gain in the log domain (14 stops in 16 bits, ~0.015 % steps): log2(lin) + d, then back. */
+  dLog: `${HALF}+${dD(a)}/${LOG_SPAN}`,
+  log: `st(0,${ffLin(a)});(log(max(ld(0),1e-7))/${LN2}+${LOG_SPAN})/${LOG_SPAN}`,
+  unlog: `st(0,min(pow(2,${a}*${LOG_SPAN}-${LOG_SPAN}),1));${ffEnc('ld(0)')}`,
+};
+
+/** detailFilters with native filters (no per-pixel expressions); dehaze keeps the exact path. */
+export function detailFiltersFast(filters, color, input, tag, { W, H }) {
+  const p = detailParams(color, Math.max(W, H));
+  const L = (s) => `dt${tag}_${s}`;
+  let rgb = L('rgb');
+  filters.push(`[${input}]format=gbrp16le[${rgb}]`);
+  if (p.dehaze !== 0) {
+    filters.push(`[${rgb}]split=2[${L('dm')}][${L('dp')}]`);
+    filters.push(`[${L('dp')}]extractplanes=r+g+b[${L('r')}][${L('g')}][${L('b')}]`);
+    filters.push(`[${L('r')}][${L('g')}]${blend16(FF.min)}[${L('rg')}]`);
+    filters.push(`[${L('rg')}][${L('b')}]${blend16(FF.linMin)},split=2[${L('mn1')}][${L('mn2')}]`);
+    filters.push(`[${L('mn1')}]${gblur(p.darkSigma)}[${L('dk')}]`);
+    filters.push(`[${L('dk')}][${L('mn2')}]${blend16(FF.veil(p.air))}[${L('vg')}]`);
+    toRgb(filters, L('vg'), L('vl'), 'gbrp16le');
+    filters.push(`[${L('dm')}][${L('vl')}]${blend16(FF.dehaze(p.dehaze, p.air))}[${L('dh')}]`);
+    rgb = L('dh');
+  }
+  const terms = [];
+  const hsOn = p.hl !== 0 || p.sh !== 0 || p.clar !== 0;
+  const uses = (hsOn ? 1 : 0) + (p.clar !== 0 ? 2 : 0) + (p.tex !== 0 ? 2 : 0) + (p.sharp !== 0 ? 2 : 0);
+  if (uses === 0) return rgb;
+  filters.push(`[${rgb}]split=2[${L('src')}][${L('ly')}]`);
+  const Y = 'colorchannelmixer=rr=0.2126:rg=0.7152:rb=0.0722:gr=0.2126:gg=0.7152:gb=0.0722:br=0.2126:bg=0.7152:bb=0.0722,extractplanes=g';
+  const lOuts = Array.from({ length: uses }, (_, i) => L(`l${i}`));
+  filters.push(`[${L('ly')}]${Y},${lut16(FF.logLum)}${uses > 1 ? `,split=${uses}` : ''}${lOuts.map((o) => `[${o}]`).join('')}`);
+  let li = 0;
+  const nextL = () => lOuts[li++];
+  if (hsOn) {
+    const base = L('base');
+    filters.push(`[${nextL()}]${guided(p.hs)}${p.clar !== 0 ? `,split=2[${L('bk')}][${L('bt')}]` : `[${base}]`}`);
+    if (p.clar !== 0) {
+      const l1 = nextL();
+      const l2 = nextL();
+      filters.push(`[${l2}]${guided(p.clarG)}[${L('cb')}]`);
+      filters.push(`[${l1}][${L('cb')}]${NB('grainextract')},${lut16(FAST.clarityDetail)}[${L('cd')}]`);
+      filters.push(`[${L('bk')}]${lut16(FAST.hsK)}[${L('k')}]`);
+      filters.push(`[${L('k')}][${L('cd')}]${NB('multiply')},${lut16(FAST.hsT2(p.clar))}[${L('t2')}]`);
+      filters.push(`[${L('bt')}]${lut16(FAST.hsT1(p.hl, p.sh, p.clar))}[${L('t1')}]`);
+      filters.push(`[${L('t1')}][${L('t2')}]${NB('grainmerge')}[${L('t0')}]`);
+    } else {
+      filters.push(`[${base}]${lut16(FAST.hsT1(p.hl, p.sh, 0))}[${L('t0')}]`);
+    }
+    terms.push(L('t0'));
+  }
+  if (p.tex !== 0) {
+    const l1 = nextL();
+    const l2 = nextL();
+    filters.push(`[${l2}]${gblur(p.texSigma)}[${L('tb')}]`);
+    filters.push(`[${l1}][${L('tb')}]${NB('grainextract')},${lut16(FAST.texture(p.tex))}[${L('t1x')}]`);
+    terms.push(L('t1x'));
+  }
+  if (p.sharp !== 0) {
+    const l1 = nextL();
+    const l2 = nextL();
+    filters.push(`[${l2}]${gblur(p.sharpSigma)}[${L('sb')}]`);
+    filters.push(`[${l1}][${L('sb')}]${NB('grainextract')},${lut16(FAST.sharpen(p.sharp, p.sharpLimit, p.sharpMask))}[${L('t2x')}]`);
+    terms.push(L('t2x'));
+  }
+  let delta = terms[0];
+  for (let i = 1; i < terms.length; i++) {
+    filters.push(`[${delta}][${terms[i]}]${NB('grainmerge')}[${L(`s${i}`)}]`);
+    delta = L(`s${i}`);
+  }
+  filters.push(`[${delta}]${lut16(FAST.dLog)}[${L('g')}]`);
+  toRgb(filters, L('g'), L('dg'), 'gbrp16le');
+  // ffmpeg's lut on 3-plane gbrp16le loses the low byte (up to 255 counts); on gray16le it is exact,
+  // so the colour planes go through it one by one.
+  lutPlanes(filters, L('src'), L('ln'), FAST.log, L('lg'));
+  filters.push(`[${L('ln')}][${L('dg')}]${NB('grainmerge')}[${L('sum')}]`);
+  lutPlanes(filters, L('sum'), L('out'), FAST.unlog, L('ul'));
+  return L('out');
+}

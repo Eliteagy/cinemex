@@ -1091,7 +1091,7 @@ function buildExport(project, outPath, { encoder = 'libx264', quality = 'alta' }
           src = `[${build(pre)}]`;
           chain.length = 0;
         };
-        if (detail.hasDetail(c.color?.dev)) flush('pd', (pre) => detail.detailFilters(filters, c.color, pre, `${layer}`, { W, H }));
+        if (detail.hasDetail(c.color?.dev)) flush('pd', (pre) => (process.env.CINEMEX_DETAIL_EXACT ? detail.detailFilters : detail.detailFiltersFast)(filters, c.color, pre, `${layer}`, { W, H }));
         chain.push(...gradeFilters(c.color, gradeLut(c.color, extraFiles, gradeLuts)));
         if (detail.hasGrain(c.color?.dev)) flush('pg', (pre) => detail.grainFilters(filters, c.color, pre, `${layer}`, { W, H, FPS: FPSc, dur }));
         if (keyed) {

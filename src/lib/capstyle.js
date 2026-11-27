@@ -9,7 +9,7 @@
 const HEX = /^#[0-9a-f]{6}$/i;
 export const ANIMS = ['pop', 'fade', 'slide', 'words', 'bounce', 'karaoke', 'marker', 'typewriter', 'blur', 'zoom', 'flip', 'stretch', 'drop', 'rise', 'shake', 'glitch', 'colorsweep', 'scaleword', 'popin'];
 /** Gallery groups, in the order the gallery shows them. */
-export const CATEGORIES = ['Básicas', 'Reels/TikTok', 'Karaoke', 'Destaque', 'Néon', 'Cinema', 'Caixa', 'Palavra-chave', 'Imobiliário', 'Gaming', 'Minimal'];
+export const CATEGORIES = ['Básicas', 'Reels/TikTok', 'Karaoke', 'Destaque', 'Néon', 'Cinema', 'Caixa', 'Palavra-chave', 'Gaming', 'Minimal'];
 export const OVERRIDE_KEYS = ['color', 'highlight', 'outlineColor', 'font', 'keywordColor', 'keywordFont', 'layout', 'lineGap', 'textAnim', 'keywordAnim'];
 const LAYER_ANIMS = ['reveal', 'rise', 'none'];
 /** Id the old project-level style ('custom', "O meu estilo") is migrated to. */

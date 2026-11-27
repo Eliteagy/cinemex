@@ -48,9 +48,9 @@ const shortSize = (preset) => ({ '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5
  * behind the person (cut out by a person "front" mask), small words on a track marked `front`.
  * face: { y, h } of the speaker's face in the short (fractions of its height), from the reframe.
  */
-function behindCaptions(video, words, W, H, face, model = capmodels.BUILTIN_MODELS.vitor) {
+function behindCaptions(video, words, W, H, face, model = capmodels.BUILTIN_MODELS.vitor, keywords) {
   const groups = captionClipsFor(video, words, capmodels.groupingFor(model));
-  const { back, front } = capmodels.modelCaptions(model, groups, W, H, face);
+  const { back, front } = capmodels.modelCaptions(model, groups, W, H, face, { keywords });
   const withId = (x) => ({ id: uid('c'), auto: true, ...x });
   return { back: back.map(withId), front: front.map(withId) };
 }
@@ -79,7 +79,7 @@ function shortProject(media, c, o = {}) {
   const video = { id: uid('c'), mediaId, start: 0, in: r3(c.start), out: r3(c.end), fit: o.reframe === 'fit' ? 'fit' : 'fill', volume: 1, speed: 1 };
   const words = media.transcript || [];
   const model = o.model || (o.layout === 'atras' ? capmodels.BUILTIN_MODELS.vitor : null);
-  const behind = model && o.personMatte ? behindCaptions(video, words, size[0], size[1], o.face, model) : null;
+  const behind = model && o.personMatte ? behindCaptions(video, words, size[0], size[1], o.face, model, o.keywords) : null;
   const caps = behind ? behind.back : captionClipsFor(video, words, { style: o.style || 'felipe', stripPunct: true }).map((x) => ({ id: uid('c'), auto: true, ...x }));
   let mediaEntry = { id: mediaId, path: media.path, name: media.name || path.basename(media.path), kind: 'video', duration: media.duration || c.end, width: media.width, height: media.height, fps: media.fps || 30, hasAudio: media.hasAudio !== false, thumb: null, transcript: words };
   if (o.framed?.path) {
@@ -148,7 +148,36 @@ async function buildShorts(media, clips, outDir, o = {}) {
         { signal: o.signal, onStatus: (status) => o.onProgress?.({ index: i, of: clips.length, progress: 0.5, name: base, status }), onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: 0.5 + p * 0.2, name: base, status: 'A recortar a pessoa…' }) },
       );
     }
-    const project = shortProject(media, c, { ...o, framed, face, personMatte });
+    // AI passes (Claude, no tools): fix what Whisper heard wrong in this clip, then pick the strongest
+    // word of each caption block for the big words behind the person.
+    let clipMedia = media;
+    let fixed = [];
+    let keywords;
+    if (o.ask && o.review !== false) {
+      try {
+        const lines = ai.transcriptLines(media.transcript || [], c.start, c.end);
+        // The Gui's own past fixes first (always), then what the AI finds.
+        const fixes = [...(o.learned?.words || []).map((w) => ({ wrong: w.from, right: w.to })), ...ai.parseSpellFixes(await o.ask(ai.spellPrompt(lines, { context: c.title || c.hook, learned: o.learned?.words }), 'sonnet'))];
+        if (fixes.length) {
+          const r = ai.applySpellFixes(media.transcript || [], fixes);
+          fixed = r.applied.filter((x) => x.s >= c.start - 0.5 && x.s <= c.end + 0.5);
+          clipMedia = { ...media, transcript: r.words };
+        }
+      } catch {
+        /* review is a bonus: the short is made with the plain transcript */
+      }
+    }
+    const model = o.model || (o.layout === 'atras' ? capmodels.BUILTIN_MODELS.vitor : null);
+    if (o.ask && model?.kind === 'atras-frente' && o.keywordAI !== false) {
+      try {
+        const win = { start: 0, in: c.start, out: c.end, speed: 1 };
+        const blocks = captionClipsFor(win, clipMedia.transcript || [], capmodels.groupingFor(model)).map((g) => (g.words || []).map((w) => w.w));
+        keywords = ai.parseKeywordPicks(await o.ask(ai.keywordPrompt(blocks, { learned: o.learned?.keywords }), 'haiku'), blocks);
+      } catch {
+        keywords = undefined;
+      }
+    }
+    const project = shortProject(clipMedia, c, { ...o, framed, face, personMatte, keywords });
     const proj = path.join(outDir, 'Projetos Cinemex', `${base}.ecproj`);
     fs.writeFileSync(proj, JSON.stringify(project, null, 1), 'utf8');
     const mp4 = path.join(outDir, `${base}.mp4`);
@@ -159,7 +188,7 @@ async function buildShorts(media, clips, outDir, o = {}) {
       onProgress: (p) => o.onProgress?.({ index: i, of: clips.length, progress: personMatte ? 0.7 + p * 0.3 : framed ? 0.5 + p * 0.5 : p, name: base }),
     });
     fs.writeFileSync(path.join(outDir, `${base}.md`), ai.publishText(c), 'utf8');
-    done.push({ ...c, file: mp4, project: proj, name: base });
+    done.push({ ...c, file: mp4, project: proj, name: base, fixed });
   }
   const index = ['# Shorts', '', '| # | Ficheiro | Duração | Pontuação | Gancho |', '|---|---|---|---|---|', ...done.map((d, i) => `| ${i + 1} | ${d.name}.mp4 | ${Math.round(d.duration)} s | ${d.score}/10 | ${String(d.hook).replace(/\|/g, '/')} |`), ''].join('\n');
   fs.writeFileSync(path.join(outDir, 'index.md'), index, 'utf8');

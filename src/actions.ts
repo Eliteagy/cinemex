@@ -6,6 +6,7 @@ import { cleanOverride } from './lib/capstyle.js';
 import { STYLES, activeClip, decodePeaks, dur, end, findClip, projectDuration, speedOf, srcTime, textClips, uid } from './lib/project';
 import { detectBeats as findBeats } from './lib/fx.js';
 import { groupingFor, modelCaptions, validateModel } from './lib/capmodels.js';
+import { applySpellFixes, keywordPrompt, parseKeywordPicks, parseSpellFixes, spellPrompt, transcriptLines } from './lib/aivideo.js';
 
 /** The project with every saved caption style its captions use embedded (renders the same on another PC). */
 function withStyles(): Project {
@@ -99,10 +100,67 @@ export async function autoCaptions(opts: AutoCaptionOptions = {}) {
  * place the words, cuts the person out (person "front" mask, reused when the clip has one) and puts
  * the captions on two tracks, "Legendas atrás" and "Legendas à frente" (marked front). One undo step.
  */
+/** Last AI review (the Captions page lists what changed). */
+export const reviewState: { applied: { wrong: string; right: string; s: number }[] } = { applied: [] };
+
+/**
+ * "Rever com IA": Claude reads what was said in each clip with speech and fixes what Whisper heard
+ * wrong (words that sound alike but make no sense, names, foreign words). Fixes go into the
+ * transcript (future captions) and into the captions already on the timeline (one undo step).
+ */
+export async function reviewCaptions(opts: { clipId?: string; context?: string } = {}) {
+  const clips = speechClips(opts.clipId);
+  if (!clips.length) throw new Error('Não há clips com fala na timeline');
+  const learned = (await window.ec.learned()).words;
+  const all: { wrong: string; right: string; s: number }[] = [];
+  const fixesAll: { wrong: string; right: string }[] = [];
+  try {
+    for (const c of clips) {
+      const m = S().project.media.find((x) => x.id === c.mediaId)!;
+      const words = await ensureTranscript(m);
+      S().setStatus(`A IA está a rever o que foi dito em ${m.name}…`, true);
+      const lines = transcriptLines(words, c.in, c.out);
+      if (!lines.trim()) continue;
+      const fixes = [...learned.map((w) => ({ wrong: w.from, right: w.to })), ...parseSpellFixes(await window.ec.aiAsk(spellPrompt(lines, { context: opts.context, learned }), { model: 'sonnet' }))];
+      if (!fixes.length) continue;
+      const r = applySpellFixes(words, fixes);
+      S().setTranscript(m.id, r.words, m.transcriptKey);
+      all.push(...r.applied.filter((x) => x.s >= c.in - 0.5 && x.s <= c.out + 0.5));
+      fixesAll.push(...fixes);
+    }
+    if (fixesAll.length) {
+      // Captions already made: same fixes inside each caption's own words.
+      S().commit((p) => {
+        for (const t of p.tracks)
+          for (const c of t.clips) {
+            if (c.graphic || c.text === undefined) continue;
+            const ws = c.words?.length ? c.words : null;
+            if (ws) {
+              const r = applySpellFixes(ws, fixesAll);
+              if (r.applied.length) {
+                c.words = r.words;
+                c.text = r.words.map((w) => w.w).join(' ');
+              }
+            } else {
+              const r = applySpellFixes(c.text.split(/\s+/).filter(Boolean).map((w, i) => ({ w, s: i, e: i + 1 })), fixesAll);
+              if (r.applied.length) c.text = r.words.map((w) => w.w).join(' ');
+            }
+          }
+      });
+    }
+    reviewState.applied = all;
+    S().setStatus(all.length ? `${all.length} palavras corrigidas pela IA (Ctrl+Z desfaz nas legendas)` : 'A IA não encontrou erros nas legendas');
+    return { fixed: all };
+  } catch (e) {
+    S().setStatus(`Rever legendas: ${(e as Error).message}`);
+    throw e;
+  }
+}
+
 /** Face position per clip source range, so editing a model and applying it again is quick. */
 const faceCache = new Map<string, { faceX: number | null; faceY: number | null; faceH: number | null }>();
 
-export async function applyCaptionModel(ref: string | CaptionModel, opts: { clipId?: string } = {}) {
+export async function applyCaptionModel(ref: string | CaptionModel, opts: { clipId?: string; keywordAI?: boolean } = {}) {
   const p0 = S().project;
   const sel = S().selected;
   const clipId = opts.clipId ?? (sel && findClip(p0, sel)?.clip.mediaId ? sel : undefined);
@@ -136,7 +194,17 @@ export async function applyCaptionModel(ref: string | CaptionModel, opts: { clip
     }
     const old = (clip.masks ?? []).find((mk) => mk.shape === 'person' && mk.mode === 'front' && mk.matte && mk.matte.in <= clip.in + 0.01 && mk.matte.out >= clip.out - 0.01);
     const matte = old?.matte ?? { file: await window.ec.matte({ file: m.path, tin: clip.in, tout: clip.out }), in: clip.in, out: clip.out, px: -1, py: -1 };
-    const { back, front } = modelCaptions(model, groups, W, H, face);
+    let keywords: (number | null)[] | undefined;
+    if (model.kind === 'atras-frente' && opts.keywordAI !== false) {
+      try {
+        S().setStatus('A IA está a escolher a palavra principal de cada legenda…', true);
+        const blocks = groups.map((g) => (g.words ?? []).map((w) => w.w));
+        keywords = parseKeywordPicks(await window.ec.aiAsk(keywordPrompt(blocks, { learned: (await window.ec.learned()).keywords }), { model: 'haiku' }), blocks);
+      } catch {
+        keywords = undefined; // automatic pick
+      }
+    }
+    const { back, front } = modelCaptions(model, groups, W, H, face, { keywords });
     const range = { start: clip.start, end: end(clip) };
     S().commit((p) => {
       const f = findClip(p, clip.id);

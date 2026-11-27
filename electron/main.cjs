@@ -13,6 +13,7 @@ const { transcribe, captionClipsFor } = require('./captions.cjs');
 const { createMatteEngine } = require('./matte.cjs');
 const { createReframeEngine } = require('./reframe.cjs');
 const { createModelStore } = require('./capmodels.cjs');
+const { createLearnStore } = require('./learn.cjs');
 const effectgen = require('./effectgen.cjs');
 const { createEffectLibrary } = require('./effectlib.cjs');
 const { findUserFont, listInstalledFonts, findFamily } = require('./fonts.cjs');
@@ -323,6 +324,12 @@ function handlers() {
   ipcMain.handle('effects:save', (_e, recipe, name) => effectLib.save(recipe, typeof name === 'string' ? name : undefined));
   ipcMain.handle('effects:rename', (_e, id, name) => effectLib.rename(String(id), String(name)));
   ipcMain.handle('effects:delete', (_e, id) => effectLib.delete(String(id)));
+  const learn = createLearnStore(path.join(app.getPath('userData'), 'learned.json'));
+  ipcMain.handle('learn:get', () => learn.get());
+  ipcMain.handle('learn:word', (_e, from, to) => learn.addWord(from, to));
+  ipcMain.handle('learn:keyword', (_e, block, word) => learn.addKeyword(String(block), String(word)));
+  ipcMain.handle('learn:remove', (_e, kind, i) => learn.remove(String(kind), Number(i)));
+  ipcMain.handle('learn:clear', () => learn.clear());
   ipcMain.handle('capmodels:list', () => capmodels.list());
   ipcMain.handle('capmodels:save', (_e, id, model) => capmodels.save(id ?? null, model));
   ipcMain.handle('capmodels:delete', (_e, id) => capmodels.delete(String(id)));
@@ -348,6 +355,10 @@ function handlers() {
         style: typeof opts.style === 'string' ? opts.style : 'felipe',
         reframe: ['fit', 'face'].includes(opts.reframe) ? opts.reframe : 'cover',
         reframer: reframeEngine,
+        ask: (prompt, model) => askJson(String(prompt).slice(0, 200_000), { model, signal: exportAbort?.signal }),
+        review: opts.review !== false,
+        learned: learn.get(),
+        keywordAI: opts.keywordAI !== false,
         layout: opts.layout === 'atras' ? 'atras' : undefined,
         model: opts.model ? capmodels.resolve(opts.model) : undefined,
         matter: matteEngine,

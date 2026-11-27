@@ -141,7 +141,7 @@ export function fitSize(text, font, width, maxSize, W, H) {
  * words with block-local times), W/H = canvas, face = { y, h } of the speaker's face (fractions of
  * the height) or null. Returns { back, front } clip bodies without ids (tracks: behind / in front).
  */
-export function modelCaptions(model, groups, W, H, face) {
+export function modelCaptions(model, groups, W, H, face, { keywords } = {}) {
   const m = validateModel(model);
   if (!m) throw new Error('Modelo de legendas inválido');
   const fy = face?.y > 0.05 && face.y < 0.85 ? face.y : 0.3;
@@ -155,7 +155,7 @@ export function modelCaptions(model, groups, W, H, face) {
     const override = { ...(m.back.font !== 'Inter Black' ? { font: m.back.font } : {}), ...(color !== '#FFFFFF' ? { color, highlight: color } : {}) };
     return { text, style: BACK_STYLE, start, in: 0, out, size, y: r3(Math.max(size * 0.55, y)), words: [{ w: text, s: 0, e: out }], ...(Object.keys(override).length ? { override } : {}) };
   };
-  for (const g of groups) {
+  for (const [gi, g] of groups.entries()) {
     const ws = g.words?.length ? g.words : String(g.text).split(/\s+/).filter(Boolean).map((w) => ({ w, s: 0, e: g.out }));
     if (!ws.length) continue;
     if (m.kind === 'duas-linhas' && ws.length > 1) {
@@ -171,7 +171,8 @@ export function modelCaptions(model, groups, W, H, face) {
       back.push(backClip(bot, g.start, g.out, r3(s2), y2, ws.slice(cut)));
       continue;
     }
-    const k = m.kind === 'atras-frente' ? pickKeyword(ws.map((w) => w.w)) : 0;
+    const picked = keywords?.[gi];
+    const k = m.kind === 'atras-frente' ? (Number.isInteger(picked) && picked < ws.length ? picked : pickKeyword(ws.map((w) => w.w))) : 0;
     if (k >= 0) {
       const text = (m.kind === 'atras-frente' ? cleanWord(ws[k].w) : ws.map((w) => cleanWord(w.w)).join(' ')).toUpperCase();
       if (text) back.push(backClip(text, g.start, g.out, fitSize(text, m.back.font, m.back.width, m.back.maxSize, W, H), headTop, m.kind === 'atras-frente' ? [ws[k]] : ws));

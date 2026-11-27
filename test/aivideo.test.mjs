@@ -145,3 +145,44 @@ test('legendas atrás: main word big behind the person, the rest in front on the
   const ex = buildExport(p, 'C:/x/out.mp4');
   assert.ok(ex.ass && !ex.extraFiles.some((f) => f.name === 'capsf.ass'));
 });
+
+test('clips start and end on sentence boundaries', () => {
+  const W = (list) => list.map(([w, s, e]) => ({ w, s, e }));
+  const ws = W([['junto?', 0, 0.4], ['Por', 2.1, 2.4], ['isso', 2.4, 2.5], ['é', 2.5, 2.6], ['com', 2.65, 2.8], ['o', 2.8, 2.9], ['dinheiro.', 2.9, 3.2], ['Porquê?', 4.5, 4.7], ['Porque', 5.5, 5.7], ['muda', 5.7, 5.9], ['tudo', 5.9, 6.1], ['na', 6.1, 6.2], ['vida.', 6.2, 6.5]]);
+  assert.deepEqual(ai.snapToSentence(ws, 4, 9), { from: 1, to: 12 }, 'back to "Por", on to "vida."');
+  assert.deepEqual(ai.snapToSentence(ws, 1, 6), { from: 1, to: 6 }, 'already clean');
+  const far = W([['a', 0, 0.2], ['b', 0.2, 0.4], ...Array.from({ length: 30 }, (_, i) => [`w${i}`, 0.4 + i * 0.2, 0.6 + i * 0.2])]);
+  assert.equal(ai.snapToSentence(far, 25, 26).from, 25, 'no break within 4 s: unchanged');
+});
+
+test('spell fixes: phrase runs replaced, times spread, punctuation and caps kept', () => {
+  const W = (list) => list.map(([w, s, e]) => ({ w, s, e }));
+  const ws = W([['Não', 0, 0.2], ['contes', 0.2, 0.5], ['os', 0.5, 0.6], ['teus', 0.6, 0.8], ['tios', 0.8, 1.1], ['para', 1.1, 1.3], ['ninguém.', 1.3, 1.7], ['TIVONE,', 2, 2.4], ['tomahawk', 2.5, 3]]);
+  const fixes = ai.parseSpellFixes({ fixes: [{ wrong: 'teus tios', right: 'teus planos' }, { wrong: 'tivone', right: 'T-bone' }, { wrong: 'para', right: 'para', sure: true }, { wrong: 'x', right: 'y', sure: false }] });
+  assert.deepEqual(fixes, [{ wrong: 'teus tios', right: 'teus planos' }, { wrong: 'tivone', right: 'T-bone' }]);
+  const { words, applied } = ai.applySpellFixes(ws, fixes);
+  assert.deepEqual(words.map((w) => w.w), ['Não', 'contes', 'os', 'teus', 'planos', 'para', 'ninguém.', 'T-BONE,', 'tomahawk']);
+  assert.equal(words[4].e, 1.1);
+  assert.equal(applied.length, 2);
+  const split = ai.applySpellFixes(W([['um', 0, 1]]), [{ wrong: 'um', right: 'um dois' }]).words;
+  assert.deepEqual(split.map((w) => [w.w, w.s, w.e]), [['um', 0, 0.5], ['dois', 0.5, 1]]);
+});
+
+test('keyword picks: checked per block, null when the model is off', () => {
+  const blocks = [['a', 'casa', 'vendida'], ['em', 'dois']];
+  assert.match(ai.keywordPrompt(blocks), /0: a casa vendida/);
+  assert.deepEqual(ai.parseKeywordPicks({ pick: [1, 7] }, blocks), [1, null]);
+  assert.deepEqual(ai.parseKeywordPicks({ pick: [-1] }, blocks), [-1, null]);
+});
+
+test('short project: AI keyword picks choose the big word of each block', () => {
+  const { shortProject } = require('../electron/shorts.cjs');
+  const ws = [['a', 10], ['casa', 10.3], ['vendida', 10.6], ['em', 11.5], ['dois', 11.8], ['semanas', 12.1]].map(([w, s]) => ({ w, s, e: s + 0.25 }));
+  const c = { start: 10, end: 13, duration: 3, hook: '', outro: '' };
+  const media = { path: 'C:/x/v.mp4', duration: 60, width: 1920, height: 1080, transcript: ws };
+  const auto = shortProject(media, c, { layout: 'atras', personMatte: 'C:/m.mp4', cards: false });
+  const picked = shortProject(media, c, { layout: 'atras', personMatte: 'C:/m.mp4', cards: false, keywords: [1, 1] });
+  assert.deepEqual(auto.tracks.find((t) => t.id === 'tx').clips.map((x) => x.text), ['VENDIDA', 'SEMANAS']);
+  assert.deepEqual(picked.tracks.find((t) => t.id === 'tx').clips.map((x) => x.text), ['CASA', 'DOIS']);
+  assert.deepEqual(picked.tracks.find((t) => t.id === 'tf').clips.map((x) => x.text), ['a vendida', 'em semanas']);
+});

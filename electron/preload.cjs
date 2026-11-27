@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('ec', {
   captionClips: (clip, words, opts) => ipcRenderer.invoke('captions:clips', clip, words, opts),
   matte: (req) => ipcRenderer.invoke('matte:run', req),
   detectFace: (req) => ipcRenderer.invoke('face:detect', req),
+  learned: () => ipcRenderer.invoke('learn:get'),
+  learnWord: (from, to) => ipcRenderer.invoke('learn:word', from, to),
+  learnKeyword: (block, word) => ipcRenderer.invoke('learn:keyword', block, word),
+  forget: (kind, i) => ipcRenderer.invoke('learn:remove', kind, i),
+  forgetAll: () => ipcRenderer.invoke('learn:clear'),
   generateEffects: (category, request, opts) => ipcRenderer.invoke('effects:generate', category, request, opts),
   cancelEffects: () => ipcRenderer.invoke('effects:cancel'),
   onEffectResult: (cb) => {

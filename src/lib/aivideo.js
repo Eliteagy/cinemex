@@ -123,6 +123,32 @@ export function hotclipWindows(words, { chapters = null, count = 8, block = 1200
   return spans.map((sp) => ({ ...sp, count: per }));
 }
 
+const SENTENCE_END = /[.!?…]["»”')]*$/;
+/** Is there a sentence break between word i-1 and word i (final punctuation or a pause)? */
+const breakBefore = (ws, i) => i <= 0 || SENTENCE_END.test(String(ws[i - 1].w).trim()) || ws[i].s - ws[i - 1].e >= 0.45;
+
+/**
+ * Moves a clip's first word back to the start of its sentence (at most `back` s earlier) and its
+ * last word on to the end of the sentence (at most `fwd` s later), so a short never starts or ends
+ * mid-sentence ("o dinheiro / Porquê" -> "Por isso é que as pessoas têm tanto problema com o
+ * dinheiro."). Without a break in reach, the original word stays.
+ */
+export function snapToSentence(ws, from, to, { back = 4, fwd = 3 } = {}) {
+  let a = from;
+  if (!breakBefore(ws, from)) {
+    let i = from;
+    while (i > 0 && !breakBefore(ws, i) && ws[from].s - ws[i - 1].s <= back) i--;
+    if (breakBefore(ws, i)) a = i;
+  }
+  let b = to;
+  if (!SENTENCE_END.test(String(ws[to].w).trim()) && to + 1 < ws.length && !breakBefore(ws, to + 1)) {
+    let i = to;
+    while (i + 1 < ws.length && !SENTENCE_END.test(String(ws[i].w).trim()) && !breakBefore(ws, i + 1) && ws[i + 1].e - ws[to].e <= fwd) i++;
+    if (SENTENCE_END.test(String(ws[i].w).trim()) || i + 1 >= ws.length || breakBefore(ws, i + 1)) b = i;
+  }
+  return { from: a, to: b };
+}
+
 /**
  * Cleans the model's moments: times parsed and snapped to the real words (start of the first
  * sentence word, end of the last), length kept in [min*0.75, max*1.25], overlaps dropped (higher
@@ -139,8 +165,9 @@ export function parseHotclips(json, words, { min = 20, max = 60, count = 8 } = {
     const first = ws.find((w) => w.e > s + 0.05);
     const lastIdx = ws.findLastIndex ? ws.findLastIndex((w) => w.s < e - 0.05) : ws.length - 1 - [...ws].reverse().findIndex((w) => w.s < e - 0.05);
     if (!first || lastIdx < 0) continue;
-    s = Math.max(0, first.s - 0.15);
-    e = ws[lastIdx].e + 0.25;
+    const snap = snapToSentence(ws, ws.indexOf(first), lastIdx);
+    s = Math.max(0, ws[snap.from].s - 0.15);
+    e = ws[snap.to].e + 0.25;
     const d = e - s;
     if (d < min * 0.75 || d > max * 1.25) continue;
     const text = textBetween(ws, s, e);
@@ -296,4 +323,98 @@ export function fixCaptions(cues) {
     out.push(c);
   }
   return out;
+}
+
+// ------------------------------------------------------------------ transcript review (Whisper mistakes)
+const normTok = (t) => String(t).toLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}-]/gu, '');
+
+/** Prompt: find words Whisper heard wrong in these lines (PT-PT talk), using the context. */
+export function spellPrompt(lines, { context = '', learned = [] } = {}) {
+  const known = learned.length ? `\nCorreções que o editor já fez antes (aplica sempre que aparecerem):\n${learned.map((l) => `- "${l.from}" -> "${l.to}"`).join('\n')}\n` : '';
+  return `Esta transcrição automática (Whisper) de um vídeo em português de Portugal tem erros de reconhecimento: palavras parecidas no som mas erradas no sentido (ex.: "os teus tios para ninguém" quando a pessoa disse "os teus planos"), nomes próprios e estrangeirismos mal escritos (ex.: "tivone" = "T-bone"), clíticos separados.${context ? `\nContexto: ${String(context).slice(0, 300)}` : ''}
+${known}
+Linhas:
+${lines}
+
+Devolve só as correções de que tens a certeza pelo contexto. NÃO reescrevas o estilo, NÃO corrijas gramática falada, NÃO mudes palavras certas.
+"wrong" = as palavras EXATAMENTE como estão na transcrição (1 a 4 palavras seguidas, sem a pontuação), "right" = como devia estar.
+Responde APENAS com JSON: {"fixes":[{"wrong":"os teus tios","right":"os teus planos","sure":true}]}`;
+}
+
+/** Cleans the model's fixes: plain strings, short, different, no duplicates. */
+export function parseSpellFixes(json) {
+  const list = Array.isArray(json?.fixes) ? json.fixes : Array.isArray(json) ? json : [];
+  const seen = new Set();
+  const out = [];
+  for (const f of list) {
+    const wrong = String(f?.wrong ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    const right = String(f?.right ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!wrong || !right || f?.sure === false) continue;
+    if (wrong.split(' ').length > 6 || right.split(' ').length > 8) continue;
+    if (normTok(wrong.replace(/ /g, '')) === normTok(right.replace(/ /g, ''))) continue;
+    const k = wrong.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ wrong, right });
+  }
+  return out.slice(0, 60);
+}
+
+/**
+ * Applies phrase fixes to timed words: every run of words matching `wrong` (ignoring case and
+ * punctuation) becomes the words of `right`, timed across the old run; the last word keeps the
+ * old trailing punctuation, and ALL-CAPS words stay in caps. Returns { words, applied }.
+ */
+export function applySpellFixes(words, fixes) {
+  let ws = (words || []).map((w) => ({ ...w }));
+  const applied = [];
+  for (const f of fixes || []) {
+    const pat = String(f.wrong).split(' ').map(normTok).filter(Boolean);
+    const rep = String(f.right).split(' ').filter(Boolean);
+    if (!pat.length || !rep.length) continue;
+    const out = [];
+    for (let i = 0; i < ws.length; ) {
+      const hit = pat.every((p, k) => ws[i + k] && normTok(ws[i + k].w) === p);
+      if (!hit) {
+        out.push(ws[i++]);
+        continue;
+      }
+      const run = ws.slice(i, i + pat.length);
+      const s = run[0].s;
+      const e = run[run.length - 1].e;
+      const tail = (String(run[run.length - 1].w).match(/[.,!?;:…"»”)]+$/) || [''])[0];
+      const lead = (String(run[0].w).match(/^["«“(¿¡]+/) || [''])[0];
+      const caps = run.every((w) => /\p{L}/u.test(w.w) && String(w.w) === String(w.w).toUpperCase());
+      const step = (e - s) / rep.length;
+      rep.forEach((t, k) => {
+        let w = caps ? t.toUpperCase() : t;
+        if (k === 0) w = lead + w;
+        if (k === rep.length - 1 && !/[.,!?;:…]$/.test(w)) w += tail;
+        out.push({ ...run[Math.min(k, run.length - 1)], w, s: Math.round((s + k * step) * 1000) / 1000, e: Math.round((k === rep.length - 1 ? e : s + (k + 1) * step) * 1000) / 1000 });
+      });
+      applied.push({ wrong: run.map((w) => w.w).join(' '), right: f.right, s });
+      i += pat.length;
+    }
+    ws = out;
+  }
+  return { words: ws, applied };
+}
+
+// ------------------------------------------------------------------ main word chosen by the AI
+/** Prompt: in each numbered caption block, which word carries the meaning (the one to show big). */
+export function keywordPrompt(blocks, { learned = [] } = {}) {
+  const prefs = learned.length ? `\nEscolhas que o editor fez antes (segue o mesmo gosto):\n${learned.slice(-20).map((l) => `- "${l.block}" -> "${l.word}"`).join('\n')}\n` : '';
+  return `Legendas de um vídeo curto (Reels/TikTok) em português. Em cada bloco, uma palavra vai aparecer GIGANTE atrás da pessoa: escolhe a palavra mais forte em sentido e emoção (substantivo, verbo forte, número, nome), nunca artigos, preposições ou "que", "é", "isso".${prefs}
+${blocks.map((b, i) => `${i}: ${b.join(' ')}`).join('\n')}
+
+Responde APENAS com JSON: {"pick":[índice da palavra no bloco 0, no bloco 1, ...]} (o índice começa em 0; -1 se o bloco não tiver nenhuma palavra forte).`;
+}
+
+/** The model's picks, one per block, checked against the block sizes (else null = automatic). */
+export function parseKeywordPicks(json, blocks) {
+  const raw = Array.isArray(json?.pick) ? json.pick : Array.isArray(json) ? json : [];
+  return blocks.map((b, i) => {
+    const v = Number(raw[i]);
+    return Number.isInteger(v) && v >= -1 && v < b.length ? v : null;
+  });
 }

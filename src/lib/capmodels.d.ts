@@ -16,5 +16,6 @@ export function modelCaptions(
   W: number,
   H: number,
   face: { y: number; h: number } | null,
+  opts?: { keywords?: (number | null)[] },
 ): { back: Omit<Clip, 'id'>[]; front: Omit<Clip, 'id'>[] };
 export function groupingFor(model: CaptionModel): { style: string; stripPunct: boolean; maxWords: number };

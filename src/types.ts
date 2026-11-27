@@ -308,6 +308,12 @@ export interface EffectResult {
   ms: number;
 }
 
+/** What the app learned from the Gui's corrections (electron/learn.cjs). */
+export interface Learned {
+  words: { from: string; to: string; n: number }[];
+  keywords: { block: string; word: string }[];
+}
+
 /** Caption model ("Modelos de legendas", src/lib/capmodels.js). */
 export interface CaptionModel {
   id?: string;
@@ -534,6 +540,11 @@ export interface EcBridge {
   saveEffect(recipe: EffectRecipe, name?: string): Promise<EffectRecipe & { id: string }>;
   renameEffect(id: string, name: string): Promise<boolean>;
   deleteEffect(id: string): Promise<boolean>;
+  learned(): Promise<Learned>;
+  learnWord(from: string, to: string): Promise<Learned>;
+  learnKeyword(block: string, word: string): Promise<Learned>;
+  forget(kind: 'words' | 'keywords', index: number): Promise<Learned>;
+  forgetAll(): Promise<Learned>;
   detectFace(req: { file: string; tin: number; tout: number; w: number; h: number }): Promise<{ faceX: number | null; faceY: number | null; faceH: number | null }>;
   listCaptionModels(): Promise<(CaptionModel & { id: string; builtin: boolean })[]>;
   saveCaptionModel(id: string | null, model: CaptionModel): Promise<{ id: string; model: CaptionModel }>;

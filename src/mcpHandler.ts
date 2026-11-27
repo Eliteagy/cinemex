@@ -6,7 +6,7 @@ import { EDIT_MODES } from './lib/edit.js';
 import type { EditMode } from './lib/edit.js';
 import { useEditor } from './store';
 import { runRecipe } from './effectRecipes';
-import { addSfx, applyCaptionModel, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
+import { addSfx, applyCaptionModel, reviewCaptions, autoCaptions, autoSfx, cutSilences, describeProject, detectBeats, exportVideo, freezeFrame, importCapcut, importPaths, openProject, personMatte, saveProject, sfxLibrary } from './actions';
 import { MOTION_PRESETS, TRANSITION_TYPES } from './lib/fx.js';
 import type { MotionPreset } from './lib/fx.js';
 import { GRAPHIC_KINDS } from './lib/graphics.js';
@@ -484,6 +484,8 @@ export async function handleMcp(name: string, a: Record<string, unknown>): Promi
     case 'save_effect':
       if (!a.recipe || typeof a.recipe !== 'object') throw new Error('Falta a receita');
       return window.ec.saveEffect(a.recipe as EffectRecipe, s(a.name));
+    case 'review_captions':
+      return reviewCaptions({ clipId: s(a.clip_id), context: s(a.context) });
     case 'list_caption_models':
       return (await window.ec.listCaptionModels()).map((m) => ({ id: m.id, label: m.label, kind: m.kind, builtin: m.builtin, maxWords: m.maxWords, back: m.back, front: m.front, accent: m.accent }));
     case 'apply_caption_model': {

@@ -12,6 +12,7 @@ import type { Clip } from '../types';
 import { CaptionBlocks } from './CaptionBlocks';
 import { Icon } from './Icon';
 import { CaptionModels } from './CaptionModels';
+import { reviewCaptions, reviewState } from '../actions';
 
 export function CaptionList() {
   const tracks = useEditor((s) => s.project.tracks);
@@ -22,6 +23,18 @@ export function CaptionList() {
   const userStyles = useEditor((s) => s.userStyles);
   const fps = useEditor((s) => s.project.canvas.fps);
   const [q, setQ] = useState('');
+  const [reviewing, setReviewing] = useState(false);
+  const [fixed, setFixed] = useState(reviewState.applied);
+  const review = async () => {
+    setReviewing(true);
+    try {
+      setFixed((await reviewCaptions()).fixed);
+    } catch {
+      /* status bar has the message */
+    } finally {
+      setReviewing(false);
+    }
+  };
   const s = () => useEditor.getState();
   const shown = q ? clips.filter((c) => c.text?.toLowerCase().includes(q.toLowerCase())) : clips;
 
@@ -53,6 +66,24 @@ export function CaptionList() {
       </div>
       <div className="panel-body cap-tools">
         <input className="input" placeholder="Procurar nas legendas" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="btn sm" disabled={reviewing} onClick={() => void review()} title="O Claude lê o que foi dito e corrige o que o Whisper ouviu mal (ex.: «tios» em vez de «planos»)">
+          <Icon name="spark" /> {reviewing ? 'A rever…' : 'Rever com IA'}
+        </button>
+        {fixed.length > 0 && (
+          <details className="cap-fixed" open>
+            <summary className="panel-sub">{fixed.length} palavras corrigidas</summary>
+            <ul>
+              {fixed.map((f, i) => (
+                <li key={i}>
+                  <button className="link" onClick={() => s().seek(f.s)} title="Ir para aqui">
+                    {fmtTime(f.s, fps)}
+                  </button>{' '}
+                  <s>{f.wrong}</s> → <b>{f.right}</b>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
       <AutoSubsPanel />
       <div className="cap-list">
